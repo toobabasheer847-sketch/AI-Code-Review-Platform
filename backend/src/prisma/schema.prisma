@@ -1,0 +1,184 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String          @id @default(cuid())
+  email         String          @unique
+  fullName      String
+  passwordHash  String
+  avatar        String?
+  githubId      String?         @unique
+  githubAccount GitHubAccount?
+  isVerified    Boolean         @default(false)
+  subscription  Subscription?
+  repositories  Repository[]
+  reviews       CodeReview[]
+  chatConversations ChatConversation[]
+  usages         Usage[]
+  reviewAnalytics ReviewAnalytics[]
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([email])
+}
+
+model GitHubAccount {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  githubId    String   @unique
+  username    String
+  accessToken String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Subscription {
+  id            String    @id @default(cuid())
+  userId        String    @unique
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan          Plan      @default(FREE)
+  status        SubscriptionStatus @default(ACTIVE)
+  stripeId      String?   @unique
+  priceId       String?
+  currentPeriodStart DateTime?
+  currentPeriodEnd DateTime?
+  cancelledAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+enum Plan {
+  FREE
+  PRO
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELED
+  EXPIRED
+}
+
+model Usage {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviewCount Int     @default(0)
+  month      Int
+  year       Int
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@unique([userId, month, year])
+}
+
+model Repository {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name          String
+  url           String
+  language      String?
+  description   String?
+  isPrivate     Boolean   @default(false)
+  reviews       CodeReview[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([userId])
+  @@unique([userId, url])
+}
+
+model CodeReview {
+  id            String          @id @default(cuid())
+  userId        String
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  repositoryId  String
+  repository    Repository      @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  title         String
+  description   String?
+  fileContent   String
+  severity      String          @default("medium")
+  status        String          @default("pending")
+  findings      Finding[]
+  chatConversation ChatConversation?
+  analytics     ReviewAnalytics?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([userId])
+  @@index([repositoryId])
+  @@index([status])
+}
+
+model Finding {
+  id            String    @id @default(cuid())
+  reviewId      String
+  review        CodeReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  file          String
+  line          Int
+  message       String
+  severity      String
+  suggestions   String[]
+  createdAt     DateTime  @default(now())
+
+  @@index([reviewId])
+}
+
+model ChatConversation {
+  id            String       @id @default(cuid())
+  userId        String
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviewId      String       @unique
+  review        CodeReview   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  title         String
+  messages      ChatMessage[]
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([userId])
+  @@index([reviewId])
+}
+
+model ChatMessage {
+  id             String             @id @default(cuid())
+  conversationId String
+  conversation   ChatConversation   @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           ChatMessageRole
+  content        String
+  createdAt      DateTime           @default(now())
+
+  @@index([conversationId])
+}
+
+enum ChatMessageRole {
+  USER
+  ASSISTANT
+}
+
+model ReviewAnalytics {
+  id                 String     @id @default(cuid())
+  userId             String
+  user               User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviewId           String
+  review             CodeReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  totalIssues        Int
+  bugs               Int
+  securityIssues     Int
+  performanceIssues  Int
+  qualityScore       Int
+  createdAt          DateTime   @default(now())
+
+  @@index([userId])
+  @@index([reviewId])
+  @@unique([reviewId])
+}

@@ -1,0 +1,35 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { font-family: Arial, sans-serif; background: #f6f9fc; color: #111827; }
+      .card { background: #fff; max-width: 600px; margin: 24px auto; border-radius: 8px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+      .header { display:flex; align-items:center; gap:12px }
+      .score { font-size: 28px; font-weight:700; }
+      .cta { display:inline-block; margin-top:16px; padding:10px 16px; background:#2563eb; color:#fff; border-radius:6px; text-decoration:none }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="header">
+        <div>
+          <h2>Your Code Review is Ready</h2>
+          <p>Repository: <strong>{{repository}}</strong></p>
+        </div>
+      </div>
+
+      <div style="margin-top:12px">
+        <p><strong>Score:</strong> <span class="score">{{score}}</span></p>
+        <p><strong>Issues:</strong> {{issues}}</p>
+      </div>
+
+      <div style="margin-top:12px">
+        <h4>Summary</h4>
+        <p>{{summary}}</p>
+      </div>
+
+      <a class="cta" href="{{reviewUrl}}">View full report</a>
+    </div>
+  </body>
+</html>

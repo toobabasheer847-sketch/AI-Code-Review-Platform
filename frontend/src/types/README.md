@@ -1,0 +1,1 @@
+<!-- Global types and interfaces -->

@@ -1,0 +1,26 @@
+{
+  "name": "ai-codeguard-monorepo",
+  "version": "1.0.0",
+  "description": "AI-CodeGuard - Production SaaS Code Review Platform",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces",
+    "build": "npm run build --workspaces",
+    "lint": "npm run lint --workspaces",
+    "lint:fix": "npm run lint:fix --workspaces",
+    "format": "prettier --write \"**/*.{ts,tsx,json,css,md}\"",
+    "type-check": "npm run type-check --workspaces",
+    "test": "npm run test --workspaces"
+  },
+  "devDependencies": {
+    "prettier": "^3.1.0",
+    "husky": "^8.0.0",
+    "lint-staged": "^15.2.0",
+    "commitlint": "^18.4.0",
+    "@commitlint/config-conventional": "^18.4.0"
+  }
+}
