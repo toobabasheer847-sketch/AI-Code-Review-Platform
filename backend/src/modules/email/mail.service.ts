@@ -1,6 +1,6 @@
 import nodemailer from 'nodemailer'
-import { env } from '@/config/env'
-import { ReviewCompletePayload } from './email.types'
+import { env } from '../../config/env.js'
+import { ReviewCompletePayload } from './email.types.js'
 import fs from 'fs'
 import path from 'path'
 

@@ -6,6 +6,8 @@ import { z } from 'zod'
 const billingService = new BillingService()
 const stripeService = new StripeService()
 
+type StripeWebhookRequest = Request & { rawBody?: Buffer }
+
 export class BillingController {
   async createCheckout(req: Request, res: Response): Promise<void> {
     try {
@@ -31,7 +33,8 @@ export class BillingController {
   async webhook(req: Request, res: Response): Promise<void> {
     try {
       const sig = req.headers['stripe-signature'] as string
-      const event = stripeService.constructEvent(req.rawBody as Buffer, sig)
+      const webhookReq = req as StripeWebhookRequest
+      const event = stripeService.constructEvent(webhookReq.rawBody ?? Buffer.from(JSON.stringify(req.body)), sig)
 
       await billingService.handleWebhookEvent(event)
 

@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { Bug, Shield, Zap, Check, Star } from 'lucide-react'
+import { Bug, Shield, Zap, Check } from 'lucide-react'
 
 const FeatureCard = ({ title, desc, icon }: { title: string; desc: string; icon: JSX.Element }) => (
   <div className="rounded-lg bg-[#1e293b]/50 backdrop-blur-md border border-slate-800 hover:border-slate-700 p-6 transform hover:-translate-y-1 transition-all duration-300">

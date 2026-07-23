@@ -1,6 +1,13 @@
-export enum ChatMessageRole {
-  USER = 'USER',
-  ASSISTANT = 'ASSISTANT',
+export const ChatMessageRole = {
+  USER: 'USER',
+  ASSISTANT: 'ASSISTANT',
+} as const
+
+export type ChatMessageRole = (typeof ChatMessageRole)[keyof typeof ChatMessageRole]
+
+export interface ChatMessage {
+  role: ChatMessageRole
+  content: string
 }
 
 export interface ChatMessagePayload {
