@@ -1,7 +1,7 @@
 import axios from 'axios'
 import { prisma } from '@/config/database'
 import { env } from '@/config/env'
-import { decrypt, encrypt } from '@/utils/crypto'
+import { decryptWithRotation, encrypt } from '@/utils/crypto'
 import {
   getAccessTokenExchangeBody,
   getGitHubAuthorizeUrl,
@@ -147,8 +147,14 @@ export class GitHubService {
 
   async getValidatedAccessToken(userId: string): Promise<string> {
     const account = await this.getGitHubAccount(userId)
-    const token = decrypt(account.accessToken)
+    const { plaintext: token, needsReEncryption } = decryptWithRotation(account.accessToken)
     await this.validateAccessToken(token)
+    if (needsReEncryption) {
+      await prisma.gitHubAccount.update({
+        where: { id: account.id },
+        data: { accessToken: encrypt(token) },
+      })
+    }
     return token
   }
 

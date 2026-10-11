@@ -45,6 +45,25 @@ DATABASE_URL=postgresql://user:password@localhost:5432/ai_codeguard
 REDIS_URL=redis://localhost:6379
 ```
 
+Production must provide independent, randomly generated `JWT_SECRET` and
+`GITHUB_TOKEN_ENCRYPTION_KEY` values, each at least 32 characters long. The
+server refuses to start in production if either value is missing, a sample
+placeholder, or if the two values are identical. Generate each value separately
+with a cryptographically secure random generator and store them in your
+deployment's secret manager; never reuse the development values.
+
+When rotating `GITHUB_TOKEN_ENCRYPTION_KEY`, temporarily set
+`GITHUB_TOKEN_ENCRYPTION_KEY_PREVIOUS` to the old key and deploy both values.
+Existing GitHub tokens are re-encrypted with the new key when their account is
+next used. Keep the previous key configured until all stored tokens have been
+rewrapped. Tokens encrypted before this key was introduced can still be read
+using the previous `JWT_SECRET`; if rotating that secret at the same time, set
+`GITHUB_TOKEN_ENCRYPTION_KEY_PREVIOUS` to its old value during the transition.
+Rotating `JWT_SECRET` invalidates existing login tokens, so users will need to
+sign in again.
+
+The demo seed is disabled when `NODE_ENV=production`.
+
 ## Build & Run
 
 ```bash

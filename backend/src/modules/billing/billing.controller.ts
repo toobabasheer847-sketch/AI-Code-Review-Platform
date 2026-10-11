@@ -6,8 +6,6 @@ import { z } from 'zod'
 const billingService = new BillingService()
 const stripeService = new StripeService()
 
-type StripeWebhookRequest = Request & { rawBody?: Buffer }
-
 export class BillingController {
   async createCheckout(req: Request, res: Response): Promise<void> {
     try {
@@ -32,9 +30,13 @@ export class BillingController {
 
   async webhook(req: Request, res: Response): Promise<void> {
     try {
-      const sig = req.headers['stripe-signature'] as string
-      const webhookReq = req as StripeWebhookRequest
-      const event = stripeService.constructEvent(webhookReq.rawBody ?? Buffer.from(JSON.stringify(req.body)), sig)
+      const signature = req.headers['stripe-signature']
+      if (typeof signature !== 'string' || !Buffer.isBuffer(req.body)) {
+        res.status(400).json({ error: 'Invalid Stripe webhook request' })
+        return
+      }
+
+      const event = stripeService.constructEvent(req.body, signature)
 
       await billingService.handleWebhookEvent(event)
 

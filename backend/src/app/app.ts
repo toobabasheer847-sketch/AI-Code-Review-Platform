@@ -49,24 +49,7 @@ export const createApp = (): Express => {
   app.use(pinoHttp({ logger }))
   app.use(morgan('combined'))
 
-  // Body parsing middleware
-  // Capture raw body for Stripe webhooks when signature header present
-  app.use((req, _res, next) => {
-    if ((req.headers['stripe-signature'] as string) !== undefined) {
-      let data = ''
-      req.setEncoding('utf8')
-      req.on('data', (chunk) => {
-        data += chunk
-      })
-      req.on('end', () => {
-        ;(req as any).rawBody = Buffer.from(data)
-        next()
-      })
-    } else {
-      next()
-    }
-  })
-
+  app.use('/api/billing/webhook', express.raw({ type: 'application/json', limit: '1mb' }))
   app.use(express.json({ limit: '10mb' }))
   app.use(express.urlencoded({ limit: '10mb', extended: true }))
 

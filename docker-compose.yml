@@ -45,7 +45,8 @@ services:
       PORT: 3001
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ai_codeguard
       REDIS_URL: redis://redis:6379
-      JWT_SECRET: dev-secret-key-change-in-production
+      JWT_SECRET: ${JWT_SECRET:-local-development-only-jwt-secret-change-before-deploy}
+      GITHUB_TOKEN_ENCRYPTION_KEY: ${GITHUB_TOKEN_ENCRYPTION_KEY:-local-development-only-github-token-encryption-key}
       FRONTEND_URL: http://localhost:3000
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID}

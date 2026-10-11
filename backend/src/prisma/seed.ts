@@ -1,7 +1,12 @@
 import { prisma } from '../config/database'
 import { hashPassword } from '../utils/bcrypt'
+import { env } from '../config/env'
 
 async function main(): Promise<void> {
+  if (env.NODE_ENV === 'production') {
+    throw new Error('The demo seed is disabled in production')
+  }
+
   console.log('Seeding database...')
 
   // Create demo user
