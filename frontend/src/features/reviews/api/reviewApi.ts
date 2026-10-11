@@ -5,6 +5,7 @@ export interface ReviewSummary {
   repository: string
   score: number | null
   issues: number
+  status: 'pending' | 'running' | 'completed' | 'failed' | string
   createdAt: string
 }
 
@@ -30,6 +31,9 @@ export interface ReviewDetail {
   findings: Array<{ file: string; line: number; message: string; severity: string; suggestions: string[] }>
   analytics?: { totalIssues?: number; qualityScore?: number }
   chat?: ReviewChat | null
+  status: 'pending' | 'running' | 'completed' | 'failed' | string
+  branch: string
+  errorMessage?: string | null
   createdAt: string
 }
 

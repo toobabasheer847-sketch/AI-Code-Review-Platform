@@ -13,10 +13,32 @@ import {
 const GITHUB_API_BASE = 'https://api.github.com'
 const CODE_FILE_EXTENSIONS = new Set([
   '.js',
+  '.jsx',
   '.ts',
   '.tsx',
   '.py',
+  '.java',
+  '.go',
+  '.rs',
+  '.rb',
+  '.php',
+  '.c',
+  '.cc',
+  '.cpp',
+  '.h',
+  '.hpp',
+  '.cs',
+  '.swift',
+  '.kt',
+  '.kts',
+  '.sql',
+  '.vue',
+  '.svelte',
+  '.sh',
 ])
+const MAX_REVIEW_FILES = 20
+const MAX_REVIEW_FILE_BYTES = 20_000
+const MAX_REVIEW_TOTAL_BYTES = 100_000
 const EXCLUDED_PATHS = [
   'node_modules/',
   'package-lock.json',
@@ -53,6 +75,88 @@ function shouldIncludeFile(path: string): boolean {
   }
 
   return CODE_FILE_EXTENSIONS.has(`.${normalized.split('.').pop()}`)
+}
+
+export function parseReviewRepositoryName(repository: string): [string, string] {
+  const parts = repository.split('/')
+  if (
+    parts.length !== 2 ||
+    parts.some((part) => !/^[A-Za-z0-9_.-]+$/.test(part) || part === '.' || part === '..')
+  ) {
+    throw new Error('Repository must be a valid owner/repository name')
+  }
+  return [parts[0], parts[1]]
+}
+
+export function validateReviewBranchName(branch: string): void {
+  const components = branch.split('/')
+  if (
+    branch.length === 0 ||
+    branch.length > 255 ||
+    branch.startsWith('/') ||
+    branch.endsWith('/') ||
+    branch.startsWith('.') ||
+    branch.endsWith('.') ||
+    branch.endsWith('.lock') ||
+    branch.includes('..') ||
+    branch.includes('//') ||
+    branch.includes('@{') ||
+    components.some((component) => component.startsWith('.') || component.endsWith('.lock')) ||
+    [...branch].some((character) => {
+      const code = character.charCodeAt(0)
+      return code <= 0x20 || '~^:?*\\[]'.includes(character)
+    })
+  ) {
+    throw new Error('Branch name is invalid')
+  }
+}
+
+export interface ReviewRepositoryTarget {
+  fullName: string
+  htmlUrl: string
+}
+
+export interface ReviewSourceFile {
+  path: string
+  content: string
+}
+
+export interface GitHubTreeItem {
+  path: string
+  type: string
+  size?: number
+  sha: string
+}
+
+interface GitHubTreeResponse {
+  truncated: boolean
+  tree: GitHubTreeItem[]
+}
+
+export function selectReviewTreeFiles(tree: GitHubTreeItem[]): GitHubTreeItem[] {
+  const selectedFiles: GitHubTreeItem[] = []
+  let selectedBytes = 0
+  for (const item of tree) {
+    const size = item.size ?? 0
+    if (
+      item.type !== 'blob' ||
+      !shouldIncludeFile(item.path) ||
+      !Number.isSafeInteger(size) ||
+      size <= 0 ||
+      size > MAX_REVIEW_FILE_BYTES ||
+      selectedBytes + size > MAX_REVIEW_TOTAL_BYTES
+    ) {
+      continue
+    }
+    selectedFiles.push(item)
+    selectedBytes += size
+    if (selectedFiles.length === MAX_REVIEW_FILES) break
+  }
+
+  if (selectedFiles.length === 0) {
+    throw new Error('No supported source files within the review size limits were found')
+  }
+  return selectedFiles
 }
 
 export class GitHubService {
@@ -156,6 +260,102 @@ export class GitHubService {
       })
     }
     return token
+  }
+
+  async validateReviewTarget(
+    userId: string,
+    repository: string,
+    branch: string
+  ): Promise<ReviewRepositoryTarget> {
+    const [owner, name] = parseReviewRepositoryName(repository)
+    validateReviewBranchName(branch)
+    const token = await this.getValidatedAccessToken(userId)
+    const encodedRepository = `${encodeURIComponent(owner)}/${encodeURIComponent(name)}`
+    const headers = buildGitHubHeaders(token)
+    const repositoryResponse = await axios.get<{ full_name: string; html_url: string }>(
+      `${GITHUB_API_BASE}/repos/${encodedRepository}`,
+      { headers, timeout: 15_000 }
+    )
+    await axios.get(
+      `${GITHUB_API_BASE}/repos/${encodedRepository}/branches/${branch
+        .split('/')
+        .map(encodeURIComponent)
+        .join('/')}`,
+      { headers, timeout: 15_000 }
+    )
+
+    if (repositoryResponse.data.full_name.toLowerCase() !== repository.toLowerCase()) {
+      throw new Error('GitHub repository name did not match the requested repository')
+    }
+
+    return {
+      fullName: repositoryResponse.data.full_name,
+      htmlUrl: repositoryResponse.data.html_url,
+    }
+  }
+
+  async fetchReviewFiles(
+    userId: string,
+    repository: string,
+    branch: string
+  ): Promise<ReviewSourceFile[]> {
+    const [owner, name] = parseReviewRepositoryName(repository)
+    validateReviewBranchName(branch)
+    const token = await this.getValidatedAccessToken(userId)
+    const encodedRepository = `${encodeURIComponent(owner)}/${encodeURIComponent(name)}`
+    const branchPath = branch.split('/').map(encodeURIComponent).join('/')
+    const headers = buildGitHubHeaders(token)
+    const treeResponse = await axios.get<GitHubTreeResponse>(
+      `${GITHUB_API_BASE}/repos/${encodedRepository}/git/trees/${branchPath}`,
+      { headers, params: { recursive: '1' }, timeout: 15_000 }
+    )
+
+    if (treeResponse.data.truncated) {
+      throw new Error('Repository tree is too large for a complete review')
+    }
+
+    const selectedFiles = selectReviewTreeFiles(treeResponse.data.tree)
+
+    const files: ReviewSourceFile[] = []
+    let fetchedBytes = 0
+    for (let index = 0; index < selectedFiles.length; index += 4) {
+      const batch = selectedFiles.slice(index, index + 4)
+      const fetched = await Promise.all(
+        batch.map(async (file) => {
+          const filePath = file.path
+            .split('/')
+            .map(encodeURIComponent)
+            .join('/')
+          const response = await axios.get<string>(
+            `${GITHUB_API_BASE}/repos/${encodedRepository}/contents/${filePath}`,
+            {
+              headers: {
+                ...headers,
+                Accept: 'application/vnd.github.v3.raw',
+              },
+              responseType: 'text',
+              params: { ref: branch },
+              timeout: 15_000,
+            }
+          )
+          if (Buffer.byteLength(response.data, 'utf8') > MAX_REVIEW_FILE_BYTES) {
+            throw new Error(`Source file exceeded the review size limit: ${file.path}`)
+          }
+          return { path: file.path, content: response.data }
+        })
+      )
+      const batchBytes = fetched.reduce(
+        (total, file) => total + Buffer.byteLength(file.content, 'utf8'),
+        0
+      )
+      if (fetchedBytes + batchBytes > MAX_REVIEW_TOTAL_BYTES) {
+        throw new Error('Repository source exceeded the total review size limit')
+      }
+      fetchedBytes += batchBytes
+      files.push(...fetched)
+    }
+
+    return files
   }
 
   async getRepos(userId: string) {

@@ -35,6 +35,12 @@ export const emailWorker = new Worker(
   }
 );
 
+export async function closeEmailQueue(): Promise<void> {
+  await emailWorker.close()
+  await emailQueue.close()
+  await connection.quit()
+}
+
 emailWorker.on("completed", (job) => {
   console.log(`Job ${job.id} completed`);
 });

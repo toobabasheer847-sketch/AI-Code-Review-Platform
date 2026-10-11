@@ -16,8 +16,8 @@
     "prisma:migrate": "prisma migrate dev --schema src/prisma/schema.prisma",
     "prisma:studio": "prisma studio --schema src/prisma/schema.prisma",
     "seed": "tsx src/prisma/seed.ts",
-    "test": "jest",
-    "test:watch": "jest --watch"
+    "test": "tsx --test src/modules/code-review/review.pipeline.test.ts",
+    "test:watch": "tsx --test --watch src/modules/code-review/review.pipeline.test.ts"
   },
   "dependencies": {
     "@langchain/openai": "^0.0.2",

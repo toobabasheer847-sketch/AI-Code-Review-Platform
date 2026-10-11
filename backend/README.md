@@ -36,6 +36,20 @@ npm run seed
 npm run prisma:studio
 ```
 
+### Review processing
+
+Starting a review verifies that the connected GitHub account can access the
+requested repository and branch, then queues the analysis in Redis. The backend
+worker fetches supported source files (up to 20 files, 20 KB per file, and 100
+KB total), sends them to the configured OpenAI model, and saves findings,
+analytics, review status, and a completion email job. Configure `OPENAI_API_KEY`
+and ensure Redis is available before requesting reviews. Apply schema changes
+before deploying with:
+
+```bash
+npx prisma migrate deploy --schema src/prisma/schema.prisma
+```
+
 ### Environment Variables
 
 Create `.env` in the backend directory with database connection:

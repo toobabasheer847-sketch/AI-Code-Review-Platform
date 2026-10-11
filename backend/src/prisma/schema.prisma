@@ -107,6 +107,8 @@ model CodeReview {
   title         String
   description   String?
   fileContent   String
+  branch        String          @default("main")
+  errorMessage  String?
   severity      String          @default("medium")
   status        String          @default("pending")
   findings      Finding[]
@@ -128,6 +130,7 @@ model Finding {
   line          Int
   message       String
   severity      String
+  category      String          @default("quality")
   suggestions   String[]
   createdAt     DateTime  @default(now())
 

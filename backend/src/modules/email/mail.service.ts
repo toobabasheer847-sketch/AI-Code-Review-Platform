@@ -4,6 +4,19 @@ import { ReviewCompletePayload } from './email.types.js'
 import fs from 'fs'
 import path from 'path'
 
+function escapeHtml(value: string): string {
+	return value.replace(/[&<>"']/g, (character) => {
+		const entities: Record<string, string> = {
+			'&': '&amp;',
+			'<': '&lt;',
+			'>': '&gt;',
+			'"': '&quot;',
+			"'": '&#39;',
+		}
+		return entities[character]
+	})
+}
+
 export class MailService {
 	private transporter
 
@@ -24,14 +37,14 @@ export class MailService {
 		try {
 			html = fs.readFileSync(templatePath, 'utf8')
 		} catch {
-			html = `<p>Your review is ready: ${payload.repository} - Score: ${payload.score}</p>`
+			html = '<p>Your review is ready: {{repository}} - Score: {{score}}</p>'
 		}
 
-		const htmlWithData = html.replace(/{{repository}}/g, payload.repository)
-			.replace(/{{score}}/g, String(payload.score))
-			.replace(/{{issues}}/g, String(payload.issues))
-			.replace(/{{summary}}/g, payload.summary)
-			.replace(/{{reviewUrl}}/g, payload.reviewUrl ?? '#')
+		const htmlWithData = html.replace(/{{repository}}/g, escapeHtml(payload.repository))
+			.replace(/{{score}}/g, escapeHtml(String(payload.score)))
+			.replace(/{{issues}}/g, escapeHtml(String(payload.issues)))
+			.replace(/{{summary}}/g, escapeHtml(payload.summary))
+			.replace(/{{reviewUrl}}/g, escapeHtml(payload.reviewUrl ?? '#'))
 
 		const info = await this.transporter.sendMail({
 			from: env.MAIL_FROM,

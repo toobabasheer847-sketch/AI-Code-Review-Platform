@@ -1,7 +1,11 @@
 import { prisma } from '@/config/database'
 import { emailQueue } from '@/jobs/email.queue'
+import { reviewQueue } from '@/jobs/review.queue'
+import { GitHubService } from '@/modules/github/github.service'
 
 export class ReviewService {
+	private readonly githubService = new GitHubService()
+
 	public async listReviews(userId: string) {
 		const reviews = await prisma.codeReview.findMany({
 			where: { userId },
@@ -18,15 +22,20 @@ export class ReviewService {
 			repository: r.repository.name,
 			score: r.analytics?.qualityScore ?? null,
 			issues: r.findings.length,
+			status: r.status,
 			createdAt: r.createdAt,
 		}))
 	}
 
-	public async startReview(userId: string, repositoryUrl: string, branch = 'main') {
-		// find or create repository for user
+	public async startReview(userId: string, repositoryName: string, branch = 'main') {
+		const target = await this.githubService.validateReviewTarget(
+			userId,
+			repositoryName,
+			branch
+		)
 		const repository = await prisma.repository.upsert({
-			where: { userId_url: { userId, url: repositoryUrl } },
-			create: { userId, name: repositoryUrl, url: repositoryUrl },
+			where: { userId_url: { userId, url: target.htmlUrl } },
+			create: { userId, name: target.fullName, url: target.htmlUrl },
 			update: {},
 		})
 
@@ -34,14 +43,33 @@ export class ReviewService {
 			data: {
 				userId,
 				repositoryId: repository.id,
-				title: `Code review: ${repository.name} (${branch})`,
-				description: `Automated review for ${repository.name} on branch ${branch}`,
+				title: `Code review: ${target.fullName} (${branch})`,
+				description: `Automated review for ${target.fullName} on branch ${branch}`,
 				fileContent: '',
+				branch,
 				status: 'pending',
 			},
 		})
 
-		// TODO: enqueue background job to perform analysis (review.queue)
+		try {
+			await reviewQueue.add(
+				'analyze',
+				{ reviewId: review.id },
+				{ jobId: `review-${review.id}` }
+			)
+		} catch (error) {
+			await prisma.codeReview.update({
+				where: { id: review.id },
+				data: {
+					status: 'failed',
+					errorMessage:
+						error instanceof Error
+							? `Unable to queue review: ${error.message}`.slice(0, 500)
+							: 'Unable to queue review',
+				},
+			})
+			throw error
+		}
 
 		return review
 	}
@@ -71,6 +99,9 @@ export class ReviewService {
 			findings: review.findings,
 			analytics: review.analytics,
 			chat: review.chatConversation,
+			status: review.status,
+			branch: review.branch,
+			errorMessage: review.errorMessage,
 			createdAt: review.createdAt,
 		}
 	}
@@ -98,6 +129,10 @@ export class ReviewService {
 			reviewUrl: `${process.env.FRONTEND_URL ?? 'http://localhost:3000'}/reviews/${review.id}`,
 		}
 
-		await emailQueue.add('send-review-complete', { type: 'review:complete', payload })
+		await emailQueue.add(
+			'send-review-complete',
+			{ type: 'review:complete', payload },
+			{ jobId: `review-complete-${review.id}`, attempts: 3 }
+		)
 	}
 }

@@ -104,6 +104,7 @@ export const ReviewsPage = (): JSX.Element => {
                         <div className="mt-1 text-sm text-slate-400">
                           {new Date(r.createdAt).toLocaleString()}
                         </div>
+                        <div className="mt-1 text-xs capitalize text-indigo-300">{r.status}</div>
                       </div>
                       <div className="text-right">
                         <div className={`text-3xl font-bold ${scoreColor}`}>

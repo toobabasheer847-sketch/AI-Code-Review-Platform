@@ -1,7 +1,12 @@
 import { Request, Response } from 'express'
+import { z } from 'zod'
 import { ReviewService } from './review.service'
 
 const reviewService = new ReviewService()
+const startReviewSchema = z.object({
+	repository: z.string().min(3).max(300),
+	branch: z.string().min(1).max(255).optional(),
+})
 
 export class ReviewController {
 	async listReviews(req: Request, res: Response): Promise<void> {
@@ -58,13 +63,12 @@ export class ReviewController {
 				return
 			}
 
-			const { repository, branch } = req.body as { repository?: string; branch?: string }
-			if (!repository) {
-				res.status(400).json({ error: 'Repository is required' })
-				return
-			}
-
-			const review = await reviewService.startReview(req.user.userId, repository, branch || 'main')
+			const { repository, branch } = startReviewSchema.parse(req.body)
+			const review = await reviewService.startReview(
+				req.user.userId,
+				repository,
+				branch || 'main'
+			)
 			res.json({ reviewId: review.id })
 		} catch (error) {
 			const message = error instanceof Error ? error.message : 'Failed to start review'
