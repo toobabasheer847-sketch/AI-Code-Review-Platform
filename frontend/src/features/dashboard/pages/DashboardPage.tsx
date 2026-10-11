@@ -1,9 +1,10 @@
-import { Link, useSearchParams } from 'react-router-dom'
 import { Github, FileSearch, CreditCard, Settings } from 'lucide-react'
 import { useEffect } from 'react'
-import { ConnectGitHubButton } from '@/features/github/components/ConnectGitHubButton'
-import { useMe } from '@/features/auth/hooks/useAuth'
+import { Link, useSearchParams } from 'react-router-dom'
+
 import { useAppStore } from '@/app/store/useAppStore'
+import { useMe } from '@/features/auth/hooks/useAuth'
+import { ConnectGitHubButton } from '@/features/github/components/ConnectGitHubButton'
 
 const navLinks = [
   { to: '/github/repos', label: 'Repositories', icon: Github },

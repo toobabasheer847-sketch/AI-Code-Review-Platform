@@ -11,6 +11,7 @@ export function errorMiddleware(
   res: Response,
   _next: NextFunction
 ): void {
+  void _next
   const status = error.status || 500
   const message = error.message || 'Internal Server Error'
 

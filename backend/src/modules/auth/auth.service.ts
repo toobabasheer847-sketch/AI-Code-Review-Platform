@@ -111,7 +111,7 @@ export class AuthService {
     return this.toUserResponse(user)
   }
 
-  async logout(_userId: string): Promise<void> {
+  async logout(): Promise<void> {
     // Logout is handled client-side by removing token
     // Token blacklist can be implemented with Redis if needed
   }

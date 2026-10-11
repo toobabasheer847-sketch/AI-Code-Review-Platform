@@ -4,6 +4,7 @@
  */
 
 import { Navigate, useLocation } from 'react-router-dom'
+
 import { useAppStore } from '@/app/store/useAppStore'
 
 interface ProtectedRouteProps {

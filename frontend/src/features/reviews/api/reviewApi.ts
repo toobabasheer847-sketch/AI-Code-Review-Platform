@@ -8,6 +8,19 @@ export interface ReviewSummary {
   createdAt: string
 }
 
+export interface ReviewChatMessage {
+  id: string
+  role: 'USER' | 'ASSISTANT'
+  content: string
+  createdAt: string
+}
+
+export interface ReviewChat {
+  id: string
+  title: string
+  messages: ReviewChatMessage[]
+}
+
 export interface ReviewDetail {
   id: string
   repository: { name: string; url: string }
@@ -16,7 +29,7 @@ export interface ReviewDetail {
   fileContent?: string
   findings: Array<{ file: string; line: number; message: string; severity: string; suggestions: string[] }>
   analytics?: { totalIssues?: number; qualityScore?: number }
-  chat?: any
+  chat?: ReviewChat | null
   createdAt: string
 }
 

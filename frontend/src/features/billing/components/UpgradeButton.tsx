@@ -1,6 +1,8 @@
 import { useNavigate } from 'react-router-dom'
-import { useCreateCheckout } from '../hooks/useBilling'
+
 import { useAppStore } from '@/app/store/useAppStore'
+
+import { useCreateCheckout } from '../hooks/useBilling'
 
 interface Props {
   priceId: string
@@ -14,7 +16,7 @@ export const UpgradeButton = ({ priceId, children }: Props): JSX.Element => {
 
   const isDisabled = !priceId
 
-  const handleClick = async () => {
+  const handleClick = async (): Promise<void> => {
     if (!priceId) {
       console.error('Missing Stripe price ID. Set VITE_STRIPE_PRO_PRICE_ID in the frontend environment.')
       return

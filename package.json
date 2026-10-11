@@ -14,13 +14,17 @@
     "lint:fix": "npm run lint:fix --workspaces",
     "format": "prettier --write \"**/*.{ts,tsx,json,css,md}\"",
     "type-check": "npm run type-check --workspaces",
-    "test": "npm run test --workspaces"
+    "test": "npm run test --workspaces",
+    "prepare": "husky install"
   },
   "devDependencies": {
-    "prettier": "^3.1.0",
-    "husky": "^8.0.0",
-    "lint-staged": "^15.2.0",
+    "@commitlint/config-conventional": "^18.4.0",
+    "@typescript-eslint/parser": "^7.18.0",
     "commitlint": "^18.4.0",
-    "@commitlint/config-conventional": "^18.4.0"
+    "eslint-import-resolver-typescript": "^4.4.5",
+    "husky": "^8.0.3",
+    "lint-staged": "^15.2.0",
+    "prettier": "^3.1.0",
+    "typescript": "5.4.5"
   }
 }

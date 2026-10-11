@@ -1,8 +1,10 @@
+import { Eye, EyeOff, ArrowLeft } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { useNavigate, Link, useLocation } from 'react-router-dom'
-import { useRegister } from '../hooks/useAuth'
+
 import { useAppStore } from '@/app/store/useAppStore'
-import { Eye, EyeOff, ArrowLeft } from 'lucide-react'
+
+import { useRegister } from '../hooks/useAuth'
 
 export const RegisterPage = (): JSX.Element => {
   const navigate = useNavigate()
@@ -52,7 +54,7 @@ export const RegisterPage = (): JSX.Element => {
     return Object.keys(errors).length === 0
   }
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
     const { name, value } = e.target
     setFormData((prev) => ({
       ...prev,
@@ -67,7 +69,7 @@ export const RegisterPage = (): JSX.Element => {
     }
   }
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault()
 
     if (!validateForm()) {

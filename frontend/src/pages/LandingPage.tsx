@@ -1,7 +1,7 @@
-import { useNavigate } from 'react-router-dom'
 import { Bug, Shield, Zap, Check } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 
-const FeatureCard = ({ title, desc, icon }: { title: string; desc: string; icon: JSX.Element }) => (
+const FeatureCard = ({ title, desc, icon }: { title: string; desc: string; icon: JSX.Element }): JSX.Element => (
   <div className="rounded-lg bg-[#1e293b]/50 backdrop-blur-md border border-slate-800 hover:border-slate-700 p-6 transform hover:-translate-y-1 transition-all duration-300">
     <div className="flex items-center gap-4">
       <div className="p-3 rounded-md bg-gradient-to-br from-violet-500 to-indigo-500 text-white shadow-[0_8px_30px_rgba(99,102,241,0.12)]">

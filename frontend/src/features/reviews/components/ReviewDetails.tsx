@@ -1,6 +1,12 @@
 import type { ReviewDetail } from '@/features/reviews/api/reviewApi'
 
-const getScoreStyles = (score: number) => {
+const getScoreStyles = (score: number): {
+  text: string
+  bg: string
+  border: string
+  glow: string
+  ring: string
+} => {
   if (score >= 80) {
     return {
       text: 'text-emerald-400',
@@ -28,7 +34,7 @@ const getScoreStyles = (score: number) => {
   }
 }
 
-export const ReviewDetails = ({ review }: { review: ReviewDetail }) => {
+export const ReviewDetails = ({ review }: { review: ReviewDetail }): JSX.Element => {
   const qualityScore = review.analytics?.qualityScore ?? 0
   const scoreStyles = getScoreStyles(qualityScore)
   const repoName = review.title ?? review.repository.name

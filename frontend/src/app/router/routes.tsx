@@ -1,6 +1,8 @@
-import type { RouteObject } from 'react-router-dom'
 import { Suspense, lazy } from 'react'
+import type { RouteObject } from 'react-router-dom'
+
 import { LoadingSpinner } from '@components/common/LoadingSpinner'
+
 import { ProtectedRoute } from './ProtectedRoute'
 
 const LandingPage = lazy(() => import('@pages/LandingPage').then((m) => ({ default: m.default })))

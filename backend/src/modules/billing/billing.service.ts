@@ -13,16 +13,9 @@ export class BillingService {
   public async handleWebhookEvent(event: any) {
     const type = event.type
 
-    if (type === 'checkout.session.completed') {
-      const session = event.data.object
-      // session.customer is the customer id
-      // No immediate DB update here; rely on subscription.created
-    }
-
     if (type === 'customer.subscription.created' || type === 'customer.subscription.updated') {
       const subscription = event.data.object
       const stripeCustomerId = subscription.customer as string
-      const stripeSubscriptionId = subscription.id as string
       const priceId = subscription.items?.data?.[0]?.price?.id ?? null
 
       // find subscription by stripeId

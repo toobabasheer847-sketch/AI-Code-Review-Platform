@@ -1,8 +1,11 @@
+import { Eye, EyeOff, ArrowLeft } from 'lucide-react'
 import { useState } from 'react'
 import { useNavigate, Link, useLocation } from 'react-router-dom'
-import { Eye, EyeOff, ArrowLeft } from 'lucide-react'
-import { useLogin } from '../hooks/useAuth'
+
 import { useAppStore } from '@/app/store/useAppStore'
+
+import { useLogin } from '../hooks/useAuth'
+
 
 export const LoginPage = (): JSX.Element => {
   const navigate = useNavigate()
@@ -37,7 +40,7 @@ export const LoginPage = (): JSX.Element => {
     return Object.keys(errors).length === 0
   }
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
     const { name, value } = e.target
     setFormData((prev) => ({
       ...prev,
@@ -52,7 +55,7 @@ export const LoginPage = (): JSX.Element => {
     }
   }
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault()
 
     if (!validateForm()) {

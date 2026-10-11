@@ -1,5 +1,5 @@
-import { Link } from 'react-router-dom'
 import { CheckCircle } from 'lucide-react'
+import { Link } from 'react-router-dom'
 
 export const BillingSuccessPage = (): JSX.Element => {
   return (

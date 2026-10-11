@@ -1,4 +1,5 @@
 import { Github, Loader2 } from 'lucide-react'
+
 import { useConnectGitHub } from '../hooks/useGitHub'
 
 interface ConnectGitHubButtonProps {

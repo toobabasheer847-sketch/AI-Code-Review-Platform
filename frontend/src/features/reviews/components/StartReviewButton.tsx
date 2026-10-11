@@ -1,13 +1,14 @@
 import { useState } from 'react'
+
 import { useStartReview } from '../hooks/useStartReview'
 
-export const StartReviewButton = ({ repo }: { repo: string }) => {
+export const StartReviewButton = ({ repo }: { repo: string }): JSX.Element => {
   const [branch, setBranch] = useState('main')
   const mutation = useStartReview()
   const isDisabled = branch.trim().length === 0
   const isPending = Boolean(mutation.isPending)
 
-  const start = async () => {
+  const start = async (): Promise<void> => {
     if (isDisabled) return
 
     try {

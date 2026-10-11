@@ -19,7 +19,7 @@ module.exports = {
       { allowConstantExport: true },
     ],
     '@typescript-eslint/no-explicit-any': 'error',
-    '@typescript-eslint/explicit-function-return-types': [
+    '@typescript-eslint/explicit-function-return-type': [
       'error',
       { allowExpressions: true },
     ],
@@ -34,8 +34,11 @@ module.exports = {
           'sibling',
           'index',
         ],
-        alphabeticalOrder: true,
-        caseInsensitive: true,
+        'newlines-between': 'always',
+        alphabetize: {
+          order: 'asc',
+          caseInsensitive: true,
+        },
       },
     ],
     'no-console': ['warn', { allow: ['warn', 'error'] }],
@@ -43,6 +46,11 @@ module.exports = {
   settings: {
     react: {
       version: 'detect',
+    },
+    'import/resolver': {
+      typescript: {
+        project: './tsconfig.json',
+      },
     },
   },
 }

@@ -3,14 +3,28 @@
  * React Query hooks for authentication operations
  */
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { authApi, type RegisterPayload, type LoginPayload, type AuthResponse } from '../api/authApi'
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type UseMutationResult,
+  type UseQueryResult,
+} from '@tanstack/react-query'
+
 import { useAppStore } from '@/app/store/useAppStore'
+
+import {
+  authApi,
+  type AuthResponse,
+  type LoginPayload,
+  type RegisterPayload,
+  type UserResponse,
+} from '../api/authApi'
 
 /**
  * Hook for user registration
  */
-export const useRegister = () => {
+export const useRegister = (): UseMutationResult<AuthResponse, Error, RegisterPayload> => {
   const setUser = useAppStore((state) => state.setUser)
   const setToken = useAppStore((state) => state.setToken)
   const setIsLoading = useAppStore((state) => state.setIsLoading)
@@ -20,10 +34,7 @@ export const useRegister = () => {
     mutationFn: async (payload: RegisterPayload) => {
       setIsLoading(true)
       try {
-        const response = await authApi.register(payload)
-        return response
-      } catch (error) {
-        throw error
+        return await authApi.register(payload)
       } finally {
         setIsLoading(false)
       }
@@ -42,7 +53,7 @@ export const useRegister = () => {
 /**
  * Hook for user login
  */
-export const useLogin = () => {
+export const useLogin = (): UseMutationResult<AuthResponse, Error, LoginPayload> => {
   const setUser = useAppStore((state) => state.setUser)
   const setToken = useAppStore((state) => state.setToken)
   const setIsLoading = useAppStore((state) => state.setIsLoading)
@@ -52,10 +63,7 @@ export const useLogin = () => {
     mutationFn: async (payload: LoginPayload) => {
       setIsLoading(true)
       try {
-        const response = await authApi.login(payload)
-        return response
-      } catch (error) {
-        throw error
+        return await authApi.login(payload)
       } finally {
         setIsLoading(false)
       }
@@ -74,7 +82,7 @@ export const useLogin = () => {
 /**
  * Hook for fetching current user (protected)
  */
-export const useMe = () => {
+export const useMe = (): UseQueryResult<UserResponse['user'], Error> => {
   const token = useAppStore((state) => state.token)
   const setUser = useAppStore((state) => state.setUser)
 
@@ -94,7 +102,7 @@ export const useMe = () => {
 /**
  * Hook for logout
  */
-export const useLogout = () => {
+export const useLogout = (): UseMutationResult<void, Error, void> => {
   const queryClient = useQueryClient()
   const logout = useAppStore((state) => state.logout)
 

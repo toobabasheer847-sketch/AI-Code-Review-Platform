@@ -1,6 +1,7 @@
 import { useParams, Link } from 'react-router-dom'
-import { useGetReview } from '../hooks/useReviews'
+
 import { ReviewDetails } from '../components/ReviewDetails'
+import { useGetReview } from '../hooks/useReviews'
 
 export const ReviewByIdPage = (): JSX.Element => {
   const { id } = useParams<{ id: string }>()

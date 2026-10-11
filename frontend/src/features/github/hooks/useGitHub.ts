@@ -1,14 +1,23 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { githubApi } from '../api/githubApi'
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type UseMutationResult,
+  type UseQueryResult,
+} from '@tanstack/react-query'
+
 import { useAppStore } from '@/app/store/useAppStore'
+
+import { githubApi } from '../api/githubApi'
+import type { GitHubConnectResponse, GitHubRepository, GitHubRepositoryFile } from '../types'
 
 export const githubQueryKeys = {
   repos: ['github', 'repos'] as const,
   repoFiles: (repoFullName: string) => ['github', 'repos', repoFullName, 'files'] as const,
 }
 
-export const useConnectGitHub = () => {
-  return useMutation({
+export const useConnectGitHub = (): UseMutationResult<GitHubConnectResponse, Error, void> => {
+  return useMutation<GitHubConnectResponse, Error, void>({
     mutationFn: githubApi.connect,
     onSuccess: ({ url }) => {
       window.location.assign(url)
@@ -16,7 +25,7 @@ export const useConnectGitHub = () => {
   })
 }
 
-export const useGetRepos = () => {
+export const useGetRepos = (): UseQueryResult<GitHubRepository[], Error> => {
   const githubConnected = useAppStore((state) => state.user?.githubConnected)
 
   return useQuery({
@@ -28,8 +37,8 @@ export const useGetRepos = () => {
   })
 }
 
-export const useGetRepoFiles = (repoFullName: string | null) => {
-  return useQuery({
+export const useGetRepoFiles = (repoFullName: string | null): UseQueryResult<GitHubRepositoryFile[], Error> => {
+  return useQuery<GitHubRepositoryFile[], Error>({
     queryKey: githubQueryKeys.repoFiles(repoFullName ?? ''),
     queryFn: () => githubApi.getRepoFiles(repoFullName as string),
     enabled: !!repoFullName,
@@ -38,7 +47,7 @@ export const useGetRepoFiles = (repoFullName: string | null) => {
   })
 }
 
-export const usePrefetchRepoFiles = () => {
+export const usePrefetchRepoFiles = (): ((repoFullName: string) => void) => {
   const queryClient = useQueryClient()
 
   return (repoFullName: string) => {

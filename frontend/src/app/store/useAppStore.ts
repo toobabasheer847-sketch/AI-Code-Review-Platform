@@ -1,6 +1,6 @@
+import Cookies from 'js-cookie'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import Cookies from 'js-cookie'
 
 export interface User {
   id: string

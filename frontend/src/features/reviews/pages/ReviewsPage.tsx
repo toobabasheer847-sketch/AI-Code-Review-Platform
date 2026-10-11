@@ -1,8 +1,9 @@
 import { useMemo } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { useListReviews, useGetReview } from '../hooks/useReviews'
-import { StartReviewButton } from '../components/StartReviewButton'
+
 import { ReviewDetails } from '../components/ReviewDetails'
+import { StartReviewButton } from '../components/StartReviewButton'
+import { useListReviews, useGetReview } from '../hooks/useReviews'
 
 export const ReviewsPage = (): JSX.Element => {
   const { search } = useLocation()

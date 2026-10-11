@@ -1,12 +1,15 @@
 import { formatDistanceToNow } from 'date-fns'
 import { ArrowRight, Github, Lock, RefreshCw, Unlock, ArrowLeft } from 'lucide-react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useEffect } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+
+import { useAppStore } from '@/app/store/useAppStore'
+import { useMe } from '@/features/auth/hooks/useAuth'
+
 import { ConnectGitHubButton } from '../components/ConnectGitHubButton'
 import { useGetRepos, usePrefetchRepoFiles } from '../hooks/useGitHub'
 import type { GitHubRepository } from '../types'
-import { useMe } from '@/features/auth/hooks/useAuth'
-import { useAppStore } from '@/app/store/useAppStore'
+
 
 const formatUpdatedAt = (updatedAt: string): string => {
   return formatDistanceToNow(new Date(updatedAt), { addSuffix: true })
@@ -16,7 +19,7 @@ const RepositoryRow = ({ repo }: { repo: GitHubRepository }): JSX.Element => {
   const navigate = useNavigate()
   const prefetchRepoFiles = usePrefetchRepoFiles()
 
-  const handleSelect = () => {
+  const handleSelect = (): void => {
     prefetchRepoFiles(repo.full_name)
     navigate(`/reviews?repo=${encodeURIComponent(repo.full_name)}`)
   }
@@ -72,7 +75,7 @@ export const GitHubReposPage = (): JSX.Element => {
     }
   }, [justConnected, refetchMe, searchParams, setSearchParams])
 
-  const refresh = async () => {
+  const refresh = async (): Promise<void> => {
     await refetchMe()
     await refetch()
   }
