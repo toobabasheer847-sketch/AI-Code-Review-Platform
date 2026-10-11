@@ -7,16 +7,17 @@
   "scripts": {
     "dev": "tsx watch src/app/server.ts",
     "build": "tsc",
-    "start": "node dist/app/server.js",
+    "start": "tsx src/app/server.ts",
     "lint": "eslint src --ext ts",
     "lint:fix": "eslint src --ext ts --fix",
     "format": "prettier --write \"src/**/*.ts\"",
     "type-check": "tsc --noEmit",
     "prisma:generate": "prisma generate --schema src/prisma/schema.prisma",
     "prisma:migrate": "prisma migrate dev --schema src/prisma/schema.prisma",
+    "prisma:deploy": "prisma migrate deploy --schema src/prisma/schema.prisma",
     "prisma:studio": "prisma studio --schema src/prisma/schema.prisma",
     "seed": "tsx src/prisma/seed.ts",
-    "test": "tsx --test src/modules/code-review/review.pipeline.test.ts",
+    "test": "tsx --test src/modules/code-review/review.pipeline.test.ts src/modules/billing/billing.mapping.test.ts",
     "test:watch": "tsx --test --watch src/modules/code-review/review.pipeline.test.ts"
   },
   "dependencies": {

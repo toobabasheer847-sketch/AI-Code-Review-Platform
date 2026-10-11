@@ -32,6 +32,7 @@ export const env = {
   GITHUB_CALLBACK_URL: process.env.GITHUB_CALLBACK_URL || 'http://localhost:3001/api/auth/github/callback',
   STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || '',
   STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET || '',
+  STRIPE_PRO_PRICE_ID: process.env.STRIPE_PRO_PRICE_ID || '',
   STRIPE_API_VERSION: process.env.STRIPE_API_VERSION || '2023-10-16',
   REDIS_URL: process.env.REDIS_URL || 'redis://localhost:6379',
   MAIL_HOST: process.env.MAIL_HOST || 'smtp.gmail.com',

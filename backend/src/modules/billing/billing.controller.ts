@@ -9,7 +9,7 @@ const stripeService = new StripeService()
 export class BillingController {
   async createCheckout(req: Request, res: Response): Promise<void> {
     try {
-      const schema = z.object({ priceId: z.string().min(1) })
+      const schema = z.object({ priceId: z.string().min(1).max(255) })
       const input = schema.parse(req.body)
 
       if (!req.user?.userId || !req.user.email) {
@@ -68,8 +68,8 @@ export class BillingController {
       }
 
       const now = new Date()
-      const month = now.getMonth() + 1
-      const year = now.getFullYear()
+      const month = now.getUTCMonth() + 1
+      const year = now.getUTCFullYear()
       const usage = await billingService.getUsage(req.user.userId, month, year)
       res.json(usage)
     } catch (error) {

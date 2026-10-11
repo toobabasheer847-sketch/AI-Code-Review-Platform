@@ -12,19 +12,33 @@ export class StripeService {
 		const subscription = await prisma.subscription.findUnique({ where: { userId } })
 
 		if (subscription?.stripeId) {
-			try {
-				const customer = await stripe.customers.retrieve(subscription.stripeId)
-				return customer as Stripe.Customer
-			} catch {
-				// Continue to create a new customer
+			const customer = await stripe.customers.retrieve(subscription.stripeId)
+			if (!customer.deleted) {
+				return customer
 			}
 		}
 
-		const customer = await stripe.customers.create({ email })
+		const customer = await stripe.customers.create(
+			{ email, metadata: { userId } },
+			{ idempotencyKey: `customer-${userId}` }
+		)
 		await prisma.subscription.upsert({
 			where: { userId },
-			update: { stripeId: customer.id },
-			create: { userId, stripeId: customer.id, plan: 'FREE', status: 'ACTIVE' },
+			update: {
+				stripeId: customer.id,
+				plan: 'FREE',
+				status: 'ACTIVE',
+				priceId: null,
+				currentPeriodStart: null,
+				currentPeriodEnd: null,
+				cancelledAt: null,
+			},
+			create: {
+				userId,
+				stripeId: customer.id,
+				plan: 'FREE',
+				status: 'ACTIVE',
+			},
 		})
 
 		return customer
@@ -38,12 +52,20 @@ export class StripeService {
 			mode: 'subscription',
 			customer: subscription.stripeId,
 			line_items: [{ price: priceId, quantity: 1 }],
+			client_reference_id: userId,
+			metadata: { userId },
+			subscription_data: { metadata: { userId } },
 			success_url: successUrl,
 			cancel_url: cancelUrl,
 			payment_method_types: ['card'],
 		})
 
 		return session
+	}
+
+	public async retrieveCustomerUserId(customerId: string): Promise<string | null> {
+		const customer = await stripe.customers.retrieve(customerId)
+		return customer.deleted ? null : customer.metadata.userId || null
 	}
 
 	public constructEvent(rawBody: Buffer, sig: string) {

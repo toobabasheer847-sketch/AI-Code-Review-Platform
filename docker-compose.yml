@@ -37,8 +37,8 @@ services:
 
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile
     container_name: ai-codeguard-backend
     environment:
       NODE_ENV: development
@@ -48,10 +48,12 @@ services:
       JWT_SECRET: ${JWT_SECRET:-local-development-only-jwt-secret-change-before-deploy}
       GITHUB_TOKEN_ENCRYPTION_KEY: ${GITHUB_TOKEN_ENCRYPTION_KEY:-local-development-only-github-token-encryption-key}
       FRONTEND_URL: http://localhost:3000
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID}
-      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET}
-      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_PRO_PRICE_ID: ${STRIPE_PRO_PRICE_ID:-}
     ports:
       - "3001:3001"
     depends_on:
@@ -60,15 +62,18 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./backend/src:/app/src
+      - ./backend/src:/app/backend/src
     networks:
       - ai-codeguard-network
-    command: npm run dev
+    command: sh -c "npm run prisma:deploy --workspace=backend && npm run dev --workspace=backend"
 
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3001/api}
+        VITE_STRIPE_PRO_PRICE_ID: ${STRIPE_PRO_PRICE_ID:-}
     container_name: ai-codeguard-frontend
     environment:
       VITE_API_URL: http://localhost:3001/api
@@ -77,12 +82,8 @@ services:
       - "3000:3000"
     depends_on:
       - backend
-    volumes:
-      - ./frontend/src:/app/src
-      - ./frontend/public:/app/public
     networks:
       - ai-codeguard-network
-    command: npm run dev
 
 volumes:
   postgres_data:

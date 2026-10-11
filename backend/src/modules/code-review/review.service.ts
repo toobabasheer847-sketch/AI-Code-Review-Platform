@@ -2,6 +2,7 @@ import { prisma } from '@/config/database'
 import { emailQueue } from '@/jobs/email.queue'
 import { reviewQueue } from '@/jobs/review.queue'
 import { GitHubService } from '@/modules/github/github.service'
+import { releaseReviewQuota, reserveReviewQuota } from '@/modules/billing/review-quota'
 
 export class ReviewService {
 	private readonly githubService = new GitHubService()
@@ -33,22 +34,25 @@ export class ReviewService {
 			repositoryName,
 			branch
 		)
-		const repository = await prisma.repository.upsert({
-			where: { userId_url: { userId, url: target.htmlUrl } },
-			create: { userId, name: target.fullName, url: target.htmlUrl },
-			update: {},
-		})
+		const review = await prisma.$transaction(async (transaction) => {
+			await reserveReviewQuota(transaction, userId)
+			const repository = await transaction.repository.upsert({
+				where: { userId_url: { userId, url: target.htmlUrl } },
+				create: { userId, name: target.fullName, url: target.htmlUrl },
+				update: {},
+			})
 
-		const review = await prisma.codeReview.create({
-			data: {
-				userId,
-				repositoryId: repository.id,
-				title: `Code review: ${target.fullName} (${branch})`,
-				description: `Automated review for ${target.fullName} on branch ${branch}`,
-				fileContent: '',
-				branch,
-				status: 'pending',
-			},
+			return transaction.codeReview.create({
+				data: {
+					userId,
+					repositoryId: repository.id,
+					title: `Code review: ${target.fullName} (${branch})`,
+					description: `Automated review for ${target.fullName} on branch ${branch}`,
+					fileContent: '',
+					branch,
+					status: 'pending',
+				},
+			})
 		})
 
 		try {
@@ -58,16 +62,26 @@ export class ReviewService {
 				{ jobId: `review-${review.id}` }
 			)
 		} catch (error) {
-			await prisma.codeReview.update({
-				where: { id: review.id },
-				data: {
-					status: 'failed',
-					errorMessage:
-						error instanceof Error
-							? `Unable to queue review: ${error.message}`.slice(0, 500)
-							: 'Unable to queue review',
-				},
-			})
+			try {
+				await prisma.$transaction(async (transaction) => {
+					await transaction.codeReview.update({
+						where: { id: review.id },
+						data: {
+							status: 'failed',
+							errorMessage:
+								error instanceof Error
+									? `Unable to queue review: ${error.message}`.slice(0, 500)
+									: 'Unable to queue review',
+						},
+					})
+					await releaseReviewQuota(transaction, userId)
+				})
+			} catch (persistenceError) {
+				throw new AggregateError(
+					[error, persistenceError],
+					'Unable to queue review and release its reserved quota'
+				)
+			}
 			throw error
 		}
 

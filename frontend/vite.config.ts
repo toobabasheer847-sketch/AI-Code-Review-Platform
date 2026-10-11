@@ -32,7 +32,7 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: process.env.NODE_ENV !== 'production',
-    minify: 'terser',
+    minify: 'esbuild',
     target: 'ES2020',
   },
 })

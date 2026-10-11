@@ -1,32 +1,31 @@
-# Frontend Build Stage
-FROM node:18-alpine AS builder
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Install dependencies
-COPY package*.json ./
-COPY frontend/package*.json ./frontend/
-RUN npm install
+COPY package.json package-lock.json ./
+COPY backend/package.json ./backend/package.json
+COPY frontend/package.json ./frontend/package.json
 
-# Copy source
+ENV HUSKY=0
+RUN npm ci
+
 COPY frontend ./frontend
 
-# Build
+ARG VITE_API_URL=http://localhost:3001/api
+ARG VITE_APP_NAME=AI-CodeGuard
+ARG VITE_STRIPE_PRO_PRICE_ID=
+ENV VITE_API_URL=$VITE_API_URL
+ENV VITE_APP_NAME=$VITE_APP_NAME
+ENV VITE_STRIPE_PRO_PRICE_ID=$VITE_STRIPE_PRO_PRICE_ID
+
 RUN npm run build --workspace=frontend
 
-# Production Stage
-FROM node:18-alpine
+FROM node:20-alpine
 
 WORKDIR /app
-
-# Install serve to run the frontend
-RUN npm install -g serve
-
-# Copy built files from builder
+RUN npm install --global serve
 COPY --from=builder /app/frontend/dist ./dist
 
-# Expose port
 EXPOSE 3000
 
-# Start application
 CMD ["serve", "-s", "dist", "-l", "3000"]

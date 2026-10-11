@@ -53,8 +53,15 @@ model Subscription {
   currentPeriodStart DateTime?
   currentPeriodEnd DateTime?
   cancelledAt   DateTime?
+  lastStripeEventCreatedAt DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+}
+
+model StripeEvent {
+  id        String   @id
+  type      String
+  createdAt DateTime @default(now())
 }
 
 enum Plan {

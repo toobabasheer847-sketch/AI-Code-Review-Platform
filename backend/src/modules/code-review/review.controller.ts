@@ -72,7 +72,14 @@ export class ReviewController {
 			res.json({ reviewId: review.id })
 		} catch (error) {
 			const message = error instanceof Error ? error.message : 'Failed to start review'
-			res.status(400).json({ error: message })
+			const status =
+				typeof error === 'object' &&
+				error !== null &&
+				'statusCode' in error &&
+				typeof error.statusCode === 'number'
+					? error.statusCode
+					: 400
+			res.status(status).json({ error: message })
 		}
 	}
 }
