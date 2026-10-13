@@ -8,6 +8,13 @@ import type {
 } from '../types'
 
 export const githubApi = {
+  disconnect: async (): Promise<{ message: string; providerRevoked: boolean }> => {
+    const response = await axiosInstance.delete<{ message: string; providerRevoked: boolean }>(
+      '/github/disconnect'
+    )
+    return response.data
+  },
+
   connect: async (): Promise<GitHubConnectResponse> => {
     const response = await axiosInstance.get<GitHubConnectResponse>('/github/connect')
     return response.data

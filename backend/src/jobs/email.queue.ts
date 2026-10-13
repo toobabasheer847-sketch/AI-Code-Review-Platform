@@ -3,30 +3,33 @@ import IORedis from 'ioredis'
 
 import { MailService } from '@/modules/email/mail.service'
 import { env } from '@/config/env'
+import logger from '@/utils/logger'
+import type { AccountEmailJob } from '@/modules/email/account-email.types'
+import type { ReviewCompletePayload } from '@/modules/email/email.types'
 
-let connection: any = null
-let queueInstance: any = null
+type EmailJobData =
+  | { type: 'review:complete'; payload: ReviewCompletePayload }
+  | AccountEmailJob
+
+let connection: IORedis | null = null
+let queueInstance: Queue<EmailJobData, void> | null = null
 let emailWorker: Worker | null = null
 
 function getConnection(): IORedis {
   if (!connection) {
-    connection = new (IORedis as unknown as {
-      new (url: string, options?: { maxRetriesPerRequest: number | null }): any;
-    })(env.REDIS_URL, {
-      maxRetriesPerRequest: null,
-    })
+    connection = new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null })
   }
-  return connection as IORedis
+  return connection
 }
 
-function getEmailQueue(): Queue {
-  queueInstance ??= new Queue('email', {
+function getEmailQueue(): Queue<EmailJobData, void> {
+  queueInstance ??= new Queue<EmailJobData, void>('email', {
     connection: getConnection(),
   })
-  return queueInstance as Queue
+  return queueInstance
 }
 
-export const emailQueue = new Proxy({} as Queue, {
+export const emailQueue = new Proxy({} as Queue<EmailJobData, void>, {
   get(_target, property, receiver) {
     const queue = getEmailQueue()
     const value = Reflect.get(queue, property, receiver)
@@ -40,7 +43,7 @@ export async function startEmailWorker(): Promise<void> {
   }
 
   const mailer = new MailService()
-  emailWorker = new Worker(
+  emailWorker = new Worker<EmailJobData, void>(
     'email',
     async (job) => {
       const { type, payload } = job.data
@@ -49,9 +52,15 @@ export async function startEmailWorker(): Promise<void> {
         case 'review:complete':
           await mailer.sendReviewComplete(payload)
           break
+        case 'auth:verify-email':
+          await mailer.sendEmailVerification(payload)
+          break
+        case 'auth:password-reset':
+          await mailer.sendPasswordReset(payload)
+          break
 
         default:
-          console.warn(`Unknown job type: ${type}`)
+          throw new Error('Unsupported email job type')
       }
     },
     {
@@ -60,15 +69,15 @@ export async function startEmailWorker(): Promise<void> {
   )
 
   emailWorker.on('completed', (job) => {
-    console.log(`Job ${job.id} completed`)
+    logger.info({ jobId: job.id }, 'Email job completed')
   })
 
-  emailWorker.on('failed', (job, err) => {
-    console.error(`Job ${job?.id} failed`, err)
+  emailWorker.on('failed', (job) => {
+    logger.error({ jobId: job?.id }, 'Email job failed')
   })
 
-  emailWorker.on('error', (err) => {
-    console.error('Worker Error:', err)
+  emailWorker.on('error', () => {
+    logger.error('Email worker error')
   })
 }
 

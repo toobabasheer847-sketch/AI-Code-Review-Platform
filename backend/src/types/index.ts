@@ -1,6 +1,7 @@
 export interface JWTPayload {
   userId: string
   email: string
+  tokenVersion?: number
 }
 
 export interface User {

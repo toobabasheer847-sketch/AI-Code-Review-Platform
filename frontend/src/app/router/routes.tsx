@@ -8,6 +8,9 @@ import { ProtectedRoute } from './ProtectedRoute'
 const LandingPage = lazy(() => import('@pages/LandingPage').then((m) => ({ default: m.default })))
 const LoginPage = lazy(() => import('@features/auth/pages/LoginPage').then((m) => ({ default: m.LoginPage })))
 const RegisterPage = lazy(() => import('@features/auth/pages/RegisterPage').then((m) => ({ default: m.RegisterPage })))
+const AccountActionPage = lazy(() =>
+  import('@features/auth/pages/AccountActionPage').then((m) => ({ default: m.AccountActionPage }))
+)
 const DashboardPage = lazy(() => import('@features/dashboard/pages/DashboardPage').then((m) => ({ default: m.DashboardPage })))
 const PricingPage = lazy(() => import('@features/billing/pages/PricingPage').then((m) => ({ default: m.PricingPage })))
 const BillingDashboard = lazy(() => import('@features/billing/pages/BillingDashboard').then((m) => ({ default: m.BillingDashboard })))
@@ -53,6 +56,30 @@ export const routes: RouteObject[] = [
     element: (
       <Suspense fallback={<LazyFallback />}>
         <RegisterPage />
+      </Suspense>
+    ),
+  },
+  {
+    path: '/verify-email',
+    element: (
+      <Suspense fallback={<LazyFallback />}>
+        <AccountActionPage action="verify" />
+      </Suspense>
+    ),
+  },
+  {
+    path: '/forgot-password',
+    element: (
+      <Suspense fallback={<LazyFallback />}>
+        <AccountActionPage action="forgot" />
+      </Suspense>
+    ),
+  },
+  {
+    path: '/reset-password',
+    element: (
+      <Suspense fallback={<LazyFallback />}>
+        <AccountActionPage action="reset" />
       </Suspense>
     ),
   },

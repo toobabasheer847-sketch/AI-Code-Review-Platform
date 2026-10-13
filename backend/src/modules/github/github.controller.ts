@@ -49,9 +49,8 @@ export class GitHubController {
       })
 
       res.json({ url: authorizeUrl })
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to connect GitHub'
-      res.status(500).json({ error: message })
+    } catch {
+      res.status(500).json({ error: 'Failed to connect GitHub' })
     }
   }
 
@@ -75,9 +74,25 @@ export class GitHubController {
       res.clearCookie('github_oauth_state')
       res.clearCookie('github_oauth_user')
       res.redirect(`${env.FRONTEND_URL}/github/repos?connected=true`)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'GitHub callback failed'
-      res.status(400).json({ error: message })
+    } catch {
+      res.status(400).json({ error: 'GitHub authorization could not be completed' })
+    }
+  }
+
+  async disconnect(req: Request, res: Response): Promise<void> {
+    const userId = req.user?.userId
+    if (!userId) {
+      res.status(401).json({ error: 'Unauthorized' })
+      return
+    }
+    try {
+      const result = await githubService.disconnectAccount(userId)
+      res.json({
+        message: 'GitHub was disconnected. Reviews and repository records were retained.',
+        providerRevoked: result.providerRevoked,
+      })
+    } catch {
+      res.status(500).json({ error: 'Unable to disconnect GitHub' })
     }
   }
 

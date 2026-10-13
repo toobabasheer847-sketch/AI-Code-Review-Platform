@@ -19,12 +19,14 @@ model User {
   githubId      String?         @unique
   githubAccount GitHubAccount?
   isVerified    Boolean         @default(false)
+  tokenVersion  Int             @default(0)
   subscription  Subscription?
   repositories  Repository[]
   reviews       CodeReview[]
   chatConversations ChatConversation[]
   usages         Usage[]
   reviewAnalytics ReviewAnalytics[]
+  accountTokens AccountToken[]
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
@@ -40,6 +42,24 @@ model GitHubAccount {
   accessToken String
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+enum AccountTokenType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+
+model AccountToken {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String           @unique
+  type      AccountTokenType
+  expiresAt DateTime
+  createdAt DateTime         @default(now())
+
+  @@index([userId, type])
+  @@index([expiresAt])
 }
 
 model Subscription {

@@ -167,6 +167,11 @@ export const LoginPage = (): JSX.Element => {
               Sign up
             </Link>
           </p>
+          <p className="mt-3 text-center text-sm">
+            <Link to="/forgot-password" className="text-indigo-400 hover:text-indigo-300">
+              Forgot password?
+            </Link>
+          </p>
         </div>
       </div>
     </div>

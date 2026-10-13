@@ -92,6 +92,14 @@ export class BillingService {
       if (!metadataUserId) {
         throw new Error(`No local user mapping found for Stripe customer ${customerId}`)
       }
+      const localUser = await prisma.user.findUnique({
+        where: { id: metadataUserId },
+        select: { id: true },
+      })
+      if (!localUser) {
+        await prisma.stripeEvent.create({ data: { id: event.id, type: event.type } })
+        return
+      }
     }
 
     try {

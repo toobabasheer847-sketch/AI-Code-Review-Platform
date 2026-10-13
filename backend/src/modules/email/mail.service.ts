@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer'
 import { env } from '../../config/env.js'
 import { ReviewCompletePayload } from './email.types.js'
+import type { AccountEmailPayload } from './account-email.types.js'
 import fs from 'fs'
 import path from 'path'
 
@@ -54,5 +55,25 @@ export class MailService {
 		})
 
 		return info
+	}
+
+	public async sendEmailVerification(payload: AccountEmailPayload) {
+		const url = escapeHtml(payload.url)
+		return this.transporter.sendMail({
+			from: env.MAIL_FROM,
+			to: payload.to,
+			subject: 'Verify your AI CodeGuard email',
+			html: `<p>Verify your email address to confirm ownership of your account.</p><p><a href="${url}">Verify email</a></p><p>This link expires in 24 hours. If you did not create this account, you can ignore this message.</p>`,
+		})
+	}
+
+	public async sendPasswordReset(payload: AccountEmailPayload) {
+		const url = escapeHtml(payload.url)
+		return this.transporter.sendMail({
+			from: env.MAIL_FROM,
+			to: payload.to,
+			subject: 'Reset your AI CodeGuard password',
+			html: `<p>A password reset was requested for your account.</p><p><a href="${url}">Reset password</a></p><p>This link expires in 30 minutes. If you did not request a reset, you can ignore this message.</p>`,
+		})
 	}
 }

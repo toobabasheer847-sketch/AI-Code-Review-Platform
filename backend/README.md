@@ -78,6 +78,37 @@ only when the pull request remains open at the reviewed commit. GitHub App
 installation authorization and live webhook delivery are not configured by
 this project.
 
+### Authentication and account lifecycle
+
+Generate the updated Prisma Client and apply the
+`20261013231700_auth_account_lifecycle` migration before deploying this version.
+The migration adds a session token version and single-use account-action tokens;
+it is not applied automatically by the application.
+
+Configure `MAIL_HOST`, `MAIL_PORT`, `MAIL_USER`, `MAIL_PASSWORD`, and `MAIL_FROM`
+for verification and password-reset email delivery, and set `FRONTEND_URL` to
+the public frontend origin. Verification links expire after 24 hours and
+password-reset links after 30 minutes. Tokens are random, stored only as
+SHA-256 hashes, and consumed once. Reset requests return the same response for
+known and unknown email addresses. Authenticated account-security actions are
+rate-limited to five requests per IP per 15 minutes.
+
+Email verification is available but is not currently required to sign in.
+`POST /api/auth/logout` increments the user's token version, invalidating
+existing bearer tokens; middleware checks that version and account existence on
+each authenticated request. Password reset also invalidates existing tokens.
+
+`POST /api/auth/github/disconnect` removes the locally stored GitHub credential
+and attempts provider revocation using `GITHUB_CLIENT_ID` and
+`GITHUB_CLIENT_SECRET`. Local disconnect still succeeds if provider revocation
+cannot be confirmed, and existing review history is retained.
+`DELETE /api/auth/account` requires the current password and the exact
+confirmation `DELETE`. Account deletion is blocked while a Pro subscription is
+active or remains entitled through its paid period; cancel it first. The
+application does not cancel/delete the Stripe-side subscription or customer
+record as part of account deletion. Account-owned data with cascading user
+relations is removed; global Stripe event records are retained.
+
 ### Environment Variables
 
 Create `.env` in the backend directory with database connection:
@@ -161,14 +192,13 @@ All endpoints prefixed with `/api`
 - `POST /auth/register` - Register new user
 - `POST /auth/logout` - Logout user
 
-### To be implemented:
-- User management
-- Repository management
-- Code reviews
-- AI analysis
-- Chat functionality
-- Billing integration
-- Email notifications
+### Account lifecycle
+- `POST /auth/verify-email` - Verify email using a one-time token
+- `POST /auth/password-reset/request` - Request a password-reset email
+- `POST /auth/password-reset/confirm` - Set a new password using a one-time token
+- `POST /auth/verification-email` - Resend verification (authenticated)
+- `POST /auth/github/disconnect` - Disconnect GitHub (authenticated)
+- `DELETE /auth/account` - Delete the authenticated account after confirmation
 
 ## Docker
 

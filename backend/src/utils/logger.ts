@@ -3,6 +3,11 @@ import { isDevelopment } from '@/config/env'
 
 const logger = pino({
   level: isDevelopment ? 'debug' : 'info',
+  redact: [
+    'req.headers.authorization',
+    'req.headers.cookie',
+    'res.headers["set-cookie"]',
+  ],
   transport: isDevelopment
     ? {
         target: 'pino-pretty',

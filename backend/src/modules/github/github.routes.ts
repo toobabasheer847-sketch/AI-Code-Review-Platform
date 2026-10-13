@@ -15,6 +15,9 @@ const githubLimiter = rateLimit({
 })
 
 router.get('/connect', authMiddleware, githubLimiter, (req, res) => controller.connect(req, res))
+router.delete('/disconnect', authMiddleware, githubLimiter, (req, res) =>
+  controller.disconnect(req, res)
+)
 router.get('/callback', githubLimiter, (req, res) => controller.callback(req, res))
 router.get('/repos', authMiddleware, githubLimiter, (req, res) => controller.getRepos(req, res))
 router.get('/repos/:owner/:repo/files', authMiddleware, githubLimiter, (req, res) => controller.getRepoFiles(req, res))

@@ -36,8 +36,28 @@ export const createApp = (): Express => {
     credentials: true,
   }))
 
-  app.use(pinoHttp({ logger }))
-  app.use(morgan('combined'))
+  app.use(
+    pinoHttp({
+      logger,
+      serializers: {
+        req(request) {
+          return {
+            method: request.method,
+            url: request.url?.split('?')[0],
+            remoteAddress: request.remoteAddress,
+          }
+        },
+      },
+    })
+  )
+  app.use(
+    morgan('combined', {
+      skip: (req) =>
+        req.path.endsWith('/github/callback') ||
+        req.path === '/api/auth/verify-email' ||
+        req.path === '/api/auth/password-reset/confirm',
+    })
+  )
 
   app.use('/api/billing/webhook', express.raw({ type: 'application/json', limit: '1mb' }))
   app.use('/api/webhooks/github', express.raw({ type: 'application/json', limit: '1mb' }))

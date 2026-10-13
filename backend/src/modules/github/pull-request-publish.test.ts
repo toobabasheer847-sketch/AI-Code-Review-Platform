@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import axios from 'axios'
 import test from 'node:test'
+import { env } from '@/config/env'
+import { encrypt } from '@/utils/crypto'
 import {
   GitHubService,
   type PullRequestFinding,
@@ -170,4 +172,76 @@ test('propagates GitHub comment publishing failures for worker retry', async () 
     ),
     /GitHub API rate limit/
   )
+})
+
+test('disconnect revokes OAuth when configured and removes the local credential', async () => {
+  const previousId = env.GITHUB_CLIENT_ID
+  const previousSecret = env.GITHUB_CLIENT_SECRET
+  env.GITHUB_CLIENT_ID = 'mock-client-id'
+  env.GITHUB_CLIENT_SECRET = 'mock-client-secret'
+  let removed = false
+  let revokeRequest: { url: string; data: string; username?: string; password?: string } | null = null
+  const api = axios.create({
+    adapter: async (config) => {
+      revokeRequest = {
+        url: config.url ?? '',
+        data: String(config.data),
+        username: config.auth?.username,
+        password: config.auth?.password,
+      }
+      return { data: '', status: 204, statusText: 'No Content', headers: {}, config }
+    },
+  })
+  const github = new GitHubService(api, undefined, {
+    async findCredential() {
+      return { id: 'account-1', accessToken: encrypt('mock-github-token') }
+    },
+    async removeCredential(userId, accountId) {
+      assert.equal(userId, 'user-1')
+      assert.equal(accountId, 'account-1')
+      removed = true
+    },
+  })
+
+  try {
+    assert.deepEqual(await github.disconnectAccount('user-1'), { providerRevoked: true })
+    assert.equal(removed, true)
+    assert.ok(revokeRequest)
+    assert.match(revokeRequest.url, /\/applications\/mock-client-id\/grant$/)
+    assert.equal(revokeRequest.username, 'mock-client-id')
+    assert.equal(revokeRequest.password, 'mock-client-secret')
+    assert.match(revokeRequest.data, /mock-github-token/)
+  } finally {
+    env.GITHUB_CLIENT_ID = previousId
+    env.GITHUB_CLIENT_SECRET = previousSecret
+  }
+})
+
+test('disconnect removes local credential even when GitHub revocation fails', async () => {
+  const previousId = env.GITHUB_CLIENT_ID
+  const previousSecret = env.GITHUB_CLIENT_SECRET
+  env.GITHUB_CLIENT_ID = 'mock-client-id'
+  env.GITHUB_CLIENT_SECRET = 'mock-client-secret'
+  let removed = false
+  const api = axios.create({
+    adapter: async () => {
+      throw new Error('mock provider failure')
+    },
+  })
+  const github = new GitHubService(api, undefined, {
+    async findCredential() {
+      return { id: 'account-1', accessToken: encrypt('mock-github-token') }
+    },
+    async removeCredential() {
+      removed = true
+    },
+  })
+
+  try {
+    assert.deepEqual(await github.disconnectAccount('user-1'), { providerRevoked: false })
+    assert.equal(removed, true)
+  } finally {
+    env.GITHUB_CLIENT_ID = previousId
+    env.GITHUB_CLIENT_SECRET = previousSecret
+  }
 })

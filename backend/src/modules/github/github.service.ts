@@ -194,6 +194,26 @@ interface GitHubRepositoryResponse {
   html_url: string
 }
 
+interface GitHubAccountLifecycleStore {
+  findCredential(userId: string): Promise<{ id: string; accessToken: string } | null>
+  removeCredential(userId: string, accountId: string): Promise<void>
+}
+
+const prismaGitHubAccountLifecycleStore: GitHubAccountLifecycleStore = {
+  async findCredential(userId) {
+    return prisma.gitHubAccount.findUnique({
+      where: { userId },
+      select: { id: true, accessToken: true },
+    })
+  },
+  async removeCredential(userId, accountId) {
+    await prisma.$transaction([
+      prisma.gitHubAccount.delete({ where: { id: accountId } }),
+      prisma.user.update({ where: { id: userId }, data: { githubId: null } }),
+    ])
+  },
+}
+
 export function getAddedPullRequestLines(patch?: string): number[] {
   if (!patch) return []
 
@@ -291,7 +311,9 @@ function parsePullRequestResponse(
 export class GitHubService {
   constructor(
     private readonly api: AxiosInstance = axios,
-    private readonly accessTokenProvider?: (userId: string) => Promise<string>
+    private readonly accessTokenProvider?: (userId: string) => Promise<string>,
+    private readonly accountLifecycleStore: GitHubAccountLifecycleStore =
+      prismaGitHubAccountLifecycleStore
   ) {}
 
   private getAccessToken(userId: string): Promise<string> {
@@ -400,6 +422,37 @@ export class GitHubService {
       })
     }
     return token
+  }
+
+  async disconnectAccount(userId: string): Promise<{ providerRevoked: boolean }> {
+    const account = await this.accountLifecycleStore.findCredential(userId)
+    if (!account) return { providerRevoked: false }
+
+    const { plaintext: accessToken } = decryptWithRotation(account.accessToken)
+    const providerRevoked = await this.revokeAccessToken(accessToken)
+
+    await this.accountLifecycleStore.removeCredential(userId, account.id)
+    return { providerRevoked }
+  }
+
+  async revokeAccessToken(accessToken: string): Promise<boolean> {
+    if (!env.GITHUB_CLIENT_ID || !env.GITHUB_CLIENT_SECRET) return false
+    try {
+      await this.api.delete(
+        `${GITHUB_API_BASE}/applications/${encodeURIComponent(env.GITHUB_CLIENT_ID)}/grant`,
+        {
+          auth: {
+            username: env.GITHUB_CLIENT_ID,
+            password: env.GITHUB_CLIENT_SECRET,
+          },
+          data: { access_token: accessToken },
+          timeout: 10_000,
+        }
+      )
+      return true
+    } catch {
+      return false
+    }
   }
 
   async validateReviewTarget(
