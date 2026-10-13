@@ -50,6 +50,25 @@ before deploying with:
 npx prisma migrate deploy --schema src/prisma/schema.prisma
 ```
 
+### GitHub pull request webhooks
+
+Apply the database migration and configure a GitHub repository webhook pointing
+to `https://<your-host>/api/webhooks/github`. Select `application/json`, set a
+high-entropy webhook secret, and configure the same value as
+`GITHUB_WEBHOOK_SECRET` in the backend environment. Subscribe to Pull requests;
+the service processes `opened`, `synchronize`, and `reopened` actions and safely
+ignores unsupported events/actions.
+
+The webhook does not trust the event's sender as an application user. It only
+queues a review when the repository is already linked to an application account
+and that account's connected GitHub OAuth token can access the pull request.
+OAuth permissions must allow reading repository contents and pull-request
+metadata and creating pull-request reviews. Reviews are queued through Redis;
+findings are posted as inline review comments only for valid added lines and
+only when the pull request remains open at the reviewed commit. GitHub App
+installation authorization and live webhook delivery are not configured by
+this project.
+
 ### Environment Variables
 
 Create `.env` in the backend directory with database connection:

@@ -8,6 +8,19 @@ export interface ReviewJobRecord {
   status: string
   repository: { name: string }
   user: { email: string }
+  source?: string
+  pullRequestNumber?: number | null
+  pullRequestUrl?: string | null
+  headSha?: string | null
+  changedLines?: unknown
+  findings?: Array<{
+    file: string
+    line: number
+    severity: string
+    category: string
+    message: string
+    suggestions: string[]
+  }>
   description?: string | null
   analytics?: { qualityScore: number; totalIssues: number } | null
 }
@@ -25,7 +38,12 @@ export interface ReviewJobStore {
 
 export interface ReviewPipelineDependencies {
   store: ReviewJobStore
-  fetchFiles(userId: string, repository: string, branch: string): Promise<ReviewSourceFile[]>
+  fetchFiles(
+    userId: string,
+    repository: string,
+    branch: string,
+    review?: ReviewJobRecord
+  ): Promise<ReviewSourceFile[]>
   analyze(files: ReviewSourceFile[]): Promise<ReviewAnalysis>
   notify(review: ReviewJobRecord, analysis?: ReviewAnalysis): Promise<void>
 }
@@ -56,7 +74,8 @@ export async function processReview(
     const files = await dependencies.fetchFiles(
       review.userId,
       review.repository.name,
-      review.branch
+      review.branch,
+      review
     )
     analysis = await dependencies.analyze(files)
     await dependencies.store.complete(review, analysis, files)

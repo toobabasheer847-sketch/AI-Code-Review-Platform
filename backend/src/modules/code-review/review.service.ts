@@ -20,6 +20,11 @@ const reviewRelations = {
 	chatConversation: {
 		include: { messages: { orderBy: { createdAt: 'asc' as const } } },
 	},
+	webhookDeliveries: {
+		select: { status: true },
+		orderBy: { createdAt: 'desc' as const },
+		take: 1,
+	},
 }
 
 async function findOwnedReview(userId: string, reviewId: string) {
@@ -69,6 +74,11 @@ export class ReviewService {
 				repository: true,
 				findings: true,
 				analytics: true,
+				webhookDeliveries: {
+					select: { status: true },
+					orderBy: { createdAt: 'desc' },
+					take: 1,
+				},
 			},
 			orderBy: { createdAt: 'desc' },
 		})
@@ -79,6 +89,8 @@ export class ReviewService {
 			score: r.analytics?.qualityScore ?? null,
 			issues: r.findings.length,
 			status: r.status,
+			source: r.source,
+			pullRequestNumber: r.pullRequestNumber,
 			createdAt: r.createdAt,
 		}))
 	}
@@ -160,6 +172,10 @@ export class ReviewService {
 			status: review.status,
 			branch: review.branch,
 			errorMessage: review.errorMessage,
+			source: review.source,
+			pullRequestNumber: review.pullRequestNumber,
+			pullRequestUrl: review.pullRequestUrl,
+			pullRequestStatus: review.webhookDeliveries[0]?.status ?? null,
 			createdAt: review.createdAt,
 		}
 	}

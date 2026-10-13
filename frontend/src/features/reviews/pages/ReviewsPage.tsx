@@ -101,6 +101,11 @@ export const ReviewsPage = (): JSX.Element => {
                     <div className="flex items-center justify-between gap-4">
                       <div>
                         <div className="text-lg font-semibold text-white">{r.repository}</div>
+                        {r.source === 'PULL_REQUEST' && (
+                          <div className="mt-1 text-xs text-indigo-300">
+                            Pull request #{r.pullRequestNumber}
+                          </div>
+                        )}
                         <div className="mt-1 text-sm text-slate-400">
                           {new Date(r.createdAt).toLocaleString()}
                         </div>

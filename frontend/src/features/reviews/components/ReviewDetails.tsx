@@ -58,6 +58,26 @@ export const ReviewDetails = ({ review }: { review: ReviewDetail }): JSX.Element
           <div>
             <h2 className="text-3xl font-bold text-white">{repoName}</h2>
             <p className="mt-2 text-sm text-slate-400">{review.repository.name}</p>
+            {review.source === 'PULL_REQUEST' && (
+              <div className="mt-2 space-y-1 text-sm text-slate-300">
+                <p>Pull request #{review.pullRequestNumber}</p>
+                {review.pullRequestUrl?.startsWith('https://github.com/') && (
+                  <a
+                    href={review.pullRequestUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-indigo-300 hover:text-indigo-200"
+                  >
+                    Open on GitHub
+                  </a>
+                )}
+                {review.pullRequestStatus && (
+                  <p className="text-xs capitalize text-slate-400">
+                    GitHub comments: {review.pullRequestStatus.replace(/-/g, ' ')}
+                  </p>
+                )}
+              </div>
+            )}
             <p className="mt-1 text-sm text-slate-400">
               {new Date(review.createdAt).toLocaleString()}
             </p>

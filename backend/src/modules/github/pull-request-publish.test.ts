@@ -1,0 +1,160 @@
+import assert from 'node:assert/strict'
+import axios from 'axios'
+import test from 'node:test'
+import {
+  GitHubService,
+  type PullRequestFinding,
+} from './github.service'
+
+const pullRequest = {
+  number: 7,
+  state: 'open',
+  html_url: 'https://github.com/owner/repository/pull/7',
+  head: { sha: 'a'.repeat(40), ref: 'feature', repo: { full_name: 'owner/repository' } },
+  base: { ref: 'main', repo: { full_name: 'owner/repository' } },
+}
+
+const findings: PullRequestFinding[] = [
+  {
+    file: 'src/app.ts',
+    line: 10,
+    severity: 'error',
+    category: 'security',
+    message: 'Validate the input before use.',
+    suggestions: ['Reject invalid values.'],
+  },
+  {
+    file: 'src/app.ts',
+    line: 4,
+    severity: 'warning',
+    category: 'quality',
+    message: 'This line was not changed by the pull request.',
+    suggestions: [],
+  },
+]
+
+function createService(options: {
+  existingMarker?: boolean
+  failPost?: boolean
+} = {}) {
+  const calls: Array<{ method: string; url: string; data?: unknown }> = []
+  const api = axios.create({
+    adapter: async (config) => {
+      const method = config.method?.toUpperCase() ?? 'GET'
+      const url = config.url ?? ''
+      calls.push({ method, url, data: config.data })
+      if (method === 'POST' && options.failPost) {
+        throw new Error('GitHub API rate limit')
+      }
+
+      let data: unknown = []
+      if (url.includes('/pulls/7') && !url.includes('/reviews')) data = pullRequest
+      if (url.includes('/reviews') && options.existingMarker) {
+        data = [{ body: '<!-- ai-codeguard-review:review-1 -->' }]
+      }
+      return {
+        data,
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      }
+    },
+  })
+  const github = new GitHubService(api, async () => 'mock-oauth-token')
+  return { github, calls }
+}
+
+test('publishes only findings on valid added lines and includes a retry marker', async () => {
+  const { github, calls } = createService()
+  const result = await github.publishPullRequestFindings(
+    'user-1',
+    'owner/repository',
+    7,
+    pullRequest.head.sha,
+    'review-1',
+    findings,
+    { 'src/app.ts': [10] }
+  )
+
+  assert.equal(result, 'published')
+  const post = calls.find((call) => call.method === 'POST')
+  assert.ok(post)
+  const payload = JSON.parse(post.data as string) as {
+    event: string
+    commit_id: string
+    body: string
+    comments: Array<{ path: string; line: number; side: string; body: string }>
+  }
+  assert.equal(payload.event, 'COMMENT')
+  assert.equal(payload.commit_id, pullRequest.head.sha)
+  assert.match(payload.body, /ai-codeguard-review:review-1/)
+  assert.deepEqual(
+    payload.comments.map(({ path, line, side }) => ({ path, line, side })),
+    [{ path: 'src/app.ts', line: 10, side: 'RIGHT' }]
+  )
+  assert.match(payload.comments[0].body, /Validate the input before use/)
+})
+
+test('does not republish an existing review marker or comment on stale commits', async () => {
+  const duplicate = createService({ existingMarker: true })
+  assert.equal(
+    await duplicate.github.publishPullRequestFindings(
+      'user-1',
+      'owner/repository',
+      7,
+      pullRequest.head.sha,
+      'review-1',
+      findings,
+      { 'src/app.ts': [10] }
+    ),
+    'already-published'
+  )
+  assert.equal(duplicate.calls.some((call) => call.method === 'POST'), false)
+
+  const stale = createService()
+  assert.equal(
+    await stale.github.publishPullRequestFindings(
+      'user-1',
+      'owner/repository',
+      7,
+      'b'.repeat(40),
+      'review-2',
+      findings,
+      { 'src/app.ts': [10] }
+    ),
+    'stale'
+  )
+  assert.equal(stale.calls.some((call) => call.url.includes('/reviews')), false)
+})
+
+test('returns without publishing findings that do not map to changed lines', async () => {
+  const { github, calls } = createService()
+  const result = await github.publishPullRequestFindings(
+    'user-1',
+    'owner/repository',
+    7,
+    pullRequest.head.sha,
+    'review-1',
+    findings,
+    { 'src/app.ts': [3] }
+  )
+  assert.equal(result, 'no-inline-findings')
+  assert.equal(calls.some((call) => call.url.includes('/reviews')), false)
+})
+
+test('propagates GitHub comment publishing failures for worker retry', async () => {
+  const { github } = createService({ failPost: true })
+  await assert.rejects(
+    github.publishPullRequestFindings(
+      'user-1',
+      'owner/repository',
+      7,
+      pullRequest.head.sha,
+      'review-1',
+      findings,
+      { 'src/app.ts': [10] }
+    ),
+    /GitHub API rate limit/
+  )
+})

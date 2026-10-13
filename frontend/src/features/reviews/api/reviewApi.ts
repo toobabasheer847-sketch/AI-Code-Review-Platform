@@ -6,6 +6,8 @@ export interface ReviewSummary {
   score: number | null
   issues: number
   status: 'pending' | 'running' | 'completed' | 'failed' | string
+  source?: 'MANUAL' | 'PULL_REQUEST'
+  pullRequestNumber?: number | null
   createdAt: string
 }
 
@@ -34,6 +36,10 @@ export interface ReviewDetail {
   status: 'pending' | 'running' | 'completed' | 'failed' | string
   branch: string
   errorMessage?: string | null
+  source?: 'MANUAL' | 'PULL_REQUEST'
+  pullRequestNumber?: number | null
+  pullRequestUrl?: string | null
+  pullRequestStatus?: string | null
   createdAt: string
 }
 

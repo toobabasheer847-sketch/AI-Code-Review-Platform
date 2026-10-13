@@ -13,7 +13,12 @@ export interface ReviewPersistenceOperations {
     reviewId: string,
     analytics: ReviewAnalysis['analytics']
   ): Promise<void>
-  completeReview(reviewId: string, summary: string, fileContent: string): Promise<void>
+  completeReview(
+    reviewId: string,
+    summary: string,
+    fileContent: string,
+    changedLines: Record<string, number[]> | null
+  ): Promise<void>
 }
 
 export async function persistReviewAnalysis(
@@ -31,5 +36,15 @@ export async function persistReviewAnalysis(
     )
   }
   await operations.upsertAnalytics(review.userId, review.id, analysis.analytics)
-  await operations.completeReview(review.id, analysis.summary, fileContent)
+  const changedFiles = Object.fromEntries(
+    files
+      .filter((file): file is typeof file & { changedLines: number[] } => file.changedLines !== undefined)
+      .map((file) => [file.path, file.changedLines])
+  )
+  await operations.completeReview(
+    review.id,
+    analysis.summary,
+    fileContent,
+    Object.keys(changedFiles).length > 0 ? changedFiles : null
+  )
 }

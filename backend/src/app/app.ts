@@ -40,6 +40,7 @@ export const createApp = (): Express => {
   app.use(morgan('combined'))
 
   app.use('/api/billing/webhook', express.raw({ type: 'application/json', limit: '1mb' }))
+  app.use('/api/webhooks/github', express.raw({ type: 'application/json', limit: '1mb' }))
   app.use(express.json({ limit: '10mb' }))
   app.use(express.urlencoded({ limit: '10mb', extended: true }))
 

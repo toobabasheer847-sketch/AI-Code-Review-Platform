@@ -404,6 +404,7 @@ test('returns persisted findings for an owned review', async () => {
     ],
     analytics: null,
     chatConversation: null,
+    webhookDeliveries: [],
   }
   const service = new ReviewService({
     reviewAccess: {

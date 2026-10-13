@@ -1,4 +1,5 @@
 import { Worker } from 'bullmq'
+import { Prisma } from '@prisma/client'
 import IORedis from 'ioredis'
 import { env } from '@/config/env'
 import { prisma } from '@/config/database'
@@ -21,6 +22,20 @@ const connection = new IORedis(env.REDIS_URL, {
 })
 const githubService = new GitHubService()
 
+function parseChangedLines(value: unknown): Record<string, number[]> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return {}
+  const result: Record<string, number[]> = {}
+  for (const [path, lines] of Object.entries(value)) {
+    if (
+      Array.isArray(lines) &&
+      lines.every((line): line is number => Number.isSafeInteger(line) && line > 0)
+    ) {
+      result[path] = lines
+    }
+  }
+  return result
+}
+
 const store: ReviewJobStore = {
   async findForProcessing(reviewId): Promise<ReviewJobRecord | null> {
     const review = await prisma.codeReview.findUnique({
@@ -29,6 +44,16 @@ const store: ReviewJobStore = {
         repository: { select: { name: true } },
         user: { select: { email: true } },
         analytics: { select: { qualityScore: true, totalIssues: true } },
+        findings: {
+          select: {
+            file: true,
+            line: true,
+            severity: true,
+            category: true,
+            message: true,
+            suggestions: true,
+          },
+        },
       },
     })
     return review
@@ -62,7 +87,7 @@ const store: ReviewJobStore = {
               update: analytics,
             })
           },
-          async completeReview(reviewId, summary, fileContent) {
+          async completeReview(reviewId, summary, fileContent, changedLines) {
             await transaction.codeReview.update({
               where: { id: reviewId },
               data: {
@@ -70,6 +95,7 @@ const store: ReviewJobStore = {
                 errorMessage: null,
                 description: summary,
                 fileContent,
+                changedLines: changedLines ?? Prisma.JsonNull,
               },
             })
           },
@@ -82,9 +108,15 @@ const store: ReviewJobStore = {
   },
 
   async markFailed(reviewId, message): Promise<void> {
-    await prisma.codeReview.update({
-      where: { id: reviewId },
-      data: { status: 'failed', errorMessage: message },
+    await prisma.$transaction(async (transaction) => {
+      await transaction.codeReview.update({
+        where: { id: reviewId },
+        data: { status: 'failed', errorMessage: message },
+      })
+      await transaction.gitHubWebhookDelivery.updateMany({
+        where: { reviewId },
+        data: { status: 'failed', errorMessage: message },
+      })
     })
   },
 }
@@ -94,10 +126,58 @@ const worker = new Worker<ReviewJobData>(
   async (job) => {
     await processReview(job.data.reviewId, {
       store,
-      fetchFiles: (userId, repository, branch) =>
-        githubService.fetchReviewFiles(userId, repository, branch),
+      fetchFiles: (userId, repository, branch, review) =>
+        review?.source === 'PULL_REQUEST' &&
+        review.pullRequestNumber &&
+        review.headSha
+          ? githubService.fetchPullRequestFiles(
+              userId,
+              repository,
+              review.pullRequestNumber,
+              review.headSha
+            )
+          : githubService.fetchReviewFiles(userId, repository, branch),
       analyze: analyzeCode,
       async notify(review, analysis): Promise<void> {
+        if (
+          review.source === 'PULL_REQUEST' &&
+          review.pullRequestNumber &&
+          review.headSha
+        ) {
+          try {
+            const publication = await githubService.publishPullRequestFindings(
+              review.userId,
+              review.repository.name,
+              review.pullRequestNumber,
+              review.headSha,
+              review.id,
+              analysis?.findings ?? review.findings ?? [],
+              parseChangedLines(review.changedLines)
+            )
+            await prisma.gitHubWebhookDelivery.updateMany({
+              where: { reviewId: review.id },
+              data: {
+                status:
+                  publication === 'stale'
+                    ? 'stale'
+                    : publication === 'no-inline-findings'
+                      ? 'completed-no-inline-findings'
+                      : 'completed',
+                errorMessage: null,
+              },
+            })
+          } catch (error) {
+            await prisma.gitHubWebhookDelivery.updateMany({
+              where: { reviewId: review.id },
+              data: {
+                status: 'publishing-failed',
+                errorMessage: 'GitHub review comments could not be published',
+              },
+            })
+            throw error
+          }
+        }
+
         await emailQueue.add(
           'send-review-complete',
           {
@@ -134,15 +214,18 @@ const worker = new Worker<ReviewJobData>(
 )
 
 worker.on('failed', (job, error) => {
-  logger.error({ reviewId: job?.data.reviewId, error }, 'Code review job failed')
+  logger.error(
+    { reviewId: job?.data.reviewId, errorMessage: error.message },
+    'Code review job failed'
+  )
 })
-worker.on('error', (error) => {
-  logger.error({ error }, 'Code review worker error')
+worker.on('error', () => {
+  logger.error('Code review worker error')
 })
 
 export async function startReviewWorker(): Promise<void> {
-  void worker.run().catch((error: unknown) => {
-    logger.error({ error }, 'Code review worker stopped unexpectedly')
+  void worker.run().catch(() => {
+    logger.error('Code review worker stopped unexpectedly')
   })
 }
 
