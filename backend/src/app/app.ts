@@ -7,19 +7,12 @@ import rateLimit from 'express-rate-limit'
 import { env } from '@/config/env'
 import logger from '@/utils/logger'
 import { errorMiddleware } from '@/middleware/error.middleware'
-import authRoutes from '@/modules/auth/auth.routes'
-import githubRoutes from '@/modules/github/github.routes'
-import reviewRoutes from '@/modules/code-review/review.routes'
-import billingRoutes from '@/modules/billing/billing.routes'
-// Import routes when ready
-// import userRoutes from '@/modules/users/user.routes'
-// import repositoryRoutes from '@/modules/repositories/repository.routes'
-// import reviewRoutes from '@/modules/code-review/review.routes'
+import { createApiRoutes } from '@/routes'
 
 // Rate limiting middleware
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
+  windowMs: 15 * 60 * 1000,
+  max: 100,
   message: 'Too many requests from this IP, please try again later',
   standardHeaders: true,
   legacyHeaders: false,
@@ -27,7 +20,7 @@ const limiter = rateLimit({
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 5, // Limit login attempts
+  max: 5,
   message: 'Too many login attempts, please try again later',
   skipSuccessfulRequests: true,
 })
@@ -35,17 +28,14 @@ const authLimiter = rateLimit({
 export const createApp = (): Express => {
   const app = express()
 
-  // Trust proxy - important for rate limiting behind reverse proxy
   app.set('trust proxy', 1)
 
-  // Security middleware
   app.use(helmet())
   app.use(cors({
     origin: env.FRONTEND_URL,
     credentials: true,
   }))
 
-  // Logging middleware
   app.use(pinoHttp({ logger }))
   app.use(morgan('combined'))
 
@@ -53,31 +43,21 @@ export const createApp = (): Express => {
   app.use(express.json({ limit: '10mb' }))
   app.use(express.urlencoded({ limit: '10mb', extended: true }))
 
-  // Rate limiting
   app.use('/api/', limiter)
   app.use('/api/auth/login', authLimiter)
   app.use('/api/auth/register', authLimiter)
 
-  // Health check endpoint
   app.get('/health', (_req, res) => {
-    res.json({ 
-      status: 'ok', 
+    res.json({
+      status: 'ok',
       message: 'AI-CodeGuard API running',
       timestamp: new Date().toISOString(),
       environment: env.NODE_ENV,
     })
   })
 
-  // API Routes
-  app.use('/api/auth', authRoutes)
-  app.use('/api/github', githubRoutes)
-  app.use('/api/auth/github', githubRoutes)
-  // app.use('/api/users', userRoutes)
-  // app.use('/api/repositories', repositoryRoutes)
-  app.use('/api/reviews', reviewRoutes)
-  app.use('/api/billing', billingRoutes)
+  app.use('/api', createApiRoutes())
 
-  // Error handling middleware (must be last)
   app.use(errorMiddleware)
 
   return app

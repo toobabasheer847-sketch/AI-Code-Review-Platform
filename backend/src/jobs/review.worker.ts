@@ -9,6 +9,7 @@ import {
   type ReviewJobRecord,
   type ReviewJobStore,
 } from '@/modules/code-review/review.pipeline'
+import { persistReviewAnalysis } from '@/modules/code-review/review.persistence'
 import type { ReviewAnalysis } from '@/modules/code-review/analyzer'
 import type { ReviewSourceFile } from '@/modules/github/github.service'
 import { GitHubService } from '@/modules/github/github.service'
@@ -45,40 +46,38 @@ const store: ReviewJobStore = {
     analysis: ReviewAnalysis,
     files: ReviewSourceFile[]
   ): Promise<void> {
-    const fileContent = files.map((file) => `--- ${file.path} ---\n${file.content}`).join('\n\n')
     await prisma.$transaction(async (transaction) => {
-      await transaction.finding.deleteMany({ where: { reviewId: review.id } })
-      if (analysis.findings.length > 0) {
-        await transaction.finding.createMany({
-          data: analysis.findings.map((finding) => ({
-            reviewId: review.id,
-            file: finding.file,
-            line: finding.line,
-            severity: finding.severity,
-            category: finding.category,
-            message: finding.message,
-            suggestions: finding.suggestions,
-          })),
-        })
-      }
-      await transaction.reviewAnalytics.upsert({
-        where: { reviewId: review.id },
-        create: {
-          userId: review.userId,
-          reviewId: review.id,
-          ...analysis.analytics,
+      await persistReviewAnalysis(
+        {
+          async deleteFindings(reviewId) {
+            await transaction.finding.deleteMany({ where: { reviewId } })
+          },
+          async createFindings(findings) {
+            await transaction.finding.createMany({ data: findings })
+          },
+          async upsertAnalytics(userId, reviewId, analytics) {
+            await transaction.reviewAnalytics.upsert({
+              where: { reviewId },
+              create: { userId, reviewId, ...analytics },
+              update: analytics,
+            })
+          },
+          async completeReview(reviewId, summary, fileContent) {
+            await transaction.codeReview.update({
+              where: { id: reviewId },
+              data: {
+                status: 'completed',
+                errorMessage: null,
+                description: summary,
+                fileContent,
+              },
+            })
+          },
         },
-        update: analysis.analytics,
-      })
-      await transaction.codeReview.update({
-        where: { id: review.id },
-        data: {
-          status: 'completed',
-          errorMessage: null,
-          description: analysis.summary,
-          fileContent,
-        },
-      })
+        review,
+        analysis,
+        files
+      )
     })
   },
 

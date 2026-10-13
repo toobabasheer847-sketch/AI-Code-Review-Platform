@@ -4,8 +4,63 @@ import { reviewQueue } from '@/jobs/review.queue'
 import { GitHubService } from '@/modules/github/github.service'
 import { releaseReviewQuota, reserveReviewQuota } from '@/modules/billing/review-quota'
 
+export class ReviewNotFoundError extends Error {
+	public readonly statusCode = 404
+
+	constructor() {
+		super('Review not found')
+		this.name = 'ReviewNotFoundError'
+	}
+}
+
+const reviewRelations = {
+	repository: true,
+	findings: true,
+	analytics: true,
+	chatConversation: {
+		include: { messages: { orderBy: { createdAt: 'asc' as const } } },
+	},
+}
+
+async function findOwnedReview(userId: string, reviewId: string) {
+	return prisma.codeReview.findFirst({
+		where: { id: reviewId, userId },
+		include: reviewRelations,
+	})
+}
+
+async function deleteOwnedReview(userId: string, reviewId: string): Promise<number> {
+	const result = await prisma.codeReview.deleteMany({
+		where: { id: reviewId, userId },
+	})
+	return result.count
+}
+
+export type OwnedReview = NonNullable<Awaited<ReturnType<typeof findOwnedReview>>>
+
+export interface ReviewAccessStore {
+	findOwnedReview(userId: string, reviewId: string): Promise<OwnedReview | null>
+	deleteOwnedReview(userId: string, reviewId: string): Promise<number>
+}
+
+interface ReviewServiceDependencies {
+	githubService?: Pick<GitHubService, 'validateReviewTarget'>
+	reviewAccess?: ReviewAccessStore
+}
+
 export class ReviewService {
-	private readonly githubService = new GitHubService()
+	private readonly githubService: Pick<GitHubService, 'validateReviewTarget'>
+	private readonly reviewAccess: ReviewAccessStore
+
+	constructor(
+		dependencies: ReviewServiceDependencies = {}
+	) {
+		this.githubService = dependencies.githubService ?? new GitHubService()
+		this.reviewAccess = dependencies.reviewAccess ?? {
+			findOwnedReview,
+			deleteOwnedReview,
+		}
+	}
 
 	public async listReviews(userId: string) {
 		const reviews = await prisma.codeReview.findMany({
@@ -89,20 +144,9 @@ export class ReviewService {
 	}
 
 	public async getReview(userId: string, reviewId: string) {
-		const review = await prisma.codeReview.findUnique({
-			where: { id: reviewId },
-			include: {
-				repository: true,
-				findings: true,
-				analytics: true,
-				chatConversation: {
-					include: { messages: { orderBy: { createdAt: 'asc' } } },
-				},
-			},
-		})
+		const review = await this.reviewAccess.findOwnedReview(userId, reviewId)
 
-		if (!review) throw new Error('Review not found')
-		if (review.userId !== userId) throw new Error('Unauthorized')
+		if (!review) throw new ReviewNotFoundError()
 
 		return {
 			id: review.id,
@@ -121,11 +165,8 @@ export class ReviewService {
 	}
 
 	public async deleteReview(userId: string, reviewId: string) {
-		const review = await prisma.codeReview.findUnique({ where: { id: reviewId } })
-		if (!review) throw new Error('Review not found')
-		if (review.userId !== userId) throw new Error('Unauthorized')
-
-		await prisma.codeReview.delete({ where: { id: reviewId } })
+		const deleted = await this.reviewAccess.deleteOwnedReview(userId, reviewId)
+		if (deleted === 0) throw new ReviewNotFoundError()
 	}
 
 	public async sendReviewEmail(reviewId: string) {

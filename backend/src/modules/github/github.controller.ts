@@ -74,7 +74,7 @@ export class GitHubController {
 
       res.clearCookie('github_oauth_state')
       res.clearCookie('github_oauth_user')
-      res.redirect(`${env.FRONTEND_URL}/dashboard?connected=true`)
+      res.redirect(`${env.FRONTEND_URL}/github/repos?connected=true`)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'GitHub callback failed'
       res.status(400).json({ error: message })

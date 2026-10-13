@@ -5,7 +5,7 @@ import { prisma } from '@/config/database'
 import logger from '@/utils/logger'
 import { closeReviewQueue } from '@/jobs/review.queue'
 import { startReviewWorker, stopReviewWorker } from '@/jobs/review.worker'
-import { closeEmailQueue } from '@/jobs/email.queue'
+import { closeEmailQueue, startEmailWorker } from '@/jobs/email.queue'
 
 const app = createApp()
 
@@ -17,6 +17,7 @@ async function bootstrap(): Promise<void> {
     // Verify database connection
     await prisma.$queryRaw`SELECT 1`
     logger.info('Database connected')
+    await startEmailWorker()
     await startReviewWorker()
 
     // Start server

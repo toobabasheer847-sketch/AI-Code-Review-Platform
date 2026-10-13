@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { hasProReviewAccess } from './review-quota'
+import { FREE_MONTHLY_REVIEW_LIMIT, hasProReviewAccess } from './review-quota'
 import {
   mapStripePriceToPlan,
   mapStripeSubscriptionStatus,
@@ -47,6 +47,17 @@ test('honors active Pro period and expires it after its period end', () => {
   )
   assert.equal(
     hasProReviewAccess({ plan: 'PRO', status: 'EXPIRED', currentPeriodEnd: null }, now),
+    false
+  )
+})
+
+test('preserves the free review quota and keeps free subscriptions outside Pro access', () => {
+  assert.equal(FREE_MONTHLY_REVIEW_LIMIT, 3)
+  assert.equal(
+    hasProReviewAccess(
+      { plan: 'FREE', status: 'ACTIVE', currentPeriodEnd: null },
+      new Date('2026-10-11T00:00:00.000Z')
+    ),
     false
   )
 })

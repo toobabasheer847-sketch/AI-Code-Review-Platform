@@ -60,6 +60,15 @@ const EXCLUDED_PATHS = [
   '.bin',
 ]
 
+export class InvalidReviewTargetError extends Error {
+  readonly statusCode = 422
+
+  constructor(message: string) {
+    super(message)
+    this.name = 'InvalidReviewTargetError'
+  }
+}
+
 function buildGitHubHeaders(accessToken: string) {
   return {
     Authorization: `Bearer ${accessToken}`,
@@ -83,7 +92,7 @@ export function parseReviewRepositoryName(repository: string): [string, string] 
     parts.length !== 2 ||
     parts.some((part) => !/^[A-Za-z0-9_.-]+$/.test(part) || part === '.' || part === '..')
   ) {
-    throw new Error('Repository must be a valid owner/repository name')
+    throw new InvalidReviewTargetError('Repository must be a valid owner/repository name')
   }
   return [parts[0], parts[1]]
 }
@@ -107,7 +116,7 @@ export function validateReviewBranchName(branch: string): void {
       return code <= 0x20 || '~^:?*\\[]'.includes(character)
     })
   ) {
-    throw new Error('Branch name is invalid')
+    throw new InvalidReviewTargetError('Branch name is invalid')
   }
 }
 
@@ -126,11 +135,21 @@ export interface GitHubTreeItem {
   type: string
   size?: number
   sha: string
+  url?: string
 }
 
 interface GitHubTreeResponse {
   truncated: boolean
   tree: GitHubTreeItem[]
+}
+
+interface GitHubRepositoryResponse {
+  name: string
+  full_name: string
+  language: string | null
+  private: boolean
+  updated_at: string
+  html_url: string
 }
 
 export function selectReviewTreeFiles(tree: GitHubTreeItem[]): GitHubTreeItem[] {
@@ -272,20 +291,32 @@ export class GitHubService {
     const token = await this.getValidatedAccessToken(userId)
     const encodedRepository = `${encodeURIComponent(owner)}/${encodeURIComponent(name)}`
     const headers = buildGitHubHeaders(token)
-    const repositoryResponse = await axios.get<{ full_name: string; html_url: string }>(
-      `${GITHUB_API_BASE}/repos/${encodedRepository}`,
-      { headers, timeout: 15_000 }
-    )
-    await axios.get(
-      `${GITHUB_API_BASE}/repos/${encodedRepository}/branches/${branch
-        .split('/')
-        .map(encodeURIComponent)
-        .join('/')}`,
-      { headers, timeout: 15_000 }
-    )
+    let repositoryResponse
+    try {
+      repositoryResponse = await axios.get<{ full_name: string; html_url: string }>(
+        `${GITHUB_API_BASE}/repos/${encodedRepository}`,
+        { headers, timeout: 15_000 }
+      )
+      await axios.get(
+        `${GITHUB_API_BASE}/repos/${encodedRepository}/branches/${branch
+          .split('/')
+          .map(encodeURIComponent)
+          .join('/')}`,
+        { headers, timeout: 15_000 }
+      )
+    } catch (error) {
+      if (axios.isAxiosError(error) && [403, 404].includes(error.response?.status ?? 0)) {
+        throw new InvalidReviewTargetError(
+          'The connected GitHub account cannot access this repository or branch'
+        )
+      }
+      throw error
+    }
 
     if (repositoryResponse.data.full_name.toLowerCase() !== repository.toLowerCase()) {
-      throw new Error('GitHub repository name did not match the requested repository')
+      throw new InvalidReviewTargetError(
+        'GitHub repository name did not match the requested repository'
+      )
     }
 
     return {
@@ -361,7 +392,7 @@ export class GitHubService {
   async getRepos(userId: string) {
     const token = await this.getValidatedAccessToken(userId)
 
-    const response = await axios.get(`${GITHUB_API_BASE}/user/repos`, {
+    const response = await axios.get<GitHubRepositoryResponse[]>(`${GITHUB_API_BASE}/user/repos`, {
       headers: buildGitHubHeaders(token),
       params: {
         per_page: 100,
@@ -370,7 +401,7 @@ export class GitHubService {
       },
     })
 
-    return response.data.map((repo: any) => ({
+    return response.data.map((repo) => ({
       name: repo.name,
       full_name: repo.full_name,
       language: repo.language,
@@ -382,23 +413,23 @@ export class GitHubService {
 
   async getRepoFiles(userId: string, repoName: string) {
     const token = await this.getValidatedAccessToken(userId)
-
-    if (!repoName.includes('/')) {
-      throw new Error('Repository name must include owner and repo name')
-    }
-
-    const response = await axios.get(`${GITHUB_API_BASE}/repos/${repoName}/git/trees/HEAD`, {
-      headers: buildGitHubHeaders(token),
-      params: {
-        recursive: '1',
-      },
-    })
+    const [owner, name] = parseReviewRepositoryName(repoName)
+    const encodedRepository = `${encodeURIComponent(owner)}/${encodeURIComponent(name)}`
+    const response = await axios.get<GitHubTreeResponse>(
+      `${GITHUB_API_BASE}/repos/${encodedRepository}/git/trees/HEAD`,
+      {
+        headers: buildGitHubHeaders(token),
+        params: {
+          recursive: '1',
+        },
+      }
+    )
 
     const tree = response.data.tree || []
 
     return tree
-      .filter((item: any) => item.type === 'blob' && shouldIncludeFile(item.path))
-      .map((item: any) => ({
+      .filter((item) => item.type === 'blob' && shouldIncludeFile(item.path))
+      .map((item) => ({
         path: item.path,
         size: item.size,
         url: item.url,
@@ -407,23 +438,27 @@ export class GitHubService {
 
   async getFileContent(userId: string, repo: string, path: string) {
     const token = await this.getValidatedAccessToken(userId)
-
-    if (!repo.includes('/') || !path) {
+    const [owner, name] = parseReviewRepositoryName(repo)
+    const pathSegments = path.split('/')
+    if (!path || pathSegments.some((segment) => !segment || segment === '.' || segment === '..')) {
       throw new Error('Invalid repository or file path')
     }
 
-    const encodedPath = path
-      .split('/')
+    const encodedRepository = `${encodeURIComponent(owner)}/${encodeURIComponent(name)}`
+    const encodedPath = pathSegments
       .map((segment) => encodeURIComponent(segment))
       .join('/')
 
-    const response = await axios.get<string>(`${GITHUB_API_BASE}/repos/${repo}/contents/${encodedPath}`, {
+    const response = await axios.get<string>(
+      `${GITHUB_API_BASE}/repos/${encodedRepository}/contents/${encodedPath}`,
+      {
       headers: {
         ...buildGitHubHeaders(token),
         Accept: 'application/vnd.github.v3.raw',
       },
       responseType: 'text',
-    })
+      }
+    )
 
     return {
       content: response.data,
