@@ -50,6 +50,15 @@ before deploying with:
 npx prisma migrate deploy --schema src/prisma/schema.prisma
 ```
 
+AI findings are schema-validated against the selected source: locations must
+exist, cited evidence must occur at that location, and duplicate findings are
+removed before persistence. Repository content is sent as untrusted user data;
+it is not executed by the review service. The AI prompt context is capped at
+60,000 serialized characters. If file-selection or context limits omit eligible
+files, the completed review displays that limitation instead of implying full
+coverage. Findings retain optional title, evidence, and end-line fields so older
+stored reviews remain compatible.
+
 ### GitHub pull request webhooks
 
 Apply the database migration and configure a GitHub repository webhook pointing

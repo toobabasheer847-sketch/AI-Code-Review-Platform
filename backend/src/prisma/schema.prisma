@@ -125,6 +125,7 @@ model CodeReview {
   pullRequestUrl String?
   headSha       String?
   changedLines  Json?
+  reviewLimitations String[]     @default([])
   errorMessage  String?
   severity      String          @default("medium")
   status        String          @default("pending")
@@ -165,7 +166,10 @@ model Finding {
   review        CodeReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
   file          String
   line          Int
+  endLine       Int?
+  title         String?
   message       String
+  evidence      String?
   severity      String
   category      String          @default("quality")
   suggestions   String[]

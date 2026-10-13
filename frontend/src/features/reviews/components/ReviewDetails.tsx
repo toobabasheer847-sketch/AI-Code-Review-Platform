@@ -98,6 +98,16 @@ export const ReviewDetails = ({ review }: { review: ReviewDetail }): JSX.Element
 
       {review.status === 'completed' && (
         <section className="rounded-xl border border-slate-800 bg-[#1e293b]/40 p-8 backdrop-blur-md">
+          {review.reviewLimitations && review.reviewLimitations.length > 0 && (
+            <div className="mb-6 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+              <h4 className="font-semibold">Partial review</h4>
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                {review.reviewLimitations.map((limitation) => (
+                  <li key={limitation}>{limitation}</li>
+                ))}
+              </ul>
+            </div>
+          )}
           <h3 className="mb-6 text-xl font-semibold text-white">
             Issues ({review.findings.length})
           </h3>
@@ -111,8 +121,20 @@ export const ReviewDetails = ({ review }: { review: ReviewDetail }): JSX.Element
                     <div className="flex-1">
                       <div className="text-sm font-semibold text-indigo-300">
                         {f.file}:{f.line}
+                        {f.endLine && f.endLine > f.line ? `-${f.endLine}` : ''}
                       </div>
+                      {f.title && <h4 className="mt-1 font-semibold text-white">{f.title}</h4>}
+                      {f.category && (
+                        <div className="mt-1 text-xs uppercase tracking-wide text-slate-400">
+                          {f.category}
+                        </div>
+                      )}
                       <div className="mt-2 text-sm text-slate-300">{f.message}</div>
+                      {f.evidence && (
+                        <pre className="mt-3 overflow-x-auto rounded bg-slate-950/60 p-3 text-xs text-slate-300">
+                          <code>{f.evidence}</code>
+                        </pre>
+                      )}
                     </div>
                     <div
                       className={`rounded-full px-3 py-1 text-xs font-medium ${

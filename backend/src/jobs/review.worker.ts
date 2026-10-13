@@ -48,9 +48,12 @@ const store: ReviewJobStore = {
           select: {
             file: true,
             line: true,
+            endLine: true,
             severity: true,
             category: true,
+            title: true,
             message: true,
+            evidence: true,
             suggestions: true,
           },
         },
@@ -87,7 +90,13 @@ const store: ReviewJobStore = {
               update: analytics,
             })
           },
-          async completeReview(reviewId, summary, fileContent, changedLines) {
+          async completeReview(
+            reviewId,
+            summary,
+            fileContent,
+            changedLines,
+            reviewLimitations
+          ) {
             await transaction.codeReview.update({
               where: { id: reviewId },
               data: {
@@ -96,6 +105,7 @@ const store: ReviewJobStore = {
                 description: summary,
                 fileContent,
                 changedLines: changedLines ?? Prisma.JsonNull,
+                reviewLimitations,
               },
             })
           },
@@ -213,11 +223,8 @@ const worker = new Worker<ReviewJobData>(
   { connection, autorun: false }
 )
 
-worker.on('failed', (job, error) => {
-  logger.error(
-    { reviewId: job?.data.reviewId, errorMessage: error.message },
-    'Code review job failed'
-  )
+worker.on('failed', (job) => {
+  logger.error({ reviewId: job?.data.reviewId }, 'Code review job failed')
 })
 worker.on('error', () => {
   logger.error('Code review worker error')

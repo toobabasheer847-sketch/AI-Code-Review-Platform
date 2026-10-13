@@ -18,7 +18,10 @@ export interface ReviewJobRecord {
     line: number
     severity: string
     category: string
+    title?: string | null
     message: string
+    evidence?: string | null
+    endLine?: number | null
     suggestions: string[]
   }>
   description?: string | null
@@ -48,11 +51,6 @@ export interface ReviewPipelineDependencies {
   notify(review: ReviewJobRecord, analysis?: ReviewAnalysis): Promise<void>
 }
 
-function errorMessage(error: unknown): string {
-  const message = error instanceof Error ? error.message : 'Review processing failed'
-  return message.slice(0, 500)
-}
-
 export async function processReview(
   reviewId: string,
   dependencies: ReviewPipelineDependencies
@@ -79,16 +77,16 @@ export async function processReview(
     )
     analysis = await dependencies.analyze(files)
     await dependencies.store.complete(review, analysis, files)
-  } catch (error) {
+  } catch {
     try {
-      await dependencies.store.markFailed(reviewId, errorMessage(error))
-    } catch (persistenceError) {
-      throw new AggregateError(
-        [error, persistenceError],
-        `Review ${reviewId} failed and its failure state could not be saved`
+      await dependencies.store.markFailed(
+        reviewId,
+        'Review processing failed. Provider and repository details were omitted.'
       )
+    } catch {
+      throw new Error('Review processing failed and its failure state could not be saved')
     }
-    throw error
+    throw new Error('Review processing failed')
   }
 
   await dependencies.notify(review, analysis)

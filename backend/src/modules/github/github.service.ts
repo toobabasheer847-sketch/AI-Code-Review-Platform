@@ -129,6 +129,7 @@ export interface ReviewSourceFile {
   path: string
   content: string
   changedLines?: number[]
+  reviewLimitations?: string[]
 }
 
 export interface GitHubTreeItem {
@@ -142,9 +143,12 @@ export interface GitHubTreeItem {
 export interface PullRequestFinding {
   file: string
   line: number
+  endLine?: number | null
   severity: string
   category: string
+  title?: string | null
   message: string
+  evidence?: string | null
   suggestions: string[]
 }
 
@@ -212,6 +216,24 @@ export function getAddedPullRequestLines(patch?: string): number[] {
   return [...addedLines]
 }
 
+function applyReviewLimitations(
+  files: ReviewSourceFile[],
+  omittedPaths: string[],
+  additionalLimitations: string[] = []
+): ReviewSourceFile[] {
+  if (files.length === 0) return files
+  const limitations = [...additionalLimitations]
+  if (omittedPaths.length > 0) {
+    const examples = omittedPaths.slice(0, 5).join(', ')
+    const remainder = omittedPaths.length > 5 ? ', and others' : ''
+    limitations.push(
+      `This review is partial: ${omittedPaths.length} eligible source file(s) were not included because of review file or size limits (${examples}${remainder}).`
+    )
+  }
+  if (limitations.length > 0) files[0].reviewLimitations = limitations
+  return files
+}
+
 export function selectReviewTreeFiles(tree: GitHubTreeItem[]): GitHubTreeItem[] {
   const selectedFiles: GitHubTreeItem[] = []
   let selectedBytes = 0
@@ -227,6 +249,7 @@ export function selectReviewTreeFiles(tree: GitHubTreeItem[]): GitHubTreeItem[] 
     ) {
       continue
     }
+
     selectedFiles.push(item)
     selectedBytes += size
     if (selectedFiles.length === MAX_REVIEW_FILES) break
@@ -439,11 +462,8 @@ export class GitHubService {
       { headers, params: { recursive: '1' }, timeout: 15_000 }
     )
 
-    if (treeResponse.data.truncated) {
-      throw new Error('Repository tree is too large for a complete review')
-    }
-
-    const selectedFiles = selectReviewTreeFiles(treeResponse.data.tree)
+    const tree = treeResponse.data.tree
+    const selectedFiles = selectReviewTreeFiles(tree)
 
     const files: ReviewSourceFile[] = []
     let fetchedBytes = 0
@@ -484,7 +504,21 @@ export class GitHubService {
       files.push(...fetched)
     }
 
-    return files
+    const selectedPaths = new Set(selectedFiles.map((file) => file.path))
+    const omittedPaths = tree
+      .filter((item) =>
+        item.type === 'blob' &&
+        shouldIncludeFile(item.path) &&
+        !selectedPaths.has(item.path)
+      )
+      .map((item) => item.path)
+    return applyReviewLimitations(
+      files,
+      omittedPaths,
+      treeResponse.data.truncated
+        ? ['GitHub returned a truncated repository tree; some repository files may not have been considered.']
+        : []
+    )
   }
 
   async fetchPullRequestTarget(
@@ -534,6 +568,7 @@ export class GitHubService {
     const encodedRepository = `${encodeURIComponent(owner)}/${encodeURIComponent(name)}`
     const headers = buildGitHubHeaders(token)
     const changedFiles: PullRequestFileResponse[] = []
+    let changedFileListTruncated = false
 
     for (let page = 1; page <= 30; page += 1) {
       const response = await this.api.get<PullRequestFileResponse[]>(
@@ -543,17 +578,21 @@ export class GitHubService {
       changedFiles.push(...response.data)
       const hasNextPage = response.headers.link?.includes('rel="next"') ?? false
       if (changedFiles.length >= 3_000 && hasNextPage) {
-        throw new Error('Pull request changed-file list exceeds the review limit')
+        changedFileListTruncated = true
+        break
       }
       if (!hasNextPage) break
       if (page === 30) {
-        throw new Error('Pull request changed-file list exceeds the review limit')
+        changedFileListTruncated = true
       }
     }
 
     const selected = changedFiles
       .filter((file) => file.status !== 'removed' && shouldIncludeFile(file.filename))
       .slice(0, MAX_REVIEW_FILES)
+    const eligibleFiles = changedFiles.filter(
+      (file) => file.status !== 'removed' && shouldIncludeFile(file.filename)
+    )
     const files: ReviewSourceFile[] = []
     let totalBytes = 0
 
@@ -584,7 +623,26 @@ export class GitHubService {
     if (files.length === 0) {
       throw new Error('No supported changed source files within the review size limits were found')
     }
-    return files
+    const fetchedPaths = new Set(files.map((file) => file.path))
+    const additionalLimitations: string[] = []
+    if (changedFileListTruncated) {
+      additionalLimitations.push(
+        'GitHub changed-file pagination reached its 3,000-file limit; additional files were not reviewed.'
+      )
+    }
+    const patchlessFileCount = selected.filter((file) => !file.patch).length
+    if (patchlessFileCount > 0) {
+      additionalLimitations.push(
+        `GitHub did not provide diff hunks for ${patchlessFileCount} changed source file(s), so inline locations may be unavailable.`
+      )
+    }
+    return applyReviewLimitations(
+      files,
+      eligibleFiles
+        .filter((file) => !fetchedPaths.has(file.filename))
+        .map((file) => file.filename),
+      additionalLimitations
+    )
   }
 
   async publishPullRequestFindings(
@@ -600,16 +658,35 @@ export class GitHubService {
     if (target.headSha !== expectedHeadSha) return 'stale'
 
     const comments = findings
-      .filter((finding) => changedLines[finding.file]?.includes(finding.line))
+      .filter((finding) => {
+        const addedLines = changedLines[finding.file]
+        if (
+          !finding.title ||
+          !finding.evidence ||
+          !addedLines?.includes(finding.line)
+        ) {
+          return false
+        }
+        const endLine = finding.endLine ?? finding.line
+        return Array.from(
+          { length: endLine - finding.line + 1 },
+          (_, index) => finding.line + index
+        ).every((line) => addedLines.includes(line))
+      })
       .slice(0, MAX_REVIEW_FILES)
       .map((finding) => ({
         path: finding.file,
-        line: finding.line,
+        line: finding.endLine ?? finding.line,
+        ...(finding.endLine && finding.endLine > finding.line
+          ? { start_line: finding.line, start_side: 'RIGHT', end_line: finding.endLine }
+          : {}),
         side: 'RIGHT' as const,
         body: [
-          `**${finding.severity.toUpperCase()} · ${finding.category}**`,
+          `**${finding.severity.toUpperCase()} · ${finding.category}: ${finding.title ?? 'Review finding'}**`,
           '',
           finding.message,
+          '',
+          `Evidence: \`${finding.evidence ?? ''}\``,
           ...(finding.suggestions.length
             ? ['', `Suggestion: ${finding.suggestions.join(' ')}`]
             : []),

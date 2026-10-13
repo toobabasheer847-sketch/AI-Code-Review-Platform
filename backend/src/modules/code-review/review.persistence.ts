@@ -17,7 +17,8 @@ export interface ReviewPersistenceOperations {
     reviewId: string,
     summary: string,
     fileContent: string,
-    changedLines: Record<string, number[]> | null
+    changedLines: Record<string, number[]> | null,
+    limitations: string[]
   ): Promise<void>
 }
 
@@ -45,6 +46,7 @@ export async function persistReviewAnalysis(
     review.id,
     analysis.summary,
     fileContent,
-    Object.keys(changedFiles).length > 0 ? changedFiles : null
+    Object.keys(changedFiles).length > 0 ? changedFiles : null,
+    analysis.limitations
   )
 }

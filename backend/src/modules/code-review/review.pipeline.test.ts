@@ -43,17 +43,21 @@ const analysis: ReviewAnalysis = validateAnalysis(
       {
         file: 'src/app.ts',
         line: 2,
+        title: 'Unvalidated value is returned',
         severity: 'error',
         category: 'security',
         message: 'Validate the value before returning it.',
+        evidence: 'return value',
         suggestions: ['Validate the input.'],
       },
       {
         file: 'src/lib.ts',
         line: 1,
+        title: 'Potential repeated work',
         severity: 'warning',
         category: 'performance',
         message: 'Consider avoiding repeated work.',
+        evidence: 'export const ready = true',
         suggestions: [],
       },
     ],
@@ -96,9 +100,11 @@ test('validates AI findings against selected files and computes analytics', () =
             {
               file: 'src/missing.ts',
               line: 1,
+              title: 'Missing source finding',
               severity: 'warning',
               category: 'bug',
               message: 'Not in this review.',
+              evidence: 'unsupported',
               suggestions: [],
             },
           ],
@@ -167,10 +173,16 @@ test('persists findings, analytics, review content, and completion in one transa
       }
       calls.push('analytics')
     },
-    async completeReview(reviewId, summary, fileContent) {
+    async completeReview(reviewId, summary, fileContent, _changedLines, limitations) {
       savedReview = {
         where: { id: reviewId },
-        data: { status: 'completed', errorMessage: null, description: summary, fileContent },
+        data: {
+          status: 'completed',
+          errorMessage: null,
+          description: summary,
+          fileContent,
+          reviewLimitations: limitations,
+        },
       }
       calls.push('review')
     },
@@ -181,6 +193,14 @@ test('persists findings, analytics, review content, and completion in one transa
   assert.deepEqual(calls, ['delete:review-1', 'findings', 'analytics', 'review'])
   assert.equal((savedFindings as Array<{ reviewId: string }>).length, 2)
   assert.ok((savedFindings as Array<{ reviewId: string }>).every((finding) => finding.reviewId === review.id))
+  assert.equal(
+    (savedFindings as Array<{ title: string }>)[0].title,
+    analysis.findings[0].title
+  )
+  assert.equal(
+    (savedFindings as Array<{ evidence: string }>)[0].evidence,
+    analysis.findings[0].evidence
+  )
   assert.deepEqual(savedAnalytics, {
     where: { reviewId: review.id },
     create: { userId: review.userId, reviewId: review.id, ...analysis.analytics },
@@ -195,6 +215,7 @@ test('persists findings, analytics, review content, and completion in one transa
       fileContent: sourceFiles
         .map((file) => `--- ${file.path} ---\n${file.content}`)
         .join('\n\n'),
+      reviewLimitations: [],
     },
   })
 })
@@ -286,13 +307,13 @@ test('does not rerun analysis when retrying a completed review notification', as
   assert.deepEqual(events, ['running', 'fetch', 'completed', 'notify'])
 })
 
-test('marks the review failed and propagates analysis errors', async () => {
+test('marks review failures without persisting provider or repository error details', async () => {
   const events: string[] = []
   await assert.rejects(
     processReview(review.id, {
       store: createStore(events),
       async fetchFiles() {
-        throw new Error('GitHub request failed')
+        throw new Error('Authorization: Bearer private-provider-secret')
       },
       async analyze() {
         return analysis
@@ -301,10 +322,15 @@ test('marks the review failed and propagates analysis errors', async () => {
         assert.fail('Failed review must not notify')
       },
     }),
-    /GitHub request failed/
+    /Review processing failed/
   )
 
-  assert.deepEqual(events, ['load', 'running', 'failed:GitHub request failed'])
+  assert.deepEqual(events, [
+    'load',
+    'running',
+    'failed:Review processing failed. Provider and repository details were omitted.',
+  ])
+  assert.equal(events.join(' ').includes('private-provider-secret'), false)
 })
 
 test('rejects requests missing valid bearer tokens', () => {
@@ -375,6 +401,12 @@ test('returns persisted findings for an owned review', async () => {
     branch: review.branch,
     errorMessage: null,
     severity: 'medium',
+    source: 'MANUAL',
+    pullRequestNumber: null,
+    pullRequestUrl: null,
+    headSha: null,
+    changedLines: null,
+    reviewLimitations: [],
     status: 'completed',
     createdAt,
     updatedAt: createdAt,
@@ -395,9 +427,12 @@ test('returns persisted findings for an owned review', async () => {
         reviewId: review.id,
         file: analysis.findings[0].file,
         line: analysis.findings[0].line,
+        endLine: analysis.findings[0].endLine ?? null,
+        title: analysis.findings[0].title,
         severity: analysis.findings[0].severity,
         category: analysis.findings[0].category,
         message: analysis.findings[0].message,
+        evidence: analysis.findings[0].evidence,
         suggestions: analysis.findings[0].suggestions,
         createdAt,
       },
@@ -405,6 +440,12 @@ test('returns persisted findings for an owned review', async () => {
     analytics: null,
     chatConversation: null,
     webhookDeliveries: [],
+    pullRequestNumber: null,
+    pullRequestUrl: null,
+    headSha: null,
+    changedLines: null,
+    source: 'MANUAL',
+    reviewLimitations: [],
   }
   const service = new ReviewService({
     reviewAccess: {

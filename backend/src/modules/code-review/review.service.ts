@@ -128,28 +128,22 @@ export class ReviewService {
 				{ reviewId: review.id },
 				{ jobId: `review-${review.id}` }
 			)
-		} catch (error) {
+		} catch {
 			try {
 				await prisma.$transaction(async (transaction) => {
 					await transaction.codeReview.update({
 						where: { id: review.id },
 						data: {
 							status: 'failed',
-							errorMessage:
-								error instanceof Error
-									? `Unable to queue review: ${error.message}`.slice(0, 500)
-									: 'Unable to queue review',
+							errorMessage: 'Unable to queue review. Queue details were omitted.',
 						},
 					})
 					await releaseReviewQuota(transaction, userId)
 				})
-			} catch (persistenceError) {
-				throw new AggregateError(
-					[error, persistenceError],
-					'Unable to queue review and release its reserved quota'
-				)
+			} catch {
+				throw new Error('Unable to queue review and release its reserved quota')
 			}
-			throw error
+			throw new Error('Unable to queue review')
 		}
 
 		return review
@@ -173,6 +167,7 @@ export class ReviewService {
 			branch: review.branch,
 			errorMessage: review.errorMessage,
 			source: review.source,
+			reviewLimitations: review.reviewLimitations,
 			pullRequestNumber: review.pullRequestNumber,
 			pullRequestUrl: review.pullRequestUrl,
 			pullRequestStatus: review.webhookDeliveries[0]?.status ?? null,

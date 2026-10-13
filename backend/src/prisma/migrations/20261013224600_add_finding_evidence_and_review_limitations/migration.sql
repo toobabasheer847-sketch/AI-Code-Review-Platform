@@ -1,0 +1,7 @@
+ALTER TABLE "CodeReview"
+ADD COLUMN "reviewLimitations" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];
+
+ALTER TABLE "Finding"
+ADD COLUMN "endLine" INTEGER,
+ADD COLUMN "title" TEXT,
+ADD COLUMN "evidence" TEXT;

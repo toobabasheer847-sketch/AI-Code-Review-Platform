@@ -30,7 +30,17 @@ export interface ReviewDetail {
   title?: string
   description?: string
   fileContent?: string
-  findings: Array<{ file: string; line: number; message: string; severity: string; suggestions: string[] }>
+  findings: Array<{
+    file: string
+    line: number
+    endLine?: number | null
+    title?: string | null
+    message: string
+    evidence?: string | null
+    severity: string
+    category?: string
+    suggestions: string[]
+  }>
   analytics?: { totalIssues?: number; qualityScore?: number }
   chat?: ReviewChat | null
   status: 'pending' | 'running' | 'completed' | 'failed' | string
@@ -40,6 +50,7 @@ export interface ReviewDetail {
   pullRequestNumber?: number | null
   pullRequestUrl?: string | null
   pullRequestStatus?: string | null
+  reviewLimitations?: string[]
   createdAt: string
 }
 

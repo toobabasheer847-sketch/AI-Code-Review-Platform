@@ -18,17 +18,22 @@ const findings: PullRequestFinding[] = [
   {
     file: 'src/app.ts',
     line: 10,
+    endLine: 11,
+    title: 'Unvalidated input',
     severity: 'error',
     category: 'security',
     message: 'Validate the input before use.',
+    evidence: 'dangerousCall(input)',
     suggestions: ['Reject invalid values.'],
   },
   {
     file: 'src/app.ts',
     line: 4,
+    title: 'Unchanged line',
     severity: 'warning',
     category: 'quality',
     message: 'This line was not changed by the pull request.',
+    evidence: 'dangerousCall(input)',
     suggestions: [],
   },
 ]
@@ -74,7 +79,7 @@ test('publishes only findings on valid added lines and includes a retry marker',
     pullRequest.head.sha,
     'review-1',
     findings,
-    { 'src/app.ts': [10] }
+    { 'src/app.ts': [10, 11] }
   )
 
   assert.equal(result, 'published')
@@ -89,11 +94,19 @@ test('publishes only findings on valid added lines and includes a retry marker',
   assert.equal(payload.event, 'COMMENT')
   assert.equal(payload.commit_id, pullRequest.head.sha)
   assert.match(payload.body, /ai-codeguard-review:review-1/)
-  assert.deepEqual(
-    payload.comments.map(({ path, line, side }) => ({ path, line, side })),
-    [{ path: 'src/app.ts', line: 10, side: 'RIGHT' }]
-  )
-  assert.match(payload.comments[0].body, /Validate the input before use/)
+  assert.deepEqual(payload.comments, [
+    {
+      path: 'src/app.ts',
+      line: 11,
+      start_line: 10,
+      start_side: 'RIGHT',
+      end_line: 11,
+      side: 'RIGHT',
+      body: payload.comments[0].body,
+    },
+  ])
+  assert.match(payload.comments[0].body, /Unvalidated input/)
+  assert.match(payload.comments[0].body, /dangerousCall/)
 })
 
 test('does not republish an existing review marker or comment on stale commits', async () => {
@@ -106,7 +119,7 @@ test('does not republish an existing review marker or comment on stale commits',
       pullRequest.head.sha,
       'review-1',
       findings,
-      { 'src/app.ts': [10] }
+      { 'src/app.ts': [10, 11] }
     ),
     'already-published'
   )
@@ -121,7 +134,7 @@ test('does not republish an existing review marker or comment on stale commits',
       'b'.repeat(40),
       'review-2',
       findings,
-      { 'src/app.ts': [10] }
+      { 'src/app.ts': [10, 11] }
     ),
     'stale'
   )
@@ -153,7 +166,7 @@ test('propagates GitHub comment publishing failures for worker retry', async () 
       pullRequest.head.sha,
       'review-1',
       findings,
-      { 'src/app.ts': [10] }
+      { 'src/app.ts': [10, 11] }
     ),
     /GitHub API rate limit/
   )
