@@ -8,7 +8,7 @@ export const BillingCancelPage = (): JSX.Element => {
         <XCircle className="mx-auto h-12 w-12 text-amber-400" />
         <h1 className="mt-4 text-2xl font-bold text-white">Checkout cancelled</h1>
         <p className="mt-2 text-sm text-slate-400">
-          No charges were made. You can upgrade to Pro anytime from the pricing page.
+          Checkout was not completed. If you completed payment in another tab, check your billing status.
         </p>
         <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
           <Link

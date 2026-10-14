@@ -23,11 +23,11 @@ Server runs on http://localhost:3001
 # Generate Prisma client
 npm run prisma:generate
 
-# Create migrations
-npm run prisma:migrate
+# Apply committed migrations (after reviewing pending changes)
+npm run prisma:deploy
 
-# Run migrations
-npm run prisma:migrate -- deploy
+# Create a new development migration only when changing the schema
+npm run prisma:migrate -- --name describe_change
 
 # Seed database
 npm run seed
@@ -136,6 +136,56 @@ Rotating `JWT_SECRET` invalidates existing login tokens, so users will need to
 sign in again.
 
 The demo seed is disabled when `NODE_ENV=production`.
+
+### Stripe billing lifecycle
+
+Production startup requires PostgreSQL and Redis URLs, independent random
+`JWT_SECRET` and `GITHUB_TOKEN_ENCRYPTION_KEY` values (at least 32 characters),
+OpenAI and GitHub credentials, and all three Stripe settings:
+`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PRO_PRICE_ID`. Set
+`FRONTEND_URL`; configure `MAIL_HOST`, `MAIL_PORT`, `MAIL_USER`, `MAIL_PASSWORD`,
+and `MAIL_FROM` to enable account emails. `backend/.env.example` contains
+variable names and safe placeholders. Never commit real secrets.
+
+Create a recurring Pro price in Stripe and configure its ID as
+`STRIPE_PRO_PRICE_ID`. Stripe test keys are supported for local and staging
+verification. The API only accepts the configured price and does not treat the
+checkout success redirect as proof of payment. Signed subscription and invoice
+webhooks update local status; event IDs and `PROCESSING`/`PROCESSED`/`FAILED`
+state are persisted for deduplication and retry diagnosis. Failed/stale events
+can be retried by Stripe redelivery; inspect `StripeEvent` to diagnose failed
+processing. Logs avoid payment payloads and exception text.
+
+The existing policy is retained: Free includes three reviews per UTC month;
+active/trialing Pro is unlimited; canceled Pro remains entitled through its paid
+period; past-due and other delinquent subscriptions fall back to Free access.
+Review quota is reserved atomically with review creation. Cancellation from the
+Billing page schedules cancellation at the end of the paid period.
+
+For test-mode webhook delivery, set a test key/price, then run the Stripe CLI:
+
+```bash
+stripe listen --forward-to localhost:3001/api/billing/webhook
+```
+
+Set the CLI's `whsec_...` as `STRIPE_WEBHOOK_SECRET` and restart the backend.
+Automated signature, duplicate-claim, status-mapping, quota, and config tests use
+test data/mocks; hosted Checkout and provider/account behavior still require
+manual staging checks.
+
+### Migrations and Docker operation
+
+Generate the client after installing dependencies, and apply committed
+migrations with `npm run prisma:deploy`. The production backend image does not
+automatically migrate. Review and back up production data before running
+`npm run prisma:deploy --workspace=backend` as a deployment step.
+
+From the repository root, `docker compose up --build` starts the local database,
+Redis, backend, and frontend. Compose waits for PostgreSQL and Redis, applies
+the committed migrations before starting the backend, and waits for backend
+readiness. Compose credentials are local development values only. `GET /health`
+checks the database, Redis, and queue connectivity and reports failed-job
+counts without including job payloads.
 
 ## Build & Run
 

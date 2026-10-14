@@ -1,8 +1,12 @@
 export type LocalSubscriptionStatus = 'ACTIVE' | 'CANCELED' | 'EXPIRED'
 
 export function mapStripeSubscriptionStatus(
-  status: string
+  status: string,
+  cancelAtPeriodEnd = false
 ): LocalSubscriptionStatus {
+  if (cancelAtPeriodEnd) {
+    return 'CANCELED'
+  }
   if (status === 'active' || status === 'trialing') {
     return 'ACTIVE'
   }

@@ -1,13 +1,16 @@
 import express, { Express } from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
-import morgan from 'morgan'
 import pinoHttp from 'pino-http'
 import rateLimit from 'express-rate-limit'
 import { env } from '@/config/env'
 import logger from '@/utils/logger'
 import { errorMiddleware } from '@/middleware/error.middleware'
 import { createApiRoutes } from '@/routes'
+import { prisma } from '@/config/database'
+import { redis } from '@/config/redis'
+import { reviewQueue } from '@/jobs/review.queue'
+import { emailQueue } from '@/jobs/email.queue'
 
 // Rate limiting middleware
 const limiter = rateLimit({
@@ -50,15 +53,6 @@ export const createApp = (): Express => {
       },
     })
   )
-  app.use(
-    morgan('combined', {
-      skip: (req) =>
-        req.path.endsWith('/github/callback') ||
-        req.path === '/api/auth/verify-email' ||
-        req.path === '/api/auth/password-reset/confirm',
-    })
-  )
-
   app.use('/api/billing/webhook', express.raw({ type: 'application/json', limit: '1mb' }))
   app.use('/api/webhooks/github', express.raw({ type: 'application/json', limit: '1mb' }))
   app.use(express.json({ limit: '10mb' }))
@@ -68,13 +62,32 @@ export const createApp = (): Express => {
   app.use('/api/auth/login', authLimiter)
   app.use('/api/auth/register', authLimiter)
 
-  app.get('/health', (_req, res) => {
-    res.json({
-      status: 'ok',
-      message: 'AI-CodeGuard API running',
-      timestamp: new Date().toISOString(),
-      environment: env.NODE_ENV,
-    })
+  app.get('/health', async (_req, res) => {
+    try {
+      await prisma.$queryRaw`SELECT 1`
+      await redis.ping()
+      const [reviewJobs, emailJobs] = await Promise.all([
+        reviewQueue.getJobCounts('failed'),
+        emailQueue.getJobCounts('failed'),
+      ])
+      res.json({
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        environment: env.NODE_ENV,
+        dependencies: { database: 'ok', redis: 'ok', queues: 'ok' },
+        failedJobs: {
+          reviews: reviewJobs.failed ?? 0,
+          email: emailJobs.failed ?? 0,
+        },
+      })
+    } catch {
+      logger.error('Readiness health check failed')
+      res.status(503).json({
+        status: 'error',
+        timestamp: new Date().toISOString(),
+        dependencies: { database: 'unknown', redis: 'unknown', queues: 'unknown' },
+      })
+    }
   })
 
   app.use('/api', createApiRoutes())

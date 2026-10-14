@@ -25,6 +25,12 @@ function getConnection(): IORedis {
 function getEmailQueue(): Queue<EmailJobData, void> {
   queueInstance ??= new Queue<EmailJobData, void>('email', {
     connection: getConnection(),
+    defaultJobOptions: {
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 5_000 },
+      removeOnComplete: 500,
+      removeOnFail: 1_000,
+    },
   })
   return queueInstance
 }

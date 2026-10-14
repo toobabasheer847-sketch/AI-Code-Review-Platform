@@ -1,0 +1,4 @@
+import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+export const Home = () => {
+    return (_jsx("div", { className: "flex items-center justify-center min-h-screen", children: _jsxs("div", { className: "text-center", children: [_jsx("h1", { className: "text-4xl font-bold tracking-tight text-foreground mb-4", children: "Welcome to AI-CodeGuard" }), _jsx("p", { className: "text-lg text-muted-foreground mb-8", children: "Production-ready SaaS Code Review Platform with AI" }), _jsxs("div", { className: "flex gap-4 justify-center", children: [_jsx("a", { href: "/login", className: "px-6 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-opacity", children: "Login" }), _jsx("a", { href: "/register", className: "px-6 py-2 bg-secondary text-secondary-foreground rounded-lg hover:opacity-90 transition-opacity", children: "Register" })] })] }) }));
+};

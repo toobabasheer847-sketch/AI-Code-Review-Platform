@@ -138,7 +138,7 @@ export class ReviewService {
 							errorMessage: 'Unable to queue review. Queue details were omitted.',
 						},
 					})
-					await releaseReviewQuota(transaction, userId)
+					await releaseReviewQuota(transaction, userId, review.createdAt)
 				})
 			} catch {
 				throw new Error('Unable to queue review and release its reserved quota')

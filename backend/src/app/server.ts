@@ -6,47 +6,60 @@ import logger from '@/utils/logger'
 import { closeReviewQueue } from '@/jobs/review.queue'
 import { startReviewWorker, stopReviewWorker } from '@/jobs/review.worker'
 import { closeEmailQueue, startEmailWorker } from '@/jobs/email.queue'
+import { disconnectRedis } from '@/config/redis'
+import type { Server } from 'node:http'
 
 const app = createApp()
+let httpServer: Server | null = null
+let isShuttingDown = false
 
 async function bootstrap(): Promise<void> {
   try {
-    // Connect to Redis
     await connectRedis()
 
-    // Verify database connection
     await prisma.$queryRaw`SELECT 1`
     logger.info('Database connected')
     await startEmailWorker()
     await startReviewWorker()
 
-    // Start server
-    app.listen(env.PORT, () => {
+    httpServer = app.listen(env.PORT, () => {
       logger.info(`Server running on port ${env.PORT} in ${env.NODE_ENV} mode`)
     })
   } catch (error) {
-    logger.error('Failed to start server:', error)
-    process.exit(1)
+    logger.error(
+      { errorType: error instanceof Error ? error.name : 'UnknownError' },
+      'Failed to start server'
+    )
+    process.exitCode = 1
   }
 }
 
-// Handle graceful shutdown
-process.on('SIGTERM', async () => {
-  logger.info('SIGTERM signal received: closing HTTP server')
-  await stopReviewWorker()
-  await closeReviewQueue()
-  await closeEmailQueue()
-  await prisma.$disconnect()
-  process.exit(0)
-})
+async function shutdown(signal: string): Promise<void> {
+  if (isShuttingDown) return
+  isShuttingDown = true
+  logger.info({ signal }, 'Closing server')
+  try {
+    if (httpServer) {
+      await new Promise<void>((resolve, reject) => {
+        httpServer?.close((error) => (error ? reject(error) : resolve()))
+      })
+    }
+    await stopReviewWorker()
+    await closeReviewQueue()
+    await closeEmailQueue()
+    await disconnectRedis()
+    await prisma.$disconnect()
+    process.exitCode = 0
+  } catch (error) {
+    logger.error(
+      { errorType: error instanceof Error ? error.name : 'UnknownError' },
+      'Graceful shutdown failed'
+    )
+    process.exitCode = 1
+  }
+}
 
-process.on('SIGINT', async () => {
-  logger.info('SIGINT signal received: closing HTTP server')
-  await stopReviewWorker()
-  await closeReviewQueue()
-  await closeEmailQueue()
-  await prisma.$disconnect()
-  process.exit(0)
-})
+process.on('SIGTERM', () => void shutdown('SIGTERM'))
+process.on('SIGINT', () => void shutdown('SIGINT'))
 
 bootstrap()

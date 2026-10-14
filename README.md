@@ -1,10 +1,10 @@
-# AI-CodeGuard - Production-Level SaaS Code Review Platform
+# AI-CodeGuard - AI Code Review Platform
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Node.js](https://img.shields.io/badge/node.js-18%2B-green.svg)
 ![TypeScript](https://img.shields.io/badge/typescript-5.3%2B-blue.svg)
 
-AI-CodeGuard is an enterprise-grade, full-stack SaaS platform for automated code review using artificial intelligence. Leveraging OpenAI's GPT models and LangChain, it provides comprehensive code analysis with real-time collaboration features.
+AI-CodeGuard is a full-stack application for AI-assisted code review with GitHub integration, background processing, and optional subscription billing.
 
 ## 🚀 Features
 
@@ -92,25 +92,21 @@ cd ai-codeguard
 
 2. **Setup Environment Variables**
 ```bash
-cp .env.example .env.local
-# Edit .env.local with your configuration
+copy .env.example .env
+# Configure backend values in backend/.env or export them in your shell
 ```
 
-3. **Setup Frontend**
+3. **Install and configure**
 ```bash
-cd frontend
 npm install
-npm run dev
+npm run prisma:generate --workspace=backend
+npm run prisma:deploy --workspace=backend
 ```
 
-4. **Setup Backend**
+4. **Run the applications** in separate terminals
 ```bash
-cd backend
-npm install
-npm run prisma:generate
-npm run prisma:migrate
-npm run seed
-npm run dev
+npm run dev --workspace=backend
+npm run dev --workspace=frontend
 ```
 
 5. **Access Application**
@@ -124,12 +120,16 @@ npm run dev
 # Build and run with Docker Compose
 docker-compose up -d
 
-# Run migrations
-docker-compose exec backend npm run prisma:migrate
+# Apply pending migrations (Compose also does this before starting the local backend)
+docker-compose exec backend npm run prisma:deploy
 
 # Seed database
 docker-compose exec backend npm run seed
 ```
+
+Compose is for local development and uses local-only database credentials. Do
+not use it as a production deployment template. `GET /health` checks PostgreSQL,
+Redis, and both job queues and reports retained failed-job counts.
 
 ## 📚 API Documentation
 
@@ -158,50 +158,56 @@ docker-compose exec backend npm run seed
 
 ## 🔐 Environment Variables
 
-See `.env.example` for all required environment variables. Key variables:
+See `.env.example` for variable names and safe placeholders. Production
+requires PostgreSQL `DATABASE_URL`, Redis `REDIS_URL`, independent random
+`JWT_SECRET` and `GITHUB_TOKEN_ENCRYPTION_KEY` values (32+ characters),
+`OPENAI_API_KEY`, GitHub OAuth credentials and webhook secret, all three Stripe
+settings (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRO_PRICE_ID`),
+and `FRONTEND_URL`. Configure mail variables to send account emails. Never put
+secrets in frontend `VITE_*` variables.
 
-- `DATABASE_URL` - PostgreSQL connection string
-- `REDIS_URL` - Redis connection string
-- `JWT_SECRET` - Secret key for JWT signing
-- `OPENAI_API_KEY` - OpenAI API key
-- `GITHUB_CLIENT_ID/SECRET` - GitHub OAuth credentials
-- `STRIPE_SECRET_KEY` - Stripe API key
+### Stripe test-mode checkout and webhooks
+
+1. In Stripe's **test** dashboard, create a recurring Pro price. Configure its
+   ID as `STRIPE_PRO_PRICE_ID` on the backend and
+   `VITE_STRIPE_PRO_PRICE_ID` on the frontend.
+2. Set a Stripe test secret as `STRIPE_SECRET_KEY`.
+3. Install and authenticate Stripe CLI in test mode, then run
+   `stripe listen --forward-to localhost:3001/api/billing/webhook`. Set the
+   resulting `whsec_...` as `STRIPE_WEBHOOK_SECRET` and restart the API.
+4. Complete checkout with a Stripe test payment method. Verify the subscription
+   from the authenticated Billing page, then manually test cancellation and
+   failed-payment transitions with Stripe test events.
+
+The checkout return URL is not proof of payment; verified webhooks update the
+subscription. Automated tests use test signing material and mocked quota
+storage and do not contact Stripe, GitHub, or OpenAI.
 
 ## 🧪 Testing
 
 ```bash
-# Frontend tests
-cd frontend
-npm run test
-
-# Backend tests
-cd backend
-npm run test
-
-# Watch mode
-npm run test:watch
-
-# Coverage
-npm run test:coverage
+npm test
 ```
+
+The current test command runs backend tests; no dedicated frontend test runner
+is configured. CI runs install, Prisma generation, lint, type-check, backend
+tests, and both builds. Stripe-hosted checkout, live provider webhooks, and
+real database/Redis operation still require manual staging verification.
+Passing CI does not establish production readiness.
 
 ## 📝 Code Quality
 
 ```bash
-# Linting
+# Lint
 npm run lint
-npm run lint:fix
-
-# Formatting
-npm run format
-
-# Type checking
+# Type check and build
 npm run type-check
+npm run build
 ```
 
 ## 🔄 CI/CD
 
-This project uses GitHub Actions for continuous integration. See `.github/workflows/` for pipeline configuration.
+GitHub Actions CI is configured in `.github/workflows/ci.yml`.
 
 ## 🤝 Contributing
 

@@ -14,13 +14,16 @@ function isPlaceholderSecret(secret: string): boolean {
     normalized.includes('change-in-production') ||
     normalized.includes('replace-with') ||
     normalized.includes('your-secret') ||
-    normalized.includes('change-me')
+    normalized.includes('change-me') ||
+    normalized.includes('generate-') ||
+    normalized.includes('placeholder') ||
+    normalized.includes('your-')
   )
 }
 
 export const env = {
   NODE_ENV: nodeEnv,
-  PORT: parseInt(process.env.PORT || '3001', 10),
+  PORT: process.env.PORT ? Number(process.env.PORT) : 3001,
   DATABASE_URL: process.env.DATABASE_URL || '',
   JWT_SECRET: jwtSecret,
   JWT_EXPIRY: process.env.JWT_EXPIRY || '7d',
@@ -44,39 +47,122 @@ export const env = {
   FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:3000',
 }
 
-if (env.NODE_ENV === 'production') {
+export function validateEnvironment(configuration: typeof env): void {
   const configurationErrors: string[] = []
+  const isLocalAddress = (value: string): boolean => {
+    try {
+      const hostname = new URL(value).hostname.toLowerCase()
+      return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1'
+    } catch {
+      return false
+    }
+  }
 
-  if (env.JWT_SECRET.length < 32 || isPlaceholderSecret(env.JWT_SECRET)) {
+  if (!Number.isSafeInteger(configuration.PORT) || configuration.PORT < 1 || configuration.PORT > 65535) {
+    configurationErrors.push('PORT must be an integer between 1 and 65535')
+  }
+
+  if (configuration.NODE_ENV !== 'production') {
+    if (configurationErrors.length > 0) {
+      throw new Error(`Invalid environment configuration: ${configurationErrors.join('; ')}`)
+    }
+    return
+  }
+
+  const stripeSettings = [
+    configuration.STRIPE_SECRET_KEY,
+    configuration.STRIPE_WEBHOOK_SECRET,
+    configuration.STRIPE_PRO_PRICE_ID,
+  ]
+  if (stripeSettings.some(Boolean) && stripeSettings.some((value) => !value)) {
     configurationErrors.push(
-      'JWT_SECRET must be a unique, non-placeholder secret of at least 32 characters'
+      'STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, and STRIPE_PRO_PRICE_ID must be configured together'
     )
   }
 
+  if (!configuration.DATABASE_URL || !/^postgres(?:ql)?:\/\//i.test(configuration.DATABASE_URL)) {
+    configurationErrors.push('DATABASE_URL must be a PostgreSQL connection URL')
+  } else if (isLocalAddress(configuration.DATABASE_URL)) {
+    configurationErrors.push('DATABASE_URL must not point to a local host in production')
+  }
+  if (!configuration.REDIS_URL || !/^rediss?:\/\//i.test(configuration.REDIS_URL)) {
+    configurationErrors.push('REDIS_URL must be a Redis connection URL')
+  } else if (isLocalAddress(configuration.REDIS_URL)) {
+    configurationErrors.push('REDIS_URL must not point to a local host in production')
+  }
+  let frontendUrl: URL | null = null
+  try {
+    frontendUrl = new URL(configuration.FRONTEND_URL)
+  } catch {
+    frontendUrl = null
+  }
   if (
-    env.GITHUB_TOKEN_ENCRYPTION_KEY.length < 32 ||
-    env.GITHUB_TOKEN_ENCRYPTION_KEY === env.JWT_SECRET ||
-    isPlaceholderSecret(env.GITHUB_TOKEN_ENCRYPTION_KEY)
+    !frontendUrl ||
+    !/^https?:$/.test(frontendUrl.protocol) ||
+    frontendUrl.pathname !== '/' ||
+    frontendUrl.search !== '' ||
+    frontendUrl.hash !== '' ||
+    isLocalAddress(configuration.FRONTEND_URL)
   ) {
-    configurationErrors.push(
-      'GITHUB_TOKEN_ENCRYPTION_KEY must be an independent, non-placeholder secret of at least 32 characters'
-    )
+    configurationErrors.push('FRONTEND_URL must be a public HTTP(S) origin in production')
+  }
+  if (!configuration.OPENAI_API_KEY) configurationErrors.push('OPENAI_API_KEY is required')
+  if (!configuration.GITHUB_CLIENT_ID) configurationErrors.push('GITHUB_CLIENT_ID is required')
+  if (!configuration.GITHUB_CLIENT_SECRET) configurationErrors.push('GITHUB_CLIENT_SECRET is required')
+  if (!configuration.GITHUB_WEBHOOK_SECRET) configurationErrors.push('GITHUB_WEBHOOK_SECRET is required')
+  if (!configuration.STRIPE_SECRET_KEY) configurationErrors.push('STRIPE_SECRET_KEY is required')
+  if (!configuration.STRIPE_WEBHOOK_SECRET) configurationErrors.push('STRIPE_WEBHOOK_SECRET is required')
+  if (!configuration.STRIPE_PRO_PRICE_ID) configurationErrors.push('STRIPE_PRO_PRICE_ID is required')
+  for (const [name, value] of [
+    ['OPENAI_API_KEY', configuration.OPENAI_API_KEY],
+    ['GITHUB_CLIENT_ID', configuration.GITHUB_CLIENT_ID],
+    ['GITHUB_CLIENT_SECRET', configuration.GITHUB_CLIENT_SECRET],
+    ['GITHUB_WEBHOOK_SECRET', configuration.GITHUB_WEBHOOK_SECRET],
+    ['STRIPE_SECRET_KEY', configuration.STRIPE_SECRET_KEY],
+    ['STRIPE_WEBHOOK_SECRET', configuration.STRIPE_WEBHOOK_SECRET],
+    ['STRIPE_PRO_PRICE_ID', configuration.STRIPE_PRO_PRICE_ID],
+  ] as const) {
+    if (value && isPlaceholderSecret(value)) {
+      configurationErrors.push(`${name} must not use a sample placeholder`)
+    }
+  }
+
+  if (configuration.JWT_SECRET.length < 32 || isPlaceholderSecret(configuration.JWT_SECRET)) {
+    configurationErrors.push('JWT_SECRET must be a unique, non-placeholder secret of at least 32 characters')
   }
 
   if (
-    env.GITHUB_TOKEN_ENCRYPTION_KEY_PREVIOUS &&
-    (env.GITHUB_TOKEN_ENCRYPTION_KEY_PREVIOUS.length < 32 ||
-      isPlaceholderSecret(env.GITHUB_TOKEN_ENCRYPTION_KEY_PREVIOUS))
+    configuration.GITHUB_TOKEN_ENCRYPTION_KEY.length < 32 ||
+    configuration.GITHUB_TOKEN_ENCRYPTION_KEY === configuration.JWT_SECRET ||
+    isPlaceholderSecret(configuration.GITHUB_TOKEN_ENCRYPTION_KEY)
   ) {
-    configurationErrors.push(
-      'GITHUB_TOKEN_ENCRYPTION_KEY_PREVIOUS must be a non-placeholder secret of at least 32 characters'
-    )
+    configurationErrors.push('GITHUB_TOKEN_ENCRYPTION_KEY must be an independent, non-placeholder secret of at least 32 characters')
+  }
+
+  if (
+    configuration.GITHUB_TOKEN_ENCRYPTION_KEY_PREVIOUS &&
+    (configuration.GITHUB_TOKEN_ENCRYPTION_KEY_PREVIOUS.length < 32 ||
+      isPlaceholderSecret(configuration.GITHUB_TOKEN_ENCRYPTION_KEY_PREVIOUS))
+  ) {
+    configurationErrors.push('GITHUB_TOKEN_ENCRYPTION_KEY_PREVIOUS must be a non-placeholder secret of at least 32 characters')
+  }
+
+  if (configuration.STRIPE_SECRET_KEY && !/^sk_(test|live)_/.test(configuration.STRIPE_SECRET_KEY)) {
+    configurationErrors.push('STRIPE_SECRET_KEY must be a Stripe test or live secret key')
+  }
+  if (configuration.STRIPE_WEBHOOK_SECRET && !configuration.STRIPE_WEBHOOK_SECRET.startsWith('whsec_')) {
+    configurationErrors.push('STRIPE_WEBHOOK_SECRET must be a Stripe webhook signing secret')
+  }
+  if (configuration.STRIPE_PRO_PRICE_ID && !configuration.STRIPE_PRO_PRICE_ID.startsWith('price_')) {
+    configurationErrors.push('STRIPE_PRO_PRICE_ID must be a Stripe price ID')
   }
 
   if (configurationErrors.length > 0) {
-    throw new Error(`Invalid production security configuration: ${configurationErrors.join('; ')}`)
+    throw new Error(`Invalid ${configuration.NODE_ENV} configuration: ${configurationErrors.join('; ')}`)
   }
 }
+
+validateEnvironment(env)
 
 export const isDevelopment = env.NODE_ENV === 'development'
 export const isProduction = env.NODE_ENV === 'production'

@@ -8,6 +8,8 @@ import {
 
 test('maps Stripe subscription states without granting access to delinquent subscriptions', () => {
   assert.equal(mapStripeSubscriptionStatus('active'), 'ACTIVE')
+  assert.equal(mapStripeSubscriptionStatus('active', true), 'CANCELED')
+  assert.equal(mapStripeSubscriptionStatus('trialing', true), 'CANCELED')
   assert.equal(mapStripeSubscriptionStatus('trialing'), 'ACTIVE')
   assert.equal(mapStripeSubscriptionStatus('canceled'), 'CANCELED')
   assert.equal(mapStripeSubscriptionStatus('past_due'), 'EXPIRED')

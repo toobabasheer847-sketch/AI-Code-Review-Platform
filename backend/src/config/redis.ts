@@ -1,26 +1,21 @@
 import { createClient } from 'redis'
 import { env } from './env'
+import logger from '@/utils/logger'
 
 export const redis = createClient({
   url: env.REDIS_URL,
 })
 
-redis.on('error', (err: Error) => console.error('Redis Client Error', err))
+redis.on('error', () => logger.error('Redis client error'))
 
 export async function connectRedis(): Promise<void> {
-  try {
-    await redis.connect()
-    console.log('Redis connected')
-  } catch (error) {
-    console.error('Redis connection failed:', error)
-  }
+  if (redis.isOpen) return
+  await redis.connect()
+  logger.info('Redis connected')
 }
 
 export async function disconnectRedis(): Promise<void> {
-  try {
-    await redis.disconnect()
-    console.log('Redis disconnected')
-  } catch (error) {
-    console.error('Redis disconnection failed:', error)
-  }
+  if (!redis.isOpen) return
+  await redis.quit()
+  logger.info('Redis disconnected')
 }

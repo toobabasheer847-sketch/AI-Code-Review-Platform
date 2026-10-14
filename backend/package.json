@@ -17,7 +17,7 @@
     "prisma:deploy": "prisma migrate deploy --schema src/prisma/schema.prisma",
     "prisma:studio": "prisma studio --schema src/prisma/schema.prisma",
     "seed": "tsx src/prisma/seed.ts",
-    "test": "tsx --test src/routes.test.ts src/middleware/auth.middleware.test.ts src/modules/auth/auth.routes.test.ts src/modules/auth/auth.service.test.ts src/modules/code-review/analyzer.test.ts src/modules/code-review/review.pipeline.test.ts src/modules/billing/billing.mapping.test.ts src/modules/github/pull-request-webhook.test.ts src/modules/github/pull-request-publish.test.ts",
+    "test": "tsx --test src/routes.test.ts src/middleware/auth.middleware.test.ts src/modules/auth/auth.routes.test.ts src/modules/auth/auth.service.test.ts src/modules/code-review/analyzer.test.ts src/modules/code-review/review.pipeline.test.ts src/modules/billing/billing.mapping.test.ts src/modules/billing/stripe-service.test.ts src/modules/billing/stripe-event-claim.test.ts src/modules/billing/review-quota.test.ts src/config/env.test.ts src/modules/github/pull-request-webhook.test.ts src/modules/github/pull-request-publish.test.ts",
     "test:watch": "tsx --test --watch src/modules/code-review/review.pipeline.test.ts"
   },
   "dependencies": {

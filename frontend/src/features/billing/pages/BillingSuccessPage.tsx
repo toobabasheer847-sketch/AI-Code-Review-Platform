@@ -1,14 +1,44 @@
 import { CheckCircle } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 
+import { useBillingStatus } from '../hooks/useBilling'
+
 export const BillingSuccessPage = (): JSX.Element => {
+  const { data, isError, refetch } = useBillingStatus()
+  const [checks, setChecks] = useState(0)
+  const currentPeriodEnd = data?.currentPeriodEnd
+    ? new Date(data.currentPeriodEnd).getTime()
+    : null
+  const confirmed = data?.plan === 'PRO' &&
+    (data.status === 'ACTIVE'
+      ? currentPeriodEnd === null || currentPeriodEnd > Date.now()
+      : data.status === 'CANCELED' && currentPeriodEnd !== null && currentPeriodEnd > Date.now())
+
+  useEffect(() => {
+    if (confirmed || checks >= 10) return
+    const timer = window.setTimeout(() => {
+      setChecks((current) => current + 1)
+      void refetch()
+    }, 2000)
+    return () => window.clearTimeout(timer)
+  }, [checks, confirmed, refetch])
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-[#0f172a] px-4">
       <div className="w-full max-w-md rounded-xl border border-slate-800 bg-[#1e293b]/40 p-8 text-center backdrop-blur-md shadow-2xl shadow-black/20">
-        <CheckCircle className="mx-auto h-12 w-12 text-emerald-400" />
-        <h1 className="mt-4 text-2xl font-bold text-white">Payment successful</h1>
-        <p className="mt-2 text-sm text-slate-400">
-          Your Pro subscription is being activated. You can start using unlimited reviews shortly.
+        <CheckCircle className={`mx-auto h-12 w-12 ${confirmed ? 'text-emerald-400' : 'text-amber-400'}`} />
+        <h1 className="mt-4 text-2xl font-bold text-white">
+          {confirmed ? 'Pro subscription confirmed' : 'Confirming subscription status'}
+        </h1>
+        <p className="mt-2 text-sm text-slate-400" aria-live="polite">
+          {isError
+            ? 'We could not verify your subscription with the billing service. Check Billing in a moment.'
+            : confirmed
+              ? 'The backend has confirmed your Pro subscription.'
+              : checks >= 10
+                ? 'The backend has not confirmed an active Pro subscription yet. Check Billing again shortly.'
+                : 'Waiting for the backend to confirm your subscription. This may take a few moments.'}
         </p>
         <Link
           to="/dashboard"

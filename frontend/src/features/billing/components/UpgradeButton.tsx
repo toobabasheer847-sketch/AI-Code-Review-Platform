@@ -1,8 +1,12 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { useAppStore } from '@/app/store/useAppStore'
 
+import { getBillingErrorMessage } from '../api/billingApi'
 import { useCreateCheckout } from '../hooks/useBilling'
+
+
 
 interface Props {
   priceId: string
@@ -13,12 +17,13 @@ export const UpgradeButton = ({ priceId, children }: Props): JSX.Element => {
   const createCheckout = useCreateCheckout()
   const token = useAppStore((s) => s.token)
   const navigate = useNavigate()
+  const [errorMessage, setErrorMessage] = useState('')
 
   const isDisabled = !priceId
 
   const handleClick = async (): Promise<void> => {
     if (!priceId) {
-      console.error('Missing Stripe price ID. Set VITE_STRIPE_PRO_PRICE_ID in the frontend environment.')
+      setErrorMessage('Pro checkout is not configured. Please contact support.')
       return
     }
 
@@ -27,28 +32,34 @@ export const UpgradeButton = ({ priceId, children }: Props): JSX.Element => {
       return
     }
 
+    setErrorMessage('')
     try {
       const res = await createCheckout.mutateAsync(priceId)
       if (res?.url) {
         window.location.href = res.url
+      } else {
+        setErrorMessage('Checkout could not be started. Please retry later.')
       }
     } catch (error) {
-      console.error(error)
+      setErrorMessage(getBillingErrorMessage(error, 'Checkout could not be started. Please retry.'))
     }
   }
 
   return (
-    <button
-      type="button"
-      disabled={isDisabled}
-      onClick={handleClick}
-      className={`inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-medium text-white shadow-lg transition-all ${
-        isDisabled
-          ? 'cursor-not-allowed bg-slate-700/80 shadow-none'
-          : 'bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-600 hover:to-blue-700 shadow-indigo-500/20'
-      }`}
-    >
-      {children ?? 'Upgrade to Pro'}
-    </button>
+    <div>
+      <button
+        type="button"
+        disabled={isDisabled || createCheckout.isPending}
+        onClick={handleClick}
+        className={`inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-medium text-white shadow-lg transition-all ${
+          isDisabled || createCheckout.isPending
+            ? 'cursor-not-allowed bg-slate-700/80 shadow-none'
+            : 'bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-600 hover:to-blue-700 shadow-indigo-500/20'
+        }`}
+      >
+        {createCheckout.isPending ? 'Starting checkout…' : children ?? 'Upgrade to Pro'}
+      </button>
+      {errorMessage && <p role="alert" className="mt-3 text-sm text-rose-300">{errorMessage}</p>}
+    </div>
   )
 }

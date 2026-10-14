@@ -159,9 +159,11 @@ export const pullRequestWebhookStore: PullRequestWebhookStore = {
       if (updated.count > 0) {
         const review = await transaction.codeReview.findUnique({
           where: { id: reviewId },
-          select: { userId: true },
+          select: { userId: true, createdAt: true },
         })
-        if (review) await releaseReviewQuota(transaction, review.userId)
+        if (review) {
+          await releaseReviewQuota(transaction, review.userId, review.createdAt)
+        }
       }
       await transaction.gitHubWebhookDelivery.update({
         where: { id: deliveryId },

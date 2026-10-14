@@ -14,7 +14,7 @@
     "lint:fix": "npm run lint:fix --workspaces",
     "format": "prettier --write \"**/*.{ts,tsx,json,css,md}\"",
     "type-check": "npm run type-check --workspaces",
-    "test": "npm run test --workspaces",
+    "test": "npm run test --workspace=backend",
     "prepare": "husky install"
   },
   "devDependencies": {

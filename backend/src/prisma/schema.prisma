@@ -79,9 +79,14 @@ model Subscription {
 }
 
 model StripeEvent {
-  id        String   @id
-  type      String
-  createdAt DateTime @default(now())
+  id           String   @id
+  type         String
+  status       String   @default("PROCESSED")
+  errorMessage String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([status, updatedAt])
 }
 
 enum Plan {
