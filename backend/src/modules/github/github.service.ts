@@ -331,7 +331,7 @@ export class GitHubService {
       throw new Error('GitHub OAuth environment variables are missing')
     }
 
-    const response = await axios.post<GitHubTokenResponse>(GITHUB_TOKEN_URL, getAccessTokenExchangeBody(code), {
+    const response = await this.api.post<GitHubTokenResponse>(GITHUB_TOKEN_URL, getAccessTokenExchangeBody(code), {
       headers: {
         Accept: 'application/json',
       },
@@ -345,7 +345,7 @@ export class GitHubService {
   }
 
   async fetchGitHubProfile(accessToken: string): Promise<GitHubUserProfile> {
-    const response = await axios.get<GitHubUserProfile>(`${GITHUB_API_BASE}/user`, {
+    const response = await this.api.get<GitHubUserProfile>(`${GITHUB_API_BASE}/user`, {
       headers: buildGitHubHeaders(accessToken),
     })
 
@@ -467,11 +467,11 @@ export class GitHubService {
     const headers = buildGitHubHeaders(token)
     let repositoryResponse
     try {
-      repositoryResponse = await axios.get<{ full_name: string; html_url: string }>(
+      repositoryResponse = await this.api.get<{ full_name: string; html_url: string }>(
         `${GITHUB_API_BASE}/repos/${encodedRepository}`,
         { headers, timeout: 15_000 }
       )
-      await axios.get(
+      await this.api.get(
         `${GITHUB_API_BASE}/repos/${encodedRepository}/branches/${branch
           .split('/')
           .map(encodeURIComponent)
@@ -510,7 +510,7 @@ export class GitHubService {
     const encodedRepository = `${encodeURIComponent(owner)}/${encodeURIComponent(name)}`
     const branchPath = branch.split('/').map(encodeURIComponent).join('/')
     const headers = buildGitHubHeaders(token)
-    const treeResponse = await axios.get<GitHubTreeResponse>(
+    const treeResponse = await this.api.get<GitHubTreeResponse>(
       `${GITHUB_API_BASE}/repos/${encodedRepository}/git/trees/${branchPath}`,
       { headers, params: { recursive: '1' }, timeout: 15_000 }
     )
@@ -528,7 +528,7 @@ export class GitHubService {
             .split('/')
             .map(encodeURIComponent)
             .join('/')
-          const response = await axios.get<string>(
+          const response = await this.api.get<string>(
             `${GITHUB_API_BASE}/repos/${encodedRepository}/contents/${filePath}`,
             {
               headers: {
@@ -781,9 +781,9 @@ export class GitHubService {
   }
 
   async getRepos(userId: string) {
-    const token = await this.getValidatedAccessToken(userId)
+    const token = await this.getAccessToken(userId)
 
-    const response = await axios.get<GitHubRepositoryResponse[]>(`${GITHUB_API_BASE}/user/repos`, {
+    const response = await this.api.get<GitHubRepositoryResponse[]>(`${GITHUB_API_BASE}/user/repos`, {
       headers: buildGitHubHeaders(token),
       params: {
         per_page: 100,
@@ -803,10 +803,10 @@ export class GitHubService {
   }
 
   async getRepoFiles(userId: string, repoName: string) {
-    const token = await this.getValidatedAccessToken(userId)
+    const token = await this.getAccessToken(userId)
     const [owner, name] = parseReviewRepositoryName(repoName)
     const encodedRepository = `${encodeURIComponent(owner)}/${encodeURIComponent(name)}`
-    const response = await axios.get<GitHubTreeResponse>(
+    const response = await this.api.get<GitHubTreeResponse>(
       `${GITHUB_API_BASE}/repos/${encodedRepository}/git/trees/HEAD`,
       {
         headers: buildGitHubHeaders(token),
@@ -828,7 +828,7 @@ export class GitHubService {
   }
 
   async getFileContent(userId: string, repo: string, path: string) {
-    const token = await this.getValidatedAccessToken(userId)
+    const token = await this.getAccessToken(userId)
     const [owner, name] = parseReviewRepositoryName(repo)
     const pathSegments = path.split('/')
     if (!path || pathSegments.some((segment) => !segment || segment === '.' || segment === '..')) {
@@ -840,7 +840,7 @@ export class GitHubService {
       .map((segment) => encodeURIComponent(segment))
       .join('/')
 
-    const response = await axios.get<string>(
+    const response = await this.api.get<string>(
       `${GITHUB_API_BASE}/repos/${encodedRepository}/contents/${encodedPath}`,
       {
       headers: {

@@ -10,7 +10,7 @@ async function main(): Promise<void> {
   console.log('Seeding database...')
 
   // Create demo user
-  const demoUser = await prisma.user.upsert({
+  await prisma.user.upsert({
     where: { email: 'demo@example.com' },
     update: {},
     create: {
@@ -21,7 +21,7 @@ async function main(): Promise<void> {
     },
   })
 
-  console.log('Demo user created:', demoUser)
+  console.log('Demo user is ready.')
   console.log('Seeding complete')
 }
 
