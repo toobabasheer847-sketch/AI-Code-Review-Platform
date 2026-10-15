@@ -20,6 +20,9 @@ const GitHubReposPage = lazy(() => import('@features/github/pages/GitHubReposPag
 const ReviewsPage = lazy(() => import('@features/reviews/pages/ReviewsPage').then((m) => ({ default: m.ReviewsPage })))
 const ReviewByIdPage = lazy(() => import('@features/reviews/pages/ReviewByIdPage').then((m) => ({ default: m.ReviewByIdPage })))
 const SettingsPage = lazy(() => import('@features/profile/pages/SettingsPage').then((m) => ({ default: m.SettingsPage })))
+const AutomationPage = lazy(() =>
+  import('@features/automation/pages/AutomationPage').then((m) => ({ default: m.AutomationPage }))
+)
 const NotFound = lazy(() => import('@pages/NotFound').then((m) => ({ default: m.NotFound })))
 
 const LazyFallback = (): JSX.Element => <LoadingSpinner fullScreen />
@@ -89,6 +92,16 @@ export const routes: RouteObject[] = [
       <ProtectedRoute>
         <Suspense fallback={<LazyFallback />}>
           <DashboardPage />
+        </Suspense>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/automations',
+    element: (
+      <ProtectedRoute>
+        <Suspense fallback={<LazyFallback />}>
+          <AutomationPage />
         </Suspense>
       </ProtectedRoute>
     ),

@@ -11,26 +11,160 @@ datasource db {
 }
 
 model User {
-  id            String          @id @default(cuid())
-  email         String          @unique
-  fullName      String
-  passwordHash  String
-  avatar        String?
-  githubId      String?         @unique
-  githubAccount GitHubAccount?
-  isVerified    Boolean         @default(false)
-  tokenVersion  Int             @default(0)
-  subscription  Subscription?
-  repositories  Repository[]
-  reviews       CodeReview[]
-  chatConversations ChatConversation[]
-  usages         Usage[]
-  reviewAnalytics ReviewAnalytics[]
-  accountTokens AccountToken[]
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  id                  String               @id @default(cuid())
+  email               String               @unique
+  fullName            String
+  passwordHash        String
+  avatar              String?
+  githubId            String?              @unique
+  githubAccount       GitHubAccount?
+  isVerified          Boolean              @default(false)
+  tokenVersion        Int                  @default(0)
+  subscription        Subscription?
+  repositories        Repository[]
+  reviews             CodeReview[]
+  chatConversations   ChatConversation[]
+  usages              Usage[]
+  reviewAnalytics     ReviewAnalytics[]
+  accountTokens       AccountToken[]
+  automations         Automation[]
+  automationApprovals AutomationApproval[]
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
 
   @@index([email])
+}
+
+enum AutomationMode {
+  DRAFT_ONLY
+  APPROVAL_REQUIRED
+  AUTO_LOW_RISK
+}
+
+enum AutomationStatus {
+  DRAFT
+  AWAITING_APPROVAL
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELED
+  REJECTED
+}
+
+enum AutomationTaskStatus {
+  PENDING
+  AWAITING_APPROVAL
+  READY
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELED
+}
+
+enum AutomationAttemptStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELED
+}
+
+enum AutomationApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+  CANCELED
+}
+
+model Automation {
+  id             String               @id @default(cuid())
+  userId         String
+  user           User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goal           String
+  title          String
+  mode           AutomationMode       @default(APPROVAL_REQUIRED)
+  status         AutomationStatus     @default(DRAFT)
+  retryCount     Int                  @default(0)
+  idempotencyKey String?
+  tasks          AutomationTask[]
+  events         AutomationEvent[]
+  approvals      AutomationApproval[]
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  @@unique([userId, idempotencyKey])
+  @@index([userId, createdAt])
+  @@index([status, updatedAt])
+}
+
+model AutomationApproval {
+  id           String                   @id @default(cuid())
+  automationId String
+  automation   Automation               @relation(fields: [automationId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status       AutomationApprovalStatus @default(PENDING)
+  summary      String
+  payload      Json
+  payloadHash  String
+  expiresAt    DateTime
+  decidedAt    DateTime?
+  createdAt    DateTime                 @default(now())
+
+  @@index([userId, status, expiresAt])
+  @@index([automationId, status])
+}
+
+model AutomationTask {
+  id                String                       @id @default(cuid())
+  automationId      String
+  automation        Automation                   @relation(fields: [automationId], references: [id], onDelete: Cascade)
+  key               String
+  title             String
+  description       String
+  action            String
+  dependencies      String[]                     @default([])
+  input             Json
+  output            Json?
+  executionAttempts AutomationExecutionAttempt[]
+  status            AutomationTaskStatus         @default(PENDING)
+  attempts          Int                          @default(0)
+  errorMessage      String?
+  startedAt         DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime                     @default(now())
+  updatedAt         DateTime                     @updatedAt
+
+  @@unique([automationId, key])
+  @@index([automationId, status])
+}
+
+model AutomationExecutionAttempt {
+  id            String                  @id @default(cuid())
+  taskId        String
+  task          AutomationTask          @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  attemptNumber Int
+  status        AutomationAttemptStatus @default(RUNNING)
+  output        Json?
+  errorMessage  String?
+  startedAt     DateTime                @default(now())
+  completedAt   DateTime?
+  createdAt     DateTime                @default(now())
+
+  @@unique([taskId, attemptNumber])
+  @@index([taskId, createdAt])
+}
+
+model AutomationEvent {
+  id           String     @id @default(cuid())
+  automationId String
+  automation   Automation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+  type         String
+  message      String
+  createdAt    DateTime   @default(now())
+
+  @@index([automationId, createdAt])
 }
 
 model GitHubAccount {
@@ -63,19 +197,19 @@ model AccountToken {
 }
 
 model Subscription {
-  id            String    @id @default(cuid())
-  userId        String    @unique
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  plan          Plan      @default(FREE)
-  status        SubscriptionStatus @default(ACTIVE)
-  stripeId      String?   @unique
-  priceId       String?
-  currentPeriodStart DateTime?
-  currentPeriodEnd DateTime?
-  cancelledAt   DateTime?
+  id                       String             @id @default(cuid())
+  userId                   String             @unique
+  user                     User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan                     Plan               @default(FREE)
+  status                   SubscriptionStatus @default(ACTIVE)
+  stripeId                 String?            @unique
+  priceId                  String?
+  currentPeriodStart       DateTime?
+  currentPeriodEnd         DateTime?
+  cancelledAt              DateTime?
   lastStripeEventCreatedAt DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt                DateTime           @default(now())
+  updatedAt                DateTime           @updatedAt
 }
 
 model StripeEvent {
@@ -101,33 +235,33 @@ enum SubscriptionStatus {
 }
 
 model Usage {
-  id         String   @id @default(cuid())
-  userId     String
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  reviewCount Int     @default(0)
-  month      Int
-  year       Int
-  createdAt  DateTime @default(now())
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviewCount Int      @default(0)
+  month       Int
+  year        Int
+  createdAt   DateTime @default(now())
 
-  @@index([userId])
   @@unique([userId, month, year])
+  @@index([userId])
 }
 
 model Repository {
-  id            String    @id @default(cuid())
-  userId        String
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name          String
-  url           String
-  language      String?
-  description   String?
-  isPrivate     Boolean   @default(false)
-  reviews       CodeReview[]
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id          String       @id @default(cuid())
+  userId      String
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  url         String
+  language    String?
+  description String?
+  isPrivate   Boolean      @default(false)
+  reviews     CodeReview[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
 
-  @@index([userId])
   @@unique([userId, url])
+  @@index([userId])
 }
 
 enum ReviewSource {
@@ -136,95 +270,95 @@ enum ReviewSource {
 }
 
 model CodeReview {
-  id            String          @id @default(cuid())
-  userId        String
-  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  repositoryId  String
-  repository    Repository      @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
-  title         String
-  description   String?
-  fileContent   String
-  branch        String          @default("main")
-  source        ReviewSource    @default(MANUAL)
+  id                String                  @id @default(cuid())
+  userId            String
+  user              User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  repositoryId      String
+  repository        Repository              @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  title             String
+  description       String?
+  fileContent       String
+  branch            String                  @default("main")
+  source            ReviewSource            @default(MANUAL)
   pullRequestNumber Int?
-  pullRequestUrl String?
-  headSha       String?
-  changedLines  Json?
-  reviewLimitations String[]     @default([])
-  errorMessage  String?
-  severity      String          @default("medium")
-  status        String          @default("pending")
-  findings      Finding[]
-  chatConversation ChatConversation?
-  analytics     ReviewAnalytics?
+  pullRequestUrl    String?
+  headSha           String?
+  changedLines      Json?
+  reviewLimitations String[]                @default([])
+  errorMessage      String?
+  severity          String                  @default("medium")
+  status            String                  @default("pending")
+  findings          Finding[]
+  chatConversation  ChatConversation?
+  analytics         ReviewAnalytics?
   webhookDeliveries GitHubWebhookDelivery[]
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
 
+  @@unique([repositoryId, pullRequestNumber, headSha])
   @@index([userId])
   @@index([repositoryId])
   @@index([status])
-  @@unique([repositoryId, pullRequestNumber, headSha])
 }
 
 model GitHubWebhookDelivery {
-  id                String      @id
-  event             String
-  action            String
+  id                 String      @id
+  event              String
+  action             String
   repositoryFullName String
-  pullRequestNumber Int
-  headSha           String
-  status            String      @default("processing")
-  errorMessage      String?
-  reviewId          String?
-  review            CodeReview? @relation(fields: [reviewId], references: [id], onDelete: SetNull)
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
+  pullRequestNumber  Int
+  headSha            String
+  status             String      @default("processing")
+  errorMessage       String?
+  reviewId           String?
+  review             CodeReview? @relation(fields: [reviewId], references: [id], onDelete: SetNull)
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
 
   @@index([status])
   @@index([reviewId])
 }
 
 model Finding {
-  id            String    @id @default(cuid())
-  reviewId      String
-  review        CodeReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
-  file          String
-  line          Int
-  endLine       Int?
-  title         String?
-  message       String
-  evidence      String?
-  severity      String
-  category      String          @default("quality")
-  suggestions   String[]
-  createdAt     DateTime  @default(now())
+  id          String     @id @default(cuid())
+  reviewId    String
+  review      CodeReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  file        String
+  line        Int
+  endLine     Int?
+  title       String?
+  message     String
+  evidence    String?
+  severity    String
+  category    String     @default("quality")
+  suggestions String[]
+  createdAt   DateTime   @default(now())
 
   @@index([reviewId])
 }
 
 model ChatConversation {
-  id            String       @id @default(cuid())
-  userId        String
-  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  reviewId      String       @unique
-  review        CodeReview   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
-  title         String
-  messages      ChatMessage[]
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  id        String        @id @default(cuid())
+  userId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviewId  String        @unique
+  review    CodeReview    @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  title     String
+  messages  ChatMessage[]
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
 
   @@index([userId])
   @@index([reviewId])
 }
 
 model ChatMessage {
-  id             String             @id @default(cuid())
+  id             String           @id @default(cuid())
   conversationId String
-  conversation   ChatConversation   @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversation   ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   role           ChatMessageRole
   content        String
-  createdAt      DateTime           @default(now())
+  createdAt      DateTime         @default(now())
 
   @@index([conversationId])
 }
@@ -235,19 +369,19 @@ enum ChatMessageRole {
 }
 
 model ReviewAnalytics {
-  id                 String     @id @default(cuid())
-  userId             String
-  user               User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  reviewId           String
-  review             CodeReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
-  totalIssues        Int
-  bugs               Int
-  securityIssues     Int
-  performanceIssues  Int
-  qualityScore       Int
-  createdAt          DateTime   @default(now())
+  id                String     @id @default(cuid())
+  userId            String
+  user              User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviewId          String
+  review            CodeReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  totalIssues       Int
+  bugs              Int
+  securityIssues    Int
+  performanceIssues Int
+  qualityScore      Int
+  createdAt         DateTime   @default(now())
 
+  @@unique([reviewId])
   @@index([userId])
   @@index([reviewId])
-  @@unique([reviewId])
 }

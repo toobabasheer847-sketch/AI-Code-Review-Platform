@@ -11,6 +11,7 @@ import { prisma } from '@/config/database'
 import { redis } from '@/config/redis'
 import { reviewQueue } from '@/jobs/review.queue'
 import { emailQueue } from '@/jobs/email.queue'
+import { automationQueue } from '@/modules/automation/automation.queue'
 
 // Rate limiting middleware
 const limiter = rateLimit({
@@ -66,9 +67,10 @@ export const createApp = (): Express => {
     try {
       await prisma.$queryRaw`SELECT 1`
       await redis.ping()
-      const [reviewJobs, emailJobs] = await Promise.all([
+      const [reviewJobs, emailJobs, automationJobs] = await Promise.all([
         reviewQueue.getJobCounts('failed'),
         emailQueue.getJobCounts('failed'),
+        automationQueue.getJobCounts('failed'),
       ])
       res.json({
         status: 'ok',
@@ -78,6 +80,7 @@ export const createApp = (): Express => {
         failedJobs: {
           reviews: reviewJobs.failed ?? 0,
           email: emailJobs.failed ?? 0,
+          automations: automationJobs.failed ?? 0,
         },
       })
     } catch {

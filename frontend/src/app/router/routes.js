@@ -15,6 +15,7 @@ const GitHubReposPage = lazy(() => import('@features/github/pages/GitHubReposPag
 const ReviewsPage = lazy(() => import('@features/reviews/pages/ReviewsPage').then((m) => ({ default: m.ReviewsPage })));
 const ReviewByIdPage = lazy(() => import('@features/reviews/pages/ReviewByIdPage').then((m) => ({ default: m.ReviewByIdPage })));
 const SettingsPage = lazy(() => import('@features/profile/pages/SettingsPage').then((m) => ({ default: m.SettingsPage })));
+const AutomationPage = lazy(() => import('@features/automation/pages/AutomationPage').then((m) => ({ default: m.AutomationPage })));
 const NotFound = lazy(() => import('@pages/NotFound').then((m) => ({ default: m.NotFound })));
 const LazyFallback = () => _jsx(LoadingSpinner, { fullScreen: true });
 export const routes = [
@@ -49,6 +50,10 @@ export const routes = [
     {
         path: '/dashboard',
         element: (_jsx(ProtectedRoute, { children: _jsx(Suspense, { fallback: _jsx(LazyFallback, {}), children: _jsx(DashboardPage, {}) }) })),
+    },
+    {
+        path: '/automations',
+        element: (_jsx(ProtectedRoute, { children: _jsx(Suspense, { fallback: _jsx(LazyFallback, {}), children: _jsx(AutomationPage, {}) }) })),
     },
     {
         path: '/pricing',

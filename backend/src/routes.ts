@@ -5,6 +5,7 @@ import reviewRoutes from '@/modules/code-review/review.routes'
 import billingRoutes from '@/modules/billing/billing.routes'
 import chatRoutes from '@/modules/chat/chat.routes'
 import pullRequestWebhookRoutes from '@/modules/github/pull-request-webhook.routes'
+import automationRoutes from '@/modules/automation/automation.routes'
 
 /**
  * Aggregates all API routes.
@@ -19,6 +20,7 @@ export const createApiRoutes = (): Router => {
   router.use('/reviews', reviewRoutes)
   router.use('/billing', billingRoutes)
   router.use('/chat', chatRoutes)
+  router.use('/automations', automationRoutes)
   router.use('/webhooks/github', pullRequestWebhookRoutes)
 
   return router

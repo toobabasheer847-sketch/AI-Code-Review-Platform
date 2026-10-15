@@ -1,5 +1,5 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
-import { Github, FileSearch, CreditCard, Settings } from 'lucide-react';
+import { Github, FileSearch, CreditCard, Settings, Workflow } from 'lucide-react';
 import { useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAppStore } from '@/app/store/useAppStore';
@@ -8,6 +8,7 @@ import { ConnectGitHubButton } from '@/features/github/components/ConnectGitHubB
 const navLinks = [
     { to: '/github/repos', label: 'Repositories', icon: Github },
     { to: '/reviews', label: 'Code Reviews', icon: FileSearch },
+    { to: '/automations', label: 'Automations', icon: Workflow },
     { to: '/billing', label: 'Billing', icon: CreditCard },
     { to: '/settings', label: 'Settings', icon: Settings },
 ];

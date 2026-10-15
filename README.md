@@ -13,6 +13,7 @@ AI-CodeGuard is a full-stack application for AI-assisted code review with GitHub
 - **GitHub Integration**: Seamless GitHub repository integration with OAuth
 - **Subscription Billing**: Stripe integration for payment processing
 - **Background Jobs**: BullMQ for async processing of reviews and emails
+- **Automation MVP**: Approval-gated plans with persisted task status and safe text-draft execution
 - **Real-time Analytics**: Dashboard with comprehensive insights
 - **Enterprise Security**: JWT authentication, encryption, CORS, and helmet protection
 - **Multi-language Support**: Support for various programming languages
@@ -155,6 +156,39 @@ Redis, and both job queues and reports retained failed-job counts.
 ### AI Endpoints
 - `POST /api/ai/analyze` - Analyze code with AI
 - `POST /api/ai/chat` - Chat about code review
+
+### Automation MVP
+- `POST /api/automations` - Create and validate an automation plan (authenticated)
+- `GET /api/automations` and `GET /api/automations/:id` - List or retrieve owned workflows
+- `POST /api/automations/:id/approve` - Approve an unchanged, unexpired plan and queue it
+- `POST /api/automations/:id/reject` - Reject a pending plan without executing tasks
+- `POST /api/automations/:id/cancel` - Cancel a draft or active workflow
+- `POST /api/automations/:id/retry` - Retry a failed workflow
+
+The command center's supported end-to-end workflow reads up to five of the
+authenticated user's latest completed code-review records, then generates an
+internal text draft from the review-reported results. Review content is treated
+as untrusted input; drafts must not claim an issue was fixed or an improvement
+was independently verified. The goal and selected review text are sent to the
+configured OpenAI provider for draft generation. The automation does not start
+new code reviews or consume the review quota.
+
+Approval-required plans create a seven-day approval request containing the
+exact plan payload and its fingerprint. Approval is checked server-side;
+rejection, expiration, or a changed payload prevents execution. Execution uses
+the existing BullMQ/Redis worker and records individual task attempts, outputs,
+failures, and workflow events. Draft-only mode does not execute; automatic mode
+is limited to registered internal read/draft actions.
+
+Live GitHub activity, repository writes, external publishing, and social media
+integrations are not available. LinkedIn publishing is not configured and
+requires a provider implementation, OAuth/API credentials, and the relevant
+publishing permissions. The registered actions reject publishing, GitHub
+write, shell, SQL, and arbitrary URL actions. The automation uses the existing
+`OPENAI_API_KEY` and `REDIS_URL`; no LinkedIn variables are required or used.
+Apply reviewed database migrations with
+`npm run prisma:deploy --workspace=backend`; do not run development migrations
+against production data.
 
 ## 🔐 Environment Variables
 
