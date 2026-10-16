@@ -2,11 +2,18 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { AutomationActionRegistry, type ReviewResult } from './automation.actions';
 import {
+  areAutomationDependenciesCompleted,
+  canClaimAutomationTask,
+  canRetryAutomation,
   canTransitionAutomation,
   createApprovalPayload,
   hashApprovalPayload,
+  isApprovalPayloadIntact,
+  isAutomationExecutionAuthorized,
+  isFinalAutomationAttempt,
   isAutomationTaskClaimable,
   isApprovalUsable,
+  MAX_AUTOMATION_RETRIES,
   orderAutomationTaskKeys,
   ownedAutomationWhere,
   shouldExecuteAutomationTask,
@@ -189,6 +196,58 @@ test('task claims prevent duplicate running work and only recover stale attempts
   );
 });
 
+test('dependent tasks cannot be claimed until all prerequisites are completed', () => {
+  const dependencies = [
+    { key: 'read-reviews', status: 'COMPLETED' as const },
+  ];
+  assert.equal(areAutomationDependenciesCompleted(['read-reviews'], dependencies), true);
+  assert.equal(areAutomationDependenciesCompleted(['read-reviews', 'missing'], dependencies), false);
+  assert.equal(
+    areAutomationDependenciesCompleted(
+      ['read-reviews'],
+      [{ key: 'read-reviews', status: 'RUNNING' }]
+    ),
+    false
+  );
+  assert.equal(areAutomationDependenciesCompleted([], []), true);
+  assert.equal(
+    canClaimAutomationTask({
+      status: 'PENDING',
+      startedAt: null,
+      anotherTaskIsRunning: false,
+      dependenciesCompleted: true,
+    }),
+    true
+  );
+  assert.equal(
+    canClaimAutomationTask({
+      status: 'PENDING',
+      startedAt: null,
+      anotherTaskIsRunning: true,
+      dependenciesCompleted: true,
+    }),
+    false
+  );
+  assert.equal(
+    canClaimAutomationTask({
+      status: 'PENDING',
+      startedAt: null,
+      anotherTaskIsRunning: false,
+      dependenciesCompleted: false,
+    }),
+    false
+  );
+});
+
+test('retry and worker failure state boundaries remain bounded and deterministic', () => {
+  assert.equal(canRetryAutomation('FAILED', 0), true);
+  assert.equal(canRetryAutomation('FAILED', MAX_AUTOMATION_RETRIES - 1), true);
+  assert.equal(canRetryAutomation('FAILED', MAX_AUTOMATION_RETRIES), false);
+  assert.equal(canRetryAutomation('RUNNING', 0), false);
+  assert.equal(isFinalAutomationAttempt(0, 3), false);
+  assert.equal(isFinalAutomationAttempt(2, 3), true);
+});
+
 test('action registry runs the injected draft provider and rejects unsupported actions', async () => {
   let calls = 0;
   const registry = new AutomationActionRegistry(async (input) => {
@@ -336,6 +395,15 @@ test('approval fingerprints bind the exact plan and reject expiration or changed
   });
   const payloadHash = hashApprovalPayload(snapshot);
   const now = new Date('2026-10-15T00:00:00.000Z');
+  assert.equal(isApprovalPayloadIntact(snapshot, payloadHash, snapshot), true);
+  assert.equal(
+    isApprovalPayloadIntact(
+      { ...snapshot, goal: 'Tampered after approval' },
+      payloadHash,
+      snapshot
+    ),
+    false
+  );
   assert.equal(
     isApprovalUsable({
       status: 'PENDING',
@@ -375,5 +443,101 @@ test('approval fingerprints bind the exact plan and reject expiration or changed
       now,
     }),
     false
+  );
+});
+
+test('execution requires an owner-matched approval for the unchanged plan', () => {
+  const plan = createApprovalPayload({
+    goal: 'Prepare a technical update',
+    title: 'Review and draft',
+    tasks: [
+      {
+        key: 'draft',
+        title: 'Draft update',
+        description: 'Draft from the saved review.',
+        action: 'generate_text_draft',
+        dependencies: ['review'],
+        input: {},
+      },
+      {
+        key: 'review',
+        title: 'Read reviews',
+        description: 'Read completed code reviews.',
+        action: 'collect_review_results',
+        dependencies: [],
+        input: {},
+      },
+    ],
+  });
+  const expiresAt = new Date('2026-10-16T00:00:00.000Z');
+  const approval = {
+    userId: 'user-a',
+    status: 'APPROVED',
+    payload: plan,
+    payloadHash: hashApprovalPayload(plan),
+    expiresAt,
+    decidedAt: new Date('2026-10-15T00:00:00.000Z'),
+  };
+  assert.equal(
+    isAutomationExecutionAuthorized({
+      mode: 'APPROVAL_REQUIRED',
+      userId: 'user-a',
+      approval,
+      plan,
+    }),
+    true
+  );
+  assert.equal(
+    isAutomationExecutionAuthorized({
+      mode: 'APPROVAL_REQUIRED',
+      userId: 'user-b',
+      approval,
+      plan,
+    }),
+    false
+  );
+  assert.equal(
+    isAutomationExecutionAuthorized({
+      mode: 'APPROVAL_REQUIRED',
+      userId: 'user-a',
+      approval: { ...approval, payload: { ...plan, goal: 'Changed after approval' } },
+      plan,
+    }),
+    false
+  );
+  assert.equal(
+    isAutomationExecutionAuthorized({
+      mode: 'APPROVAL_REQUIRED',
+      userId: 'user-a',
+      approval: { ...approval, status: 'PENDING' },
+      plan,
+    }),
+    false
+  );
+  assert.equal(
+    isAutomationExecutionAuthorized({
+      mode: 'APPROVAL_REQUIRED',
+      userId: 'user-a',
+      approval: { ...approval, decidedAt: expiresAt },
+      plan,
+    }),
+    false
+  );
+  assert.equal(
+    isAutomationExecutionAuthorized({
+      mode: 'DRAFT_ONLY',
+      userId: 'user-a',
+      approval,
+      plan,
+    }),
+    false
+  );
+  assert.equal(
+    isAutomationExecutionAuthorized({
+      mode: 'AUTO_LOW_RISK',
+      userId: 'user-a',
+      plan,
+    }),
+    true
   );
 });

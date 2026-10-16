@@ -13,9 +13,11 @@ import {
   AUTOMATION_APPROVAL_TTL_MS,
   MAX_ACTIVE_AUTOMATIONS_PER_USER,
   MAX_AUTOMATION_RETRIES,
+  canRetryAutomation,
   canTransitionAutomation,
   createApprovalPayload,
   hashApprovalPayload,
+  isApprovalPayloadIntact,
   isApprovalUsable,
   ownedAutomationWhere,
   type AutomationModeValue,
@@ -198,9 +200,11 @@ export class AutomationService {
         throw new AutomationError('No pending approval exists for this automation.', 409);
       }
 
-      const approvalPayloadHash = hashApprovalPayload(approval.payload);
-      const matchesCurrentPlan =
-        approvalPayloadHash === approval.payloadHash && approval.payloadHash === currentPayloadHash;
+      const matchesCurrentPlan = isApprovalPayloadIntact(
+        approval.payload,
+        approval.payloadHash,
+        currentPayload
+      );
       const usable =
         isApprovalUsable({
           status: approval.status,
@@ -438,11 +442,14 @@ export class AutomationService {
 
   async retry(userId: string, automationId: string): Promise<AutomationRecord> {
     const automation = await this.getRequired(userId, automationId);
-    if (!canTransitionAutomation(automation.status, AutomationStatus.QUEUED)) {
+    if (!canRetryAutomation(automation.status, automation.retryCount)) {
+      if (
+        automation.status === AutomationStatus.FAILED &&
+        automation.retryCount >= MAX_AUTOMATION_RETRIES
+      ) {
+        throw new AutomationError('The maximum number of automation retries has been reached.', 409);
+      }
       throw new AutomationError('Only failed automations can be retried.', 409);
-    }
-    if (automation.retryCount >= MAX_AUTOMATION_RETRIES) {
-      throw new AutomationError('The maximum number of automation retries has been reached.', 409);
     }
     const retryCount = automation.retryCount + 1;
     await prisma.$transaction(async (transaction) => {

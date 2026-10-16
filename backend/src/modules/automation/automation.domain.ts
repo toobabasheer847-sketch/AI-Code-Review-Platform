@@ -131,6 +131,20 @@ export function shouldExecuteAutomationTask(status: AutomationTaskStatus): boole
   return status === 'PENDING' || status === 'READY' || status === 'FAILED' || status === 'RUNNING';
 }
 
+export function areAutomationDependenciesCompleted(
+  requiredKeys: string[],
+  dependencies: Array<{ key: string; status: AutomationTaskStatus }>
+): boolean {
+  return (
+    dependencies.length === requiredKeys.length &&
+    requiredKeys.every((key) =>
+      dependencies.some(
+        (dependency) => dependency.key === key && dependency.status === 'COMPLETED'
+      )
+    )
+  );
+}
+
 export function isAutomationTaskClaimable(input: {
   status: AutomationTaskStatus
   startedAt: Date | null
@@ -146,6 +160,35 @@ export function isAutomationTaskClaimable(input: {
     input.startedAt !== null &&
     input.startedAt.getTime() <= staleBefore
   );
+}
+
+export function canClaimAutomationTask(input: {
+  status: AutomationTaskStatus;
+  startedAt: Date | null;
+  anotherTaskIsRunning: boolean;
+  dependenciesCompleted: boolean;
+  now?: Date;
+}): boolean {
+  return (
+    !input.anotherTaskIsRunning &&
+    input.dependenciesCompleted &&
+    isAutomationTaskClaimable({
+      status: input.status,
+      startedAt: input.startedAt,
+      now: input.now,
+    })
+  );
+}
+
+export function canRetryAutomation(
+  status: AutomationStatusValue,
+  retryCount: number
+): boolean {
+  return status === 'FAILED' && retryCount < MAX_AUTOMATION_RETRIES;
+}
+
+export function isFinalAutomationAttempt(attemptsMade: number, maxAttempts: number): boolean {
+  return attemptsMade + 1 >= maxAttempts;
 }
 
 export interface ApprovalPayloadSource {
@@ -193,6 +236,44 @@ function stableSerialize(value: unknown): string {
 
 export function hashApprovalPayload(payload: unknown): string {
   return createHash('sha256').update(stableSerialize(payload)).digest('hex');
+}
+
+export function isApprovalPayloadIntact(
+  payload: unknown,
+  payloadHash: string,
+  expectedPayload: ApprovalPayloadSource
+): boolean {
+  const expectedHash = hashApprovalPayload(createApprovalPayload(expectedPayload));
+  return hashApprovalPayload(payload) === payloadHash && payloadHash === expectedHash;
+}
+
+export function isAutomationExecutionAuthorized(input: {
+  mode: AutomationModeValue;
+  userId: string;
+  approval?: {
+    userId: string;
+    status: string;
+    payload: unknown;
+    payloadHash: string;
+    expiresAt: Date;
+    decidedAt: Date | null;
+  } | null;
+  plan: ApprovalPayloadSource;
+}): boolean {
+  if (input.mode === 'AUTO_LOW_RISK') return true;
+  if (input.mode !== 'APPROVAL_REQUIRED' || !input.approval) return false;
+
+  return (
+    input.approval.userId === input.userId &&
+    input.approval.status === 'APPROVED' &&
+    input.approval.decidedAt !== null &&
+    input.approval.decidedAt < input.approval.expiresAt &&
+    isApprovalPayloadIntact(
+      input.approval.payload,
+      input.approval.payloadHash,
+      input.plan
+    )
+  );
 }
 
 export function isApprovalUsable(input: {

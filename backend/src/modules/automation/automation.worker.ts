@@ -12,7 +12,11 @@ import logger from '@/utils/logger';
 import { AutomationActionRegistry } from './automation.actions';
 import type { AutomationJobData } from './automation.queue';
 import {
-  isAutomationTaskClaimable,
+  areAutomationDependenciesCompleted,
+  canClaimAutomationTask,
+  createApprovalPayload,
+  isAutomationExecutionAuthorized,
+  isFinalAutomationAttempt,
   orderAutomationTaskKeys,
   shouldExecuteAutomationTask,
 } from './automation.domain';
@@ -23,7 +27,14 @@ async function processAutomation(job: Job<AutomationJobData>): Promise<void> {
   const { automationId } = job.data;
   const automation = await prisma.automation.findUnique({
     where: { id: automationId },
-    include: { tasks: { orderBy: { createdAt: 'asc' } } },
+    include: {
+      tasks: { orderBy: { createdAt: 'asc' } },
+      approvals: {
+        where: { status: 'APPROVED' },
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+      },
+    },
   });
   if (
     !automation ||
@@ -31,6 +42,34 @@ async function processAutomation(job: Job<AutomationJobData>): Promise<void> {
     automation.status === AutomationStatus.REJECTED ||
     automation.status === AutomationStatus.COMPLETED
   ) {
+    return;
+  }
+  if (
+    !isAutomationExecutionAuthorized({
+      mode: automation.mode,
+      userId: automation.userId,
+      approval: automation.approvals[0],
+      plan: createApprovalPayload(automation),
+    })
+  ) {
+    await prisma.$transaction(async (transaction) => {
+      const result = await transaction.automation.updateMany({
+        where: {
+          id: automationId,
+          status: { in: [AutomationStatus.QUEUED, AutomationStatus.RUNNING] },
+        },
+        data: { status: AutomationStatus.FAILED },
+      });
+      if (result.count > 0) {
+        await transaction.automationEvent.create({
+          data: {
+            automationId,
+            type: 'authorization_failed',
+            message: 'Automation execution was blocked because its server-side authorization was invalid.',
+          },
+        });
+      }
+    });
     return;
   }
   const tasksByKey = new Map(automation.tasks.map((task) => [task.key, task]));
@@ -83,13 +122,31 @@ async function processAutomation(job: Job<AutomationJobData>): Promise<void> {
           select: { status: true, startedAt: true },
         });
         if (!currentTask) return false;
+        const dependencies = await transaction.automationTask.findMany({
+          where: { automationId, key: { in: task.dependencies } },
+          select: { key: true, status: true, output: true },
+        });
+        const anotherRunningTask = await transaction.automationTask.findFirst({
+          where: {
+            automationId,
+            id: { not: task.id },
+            status: AutomationTaskStatus.RUNNING,
+          },
+          select: { id: true },
+        });
         if (
-          !isAutomationTaskClaimable({
+          !canClaimAutomationTask({
             status: currentTask.status,
             startedAt: currentTask.startedAt,
+            anotherTaskIsRunning: anotherRunningTask !== null,
+            dependenciesCompleted: areAutomationDependenciesCompleted(
+              task.dependencies,
+              dependencies
+            ),
           })
-        )
+        ) {
           return false;
+        }
         const staleRunningTask = currentTask.status === AutomationTaskStatus.RUNNING;
         if (staleRunningTask) {
           await transaction.automationExecutionAttempt.updateMany({
@@ -127,20 +184,9 @@ async function processAutomation(job: Job<AutomationJobData>): Promise<void> {
         await transaction.automationEvent.create({
           data: { automationId, type: 'task_started', message: 'An automation task started.' },
         });
-        return true;
+        return dependencies;
       });
       if (!claim) continue;
-
-      const dependencies = await prisma.automationTask.findMany({
-        where: { automationId, key: { in: task.dependencies } },
-        select: { key: true, status: true, output: true },
-      });
-      if (
-        dependencies.length !== task.dependencies.length ||
-        dependencies.some((dependency) => dependency.status !== AutomationTaskStatus.COMPLETED)
-      ) {
-        throw new Error('Automation task dependencies are incomplete');
-      }
 
       const output = await actions.execute(task.action, {
         userId: automation.userId,
@@ -148,7 +194,7 @@ async function processAutomation(job: Job<AutomationJobData>): Promise<void> {
         title: task.title,
         description: task.description,
         actionInput: task.input,
-        dependencyOutputs: dependencies.map(({ key, output: dependencyOutput }) => ({
+        dependencyOutputs: claim.map(({ key, output: dependencyOutput }) => ({
           key,
           output: dependencyOutput,
         })),
@@ -158,7 +204,7 @@ async function processAutomation(job: Job<AutomationJobData>): Promise<void> {
         const [state] = await transaction.$queryRaw<Array<{ status: AutomationStatus }>>`
           SELECT "status" FROM "Automation" WHERE "id" = ${automationId} FOR UPDATE
         `;
-        if (!state || state.status === AutomationStatus.CANCELED) return false;
+        if (!state || state.status !== AutomationStatus.RUNNING) return false;
         const taskUpdate = await transaction.automationTask.updateMany({
           where: { id: task.id, status: AutomationTaskStatus.RUNNING },
           data: {
@@ -190,18 +236,16 @@ async function processAutomation(job: Job<AutomationJobData>): Promise<void> {
       });
       if (!persisted) return;
     } catch {
-      const finalAttempt = job.attemptsMade + 1 >= (job.opts.attempts ?? 1);
+      const finalAttempt = isFinalAutomationAttempt(
+        job.attemptsMade,
+        job.opts.attempts ?? 1
+      );
       const safeErrorMessage = 'Automation task failed. You can retry this automation.';
       const persisted = await prisma.$transaction(async (transaction) => {
         const [state] = await transaction.$queryRaw<Array<{ status: AutomationStatus }>>`
           SELECT "status" FROM "Automation" WHERE "id" = ${automationId} FOR UPDATE
         `;
-        if (
-          !state ||
-          state.status === AutomationStatus.CANCELED ||
-          state.status === AutomationStatus.REJECTED
-        )
-          return false;
+        if (!state || state.status !== AutomationStatus.RUNNING) return false;
         const taskUpdate = await transaction.automationTask.updateMany({
           where: { id: task.id, status: AutomationTaskStatus.RUNNING },
           data: { status: AutomationTaskStatus.FAILED, errorMessage: safeErrorMessage },

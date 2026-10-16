@@ -175,10 +175,13 @@ new code reviews or consume the review quota.
 
 Approval-required plans create a seven-day approval request containing the
 exact plan payload and its fingerprint. Approval is checked server-side;
-rejection, expiration, or a changed payload prevents execution. Execution uses
-the existing BullMQ/Redis worker and records individual task attempts, outputs,
-failures, and workflow events. Draft-only mode does not execute; automatic mode
-is limited to registered internal read/draft actions.
+rejection, expiration, or a changed payload prevents execution. The worker
+rechecks the approved owner and plan fingerprint before starting an approved
+workflow, and it claims only one ready task at a time after its dependencies
+have completed. Execution uses the existing BullMQ/Redis worker and records
+individual task attempts, outputs, failures, and workflow events. Draft-only
+mode does not execute; automatic mode is limited to registered internal
+read/draft actions.
 
 Live GitHub activity, repository writes, external publishing, and social media
 integrations are not available. LinkedIn publishing is not configured and
