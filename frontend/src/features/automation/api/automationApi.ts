@@ -21,7 +21,14 @@ export interface AutomationTask {
   action: 'collect_review_results' | 'generate_text_draft';
   dependencies: string[];
   output: unknown;
-  status: 'PENDING' | 'READY' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELED';
+  status:
+    | 'PENDING'
+    | 'AWAITING_APPROVAL'
+    | 'READY'
+    | 'RUNNING'
+    | 'COMPLETED'
+    | 'FAILED'
+    | 'CANCELED';
   attempts: number;
   errorMessage: string | null;
   executionAttempts: Array<{

@@ -14,10 +14,16 @@ export const useAutomations = (): UseQueryResult<Automation[], Error> =>
   useQuery({
     queryKey,
     queryFn: automationApi.list,
-    refetchInterval: (query) =>
-      query.state.data?.some((item) => item.status === 'QUEUED' || item.status === 'RUNNING')
-        ? 3_000
-        : false,
+    refetchInterval: (query) => {
+      const automations = query.state.data ?? [];
+      if (automations.some((item) => item.status === 'QUEUED' || item.status === 'RUNNING')) {
+        return 3_000;
+      }
+      if (automations.some((item) => item.approvals.some((approval) => approval.status === 'PENDING'))) {
+        return 60_000;
+      }
+      return false;
+    },
   });
 
 export const useCreateAutomation = (): UseMutationResult<

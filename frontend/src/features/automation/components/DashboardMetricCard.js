@@ -1,0 +1,4 @@
+import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+export function DashboardMetricCard({ label, value, icon: Icon, tone, detail, }) {
+    return (_jsxs("article", { className: "rounded-xl border border-white/[0.07] bg-[#0e121b] p-4 transition-colors hover:border-white/[0.12] sm:p-5", children: [_jsxs("div", { className: "flex items-start justify-between", children: [_jsxs("div", { children: [_jsx("p", { className: "text-xs font-medium text-slate-500", children: label }), _jsx("p", { className: "mt-3 text-2xl font-semibold tracking-tight text-white", children: value })] }), _jsx("span", { className: `flex h-9 w-9 items-center justify-center rounded-lg ${tone}`, children: _jsx(Icon, { className: "h-4 w-4", "aria-hidden": "true" }) })] }), detail && _jsx("p", { className: "mt-3 text-[11px] leading-4 text-slate-500", children: detail })] }));
+}

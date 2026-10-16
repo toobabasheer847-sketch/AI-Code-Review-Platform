@@ -4,9 +4,16 @@ const queryKey = ['automations'];
 export const useAutomations = () => useQuery({
     queryKey,
     queryFn: automationApi.list,
-    refetchInterval: (query) => query.state.data?.some((item) => item.status === 'QUEUED' || item.status === 'RUNNING')
-        ? 3000
-        : false,
+    refetchInterval: (query) => {
+        const automations = query.state.data ?? [];
+        if (automations.some((item) => item.status === 'QUEUED' || item.status === 'RUNNING')) {
+            return 3000;
+        }
+        if (automations.some((item) => item.approvals.some((approval) => approval.status === 'PENDING'))) {
+            return 60000;
+        }
+        return false;
+    },
 });
 export const useCreateAutomation = () => {
     const queryClient = useQueryClient();
