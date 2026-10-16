@@ -194,6 +194,7 @@ async function processAutomation(job: Job<AutomationJobData>): Promise<void> {
         title: task.title,
         description: task.description,
         actionInput: task.input,
+        taskId: task.id,
         dependencyOutputs: claim.map(({ key, output: dependencyOutput }) => ({
           key,
           output: dependencyOutput,

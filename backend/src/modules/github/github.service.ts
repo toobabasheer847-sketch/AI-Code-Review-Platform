@@ -192,6 +192,63 @@ interface GitHubRepositoryResponse {
   private: boolean
   updated_at: string
   html_url: string
+  permissions?: {
+    pull?: boolean
+    push?: boolean
+    admin?: boolean
+  }
+}
+
+export interface GitHubDevelopmentRepository {
+  fullName: string
+  htmlUrl: string
+  private: boolean
+}
+
+export interface GitHubDevelopmentContext {
+  status: 'complete' | 'partial'
+  repository: GitHubDevelopmentRepository
+  commits: Array<{ sha: string; message: string; date: string | null; url: string }>
+  pullRequests: Array<{
+    number: number
+    title: string
+    state: string
+    updatedAt: string
+    url: string
+  }>
+  checks: {
+    availability: 'available' | 'unavailable' | 'not_requested'
+    pullRequestNumber?: number
+    headSha?: string
+    runs: Array<{ name: string; status: string; conclusion: string | null; url: string }>
+  }
+  completedReviews: Array<{
+    reviewId: string
+    title: string
+    summary: string
+    createdAt: string
+    url: string
+    findings: Array<{
+      title: string | null
+      severity: string
+      category: string
+      message: string
+      evidence: string | null
+      evidenceUrl: string
+    }>
+  }>
+  failures: Array<{ source: string; message: string }>
+}
+
+export class GitHubIntegrationError extends Error {
+  constructor(
+    message: string,
+    readonly statusCode: number,
+    readonly retryAfterSeconds?: number
+  ) {
+    super(message)
+    this.name = 'GitHubIntegrationError'
+  }
 }
 
 interface GitHubAccountLifecycleStore {
@@ -212,6 +269,99 @@ const prismaGitHubAccountLifecycleStore: GitHubAccountLifecycleStore = {
       prisma.user.update({ where: { id: userId }, data: { githubId: null } }),
     ])
   },
+}
+
+export type GitHubDevelopmentReviewProvider = (
+  userId: string,
+  repository: string,
+  pullRequestNumber?: number
+) => Promise<Array<{
+  id: string
+  title: string
+  description: string | null
+  createdAt: Date
+  pullRequestUrl: string | null
+  headSha: string | null
+  findings: Array<{
+    file: string
+    line: number
+    title: string | null
+    severity: string
+    category: string
+    message: string
+    evidence: string | null
+  }>
+}>>
+
+const prismaDevelopmentReviewProvider: GitHubDevelopmentReviewProvider = (
+  userId,
+  repository,
+  pullRequestNumber
+) =>
+  prisma.codeReview.findMany({
+    where: {
+      userId,
+      status: 'completed',
+      repository: { is: { userId, name: repository } },
+      ...(pullRequestNumber !== undefined ? { pullRequestNumber } : {}),
+    },
+    select: {
+      id: true,
+      title: true,
+      description: true,
+      createdAt: true,
+      pullRequestUrl: true,
+      headSha: true,
+      findings: {
+        select: {
+          file: true,
+          line: true,
+          title: true,
+          severity: true,
+          category: true,
+          message: true,
+          evidence: true,
+        },
+        orderBy: { createdAt: 'asc' },
+        take: 10,
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 5,
+  })
+
+function getGitHubRetryAfter(error: unknown): number | null {
+  if (!axios.isAxiosError(error)) return null
+  const status = error.response?.status
+  const headers = error.response?.headers
+  if (status !== 429 && !(status === 403 && headers?.['x-ratelimit-remaining'] === '0')) {
+    return null
+  }
+  const retryAfter = Number(headers?.['retry-after'])
+  if (Number.isFinite(retryAfter) && retryAfter > 0) return Math.ceil(retryAfter)
+  const resetAt = Number(headers?.['x-ratelimit-reset'])
+  if (Number.isFinite(resetAt) && resetAt > 0) {
+    return Math.max(1, Math.ceil(resetAt - Date.now() / 1_000))
+  }
+  return 60
+}
+
+function githubHtmlUrl(value: string): string {
+  const url = new URL(value)
+  if (url.protocol !== 'https:' || url.hostname !== 'github.com') {
+    throw new Error('GitHub returned an invalid evidence URL')
+  }
+  return url.toString()
+}
+
+function githubFailureMessage(error: unknown): string {
+  if (error instanceof GitHubIntegrationError) return error.message
+  if (axios.isAxiosError(error)) {
+    if (error.response?.status === 401) return 'GitHub authorization was revoked or expired.'
+    if (error.response?.status === 403) return 'GitHub denied this request or its rate limit was reached.'
+    if (error.response?.status === 404) return 'GitHub no longer exposes this resource to the connected account.'
+  }
+  return 'GitHub could not provide this data.'
 }
 
 export function getAddedPullRequestLines(patch?: string): number[] {
@@ -313,13 +463,329 @@ export class GitHubService {
     private readonly api: AxiosInstance = axios,
     private readonly accessTokenProvider?: (userId: string) => Promise<string>,
     private readonly accountLifecycleStore: GitHubAccountLifecycleStore =
-      prismaGitHubAccountLifecycleStore
+      prismaGitHubAccountLifecycleStore,
+    private readonly developmentReviewProvider: GitHubDevelopmentReviewProvider =
+      prismaDevelopmentReviewProvider
   ) {}
 
   private getAccessToken(userId: string): Promise<string> {
     return this.accessTokenProvider
       ? this.accessTokenProvider(userId)
       : this.getValidatedAccessToken(userId)
+  }
+
+  private async githubRequest<T>(request: () => Promise<T>): Promise<T> {
+    try {
+      return await request()
+    } catch (error) {
+      const retryAfter = getGitHubRetryAfter(error)
+      if (retryAfter !== null && retryAfter <= 60) {
+        await new Promise((resolve) => setTimeout(resolve, retryAfter * 1_000))
+        try {
+          return await request()
+        } catch (retryError) {
+          const nextRetryAfter = getGitHubRetryAfter(retryError)
+          throw new GitHubIntegrationError(
+            nextRetryAfter !== null
+              ? 'GitHub rate limit remains active after one bounded retry.'
+              : githubFailureMessage(retryError),
+            axios.isAxiosError(retryError) ? retryError.response?.status ?? 502 : 502,
+            nextRetryAfter ?? undefined
+          )
+        }
+      }
+      if (retryAfter !== null) {
+        throw new GitHubIntegrationError(
+          'GitHub rate limit requires a later retry.',
+          axios.isAxiosError(error) ? error.response?.status ?? 429 : 429,
+          retryAfter
+        )
+      }
+      if (axios.isAxiosError(error) && error.response) {
+        throw new GitHubIntegrationError(
+          githubFailureMessage(error),
+          error.response.status
+        )
+      }
+      throw error
+    }
+  }
+
+  async validateDevelopmentRepository(
+    userId: string,
+    repository: string,
+    requireWriteAccess = false
+  ): Promise<GitHubDevelopmentRepository> {
+    const [owner, name] = parseReviewRepositoryName(repository)
+    const encodedRepository = `${encodeURIComponent(owner)}/${encodeURIComponent(name)}`
+    const token = await this.getAccessToken(userId)
+    const response = await this.githubRequest(() =>
+      this.api.get<GitHubRepositoryResponse>(
+        `${GITHUB_API_BASE}/repos/${encodedRepository}`,
+        { headers: buildGitHubHeaders(token), timeout: 15_000 }
+      )
+    )
+    if (
+      response.data.full_name.toLowerCase() !== repository.toLowerCase() ||
+      response.data.permissions?.pull === false ||
+      (requireWriteAccess && response.data.permissions?.push !== true)
+    ) {
+      throw new GitHubIntegrationError(
+        requireWriteAccess
+          ? 'The connected GitHub account does not have write access to this repository.'
+          : 'The connected GitHub account cannot read this repository.',
+        403
+      )
+    }
+    return {
+      fullName: response.data.full_name,
+      htmlUrl: githubHtmlUrl(response.data.html_url),
+      private: response.data.private,
+    }
+  }
+
+  async fetchDevelopmentContext(
+    userId: string,
+    repository: string,
+    pullRequestNumber?: number
+  ): Promise<GitHubDevelopmentContext> {
+    const repo = await this.validateDevelopmentRepository(userId, repository)
+    const [owner, name] = parseReviewRepositoryName(repo.fullName)
+    const encodedRepository = `${encodeURIComponent(owner)}/${encodeURIComponent(name)}`
+    const token = await this.getAccessToken(userId)
+    const headers = buildGitHubHeaders(token)
+    const failures: GitHubDevelopmentContext['failures'] = []
+    const [commitsResult, pullRequestsResult, reviewsResult] = await Promise.allSettled([
+      this.githubRequest(() =>
+        this.api.get<Array<{
+          sha: string
+          html_url: string
+          commit: { message: string; author?: { date?: string } | null }
+        }>>(`${GITHUB_API_BASE}/repos/${encodedRepository}/commits`, {
+          headers,
+          params: { per_page: 10 },
+          timeout: 15_000,
+        })
+      ),
+      this.githubRequest(() =>
+        this.api.get<Array<{
+          number: number
+          title: string
+          state: string
+          updated_at: string
+          html_url: string
+        }>>(`${GITHUB_API_BASE}/repos/${encodedRepository}/pulls`, {
+          headers,
+          params: { state: 'all', sort: 'updated', direction: 'desc', per_page: 10 },
+          timeout: 15_000,
+        })
+      ),
+      this.developmentReviewProvider(userId, repo.fullName, pullRequestNumber),
+    ])
+
+    const commits =
+      commitsResult.status === 'fulfilled'
+        ? commitsResult.value.data.map((commit) => ({
+            sha: commit.sha,
+            message: commit.commit.message.slice(0, 1_000),
+            date: commit.commit.author?.date ?? null,
+            url: githubHtmlUrl(commit.html_url),
+          }))
+        : (failures.push({ source: 'commits', message: githubFailureMessage(commitsResult.reason) }), [])
+    const pullRequests =
+      pullRequestsResult.status === 'fulfilled'
+        ? pullRequestsResult.value.data.map((pullRequest) => ({
+            number: pullRequest.number,
+            title: pullRequest.title.slice(0, 300),
+            state: pullRequest.state,
+            updatedAt: pullRequest.updated_at,
+            url: githubHtmlUrl(pullRequest.html_url),
+          }))
+        : (failures.push({ source: 'pull_requests', message: githubFailureMessage(pullRequestsResult.reason) }), [])
+    const completedReviews =
+      reviewsResult.status === 'fulfilled'
+        ? reviewsResult.value.map((review) => {
+            const reviewUrl = review.pullRequestUrl
+              ? githubHtmlUrl(review.pullRequestUrl)
+              : `${env.FRONTEND_URL}/reviews/${encodeURIComponent(review.id)}`
+            const evidenceRoot = review.pullRequestUrl
+              ? `${githubHtmlUrl(review.pullRequestUrl).replace(/\/pull\/\d+$/, '')}/blob/${encodeURIComponent(review.headSha ?? '')}`
+              : reviewUrl
+            return {
+              reviewId: review.id,
+              title: review.title.slice(0, 300),
+              summary: (review.description ?? '').slice(0, 2_000),
+              createdAt: review.createdAt.toISOString(),
+              url: reviewUrl,
+              findings: review.findings.map((finding) => ({
+                title: finding.title,
+                severity: finding.severity,
+                category: finding.category,
+                message: finding.message.slice(0, 1_000),
+                evidence: finding.evidence?.slice(0, 500) ?? null,
+                evidenceUrl: review.pullRequestUrl
+                  ? `${evidenceRoot}/${finding.file.split('/').map(encodeURIComponent).join('/')}#L${finding.line}`
+                  : reviewUrl,
+              })),
+            }
+          })
+        : (failures.push({ source: 'completed_reviews', message: 'Saved review results could not be loaded.' }), [])
+
+    const checksPullRequestNumber = pullRequestNumber ?? pullRequests[0]?.number
+    let checks: GitHubDevelopmentContext['checks'] = {
+      availability:
+        checksPullRequestNumber !== undefined || pullRequestsResult.status === 'rejected'
+          ? 'unavailable'
+          : 'not_requested',
+      ...(checksPullRequestNumber !== undefined
+        ? { pullRequestNumber: checksPullRequestNumber }
+        : {}),
+      runs: [],
+    }
+    if (checksPullRequestNumber !== undefined) {
+      try {
+        const target = await this.fetchPullRequestTarget(
+          userId,
+          repo.fullName,
+          checksPullRequestNumber
+        )
+        const checkResponse = await this.githubRequest(() =>
+          this.api.get<{
+            check_runs: Array<{
+              name: string
+              status: string
+              conclusion: string | null
+              html_url: string
+            }>
+          }>(
+            `${GITHUB_API_BASE}/repos/${encodedRepository}/commits/${encodeURIComponent(target.headSha)}/check-runs`,
+            { headers, params: { per_page: 100 }, timeout: 15_000 }
+          )
+        )
+        checks = {
+          availability: 'available',
+          pullRequestNumber: checksPullRequestNumber,
+          headSha: target.headSha,
+          runs: checkResponse.data.check_runs.map((run) => ({
+            name: run.name.slice(0, 200),
+            status: run.status,
+            conclusion: run.conclusion,
+            url: githubHtmlUrl(run.html_url),
+          })),
+        }
+      } catch (error) {
+        checks = {
+          availability: 'unavailable',
+          pullRequestNumber: checksPullRequestNumber,
+          runs: [],
+        }
+        failures.push({
+          source: 'ci_checks',
+          message: githubFailureMessage(error),
+        })
+      }
+    }
+
+    return {
+      status: failures.length > 0 ? 'partial' : 'complete',
+      repository: repo,
+      commits,
+      pullRequests,
+      checks,
+      completedReviews,
+      failures,
+    }
+  }
+
+  async createDevelopmentIssue(
+    userId: string,
+    repository: string,
+    title: string,
+    body: string,
+    operationId: string
+  ): Promise<{ status: 'created' | 'already_created'; number: number; url: string }> {
+    const repo = await this.validateDevelopmentRepository(userId, repository, true)
+    const [owner, name] = parseReviewRepositoryName(repo.fullName)
+    const encodedRepository = `${encodeURIComponent(owner)}/${encodeURIComponent(name)}`
+    const token = await this.getAccessToken(userId)
+    const headers = buildGitHubHeaders(token)
+    const marker = `<!-- ai-codeguard-automation:${operationId} -->`
+    for (let page = 1; page <= 10; page += 1) {
+      const response = await this.githubRequest(() =>
+        this.api.get<Array<{ number: number; html_url: string; body: string | null }>>(
+          `${GITHUB_API_BASE}/repos/${encodedRepository}/issues`,
+          { headers, params: { state: 'all', per_page: 100, page }, timeout: 15_000 }
+        )
+      )
+      const existing = response.data.find((issue) => issue.body?.includes(marker))
+      if (existing) {
+        return {
+          status: 'already_created',
+          number: existing.number,
+          url: githubHtmlUrl(existing.html_url),
+        }
+      }
+      if (!response.headers.link?.includes('rel="next"')) break
+      if (page === 10) throw new Error('Unable to verify issue idempotency before creating the issue.')
+    }
+    const response = await this.githubRequest(() =>
+      this.api.post<{ number: number; html_url: string }>(
+        `${GITHUB_API_BASE}/repos/${encodedRepository}/issues`,
+        { title, body: `${body}\n\n${marker}` },
+        { headers, timeout: 15_000 }
+      )
+    )
+    return {
+      status: 'created',
+      number: response.data.number,
+      url: githubHtmlUrl(response.data.html_url),
+    }
+  }
+
+  async createDevelopmentPullRequestComment(
+    userId: string,
+    repository: string,
+    pullRequestNumber: number,
+    body: string,
+    operationId: string
+  ): Promise<{ status: 'created' | 'already_created'; id: number; url: string }> {
+    const repo = await this.validateDevelopmentRepository(userId, repository, true)
+    await this.fetchPullRequestTarget(userId, repo.fullName, pullRequestNumber)
+    const [owner, name] = parseReviewRepositoryName(repo.fullName)
+    const encodedRepository = `${encodeURIComponent(owner)}/${encodeURIComponent(name)}`
+    const token = await this.getAccessToken(userId)
+    const headers = buildGitHubHeaders(token)
+    const marker = `<!-- ai-codeguard-automation:${operationId} -->`
+    for (let page = 1; page <= 10; page += 1) {
+      const response = await this.githubRequest(() =>
+        this.api.get<Array<{ id: number; html_url: string; body: string | null }>>(
+          `${GITHUB_API_BASE}/repos/${encodedRepository}/issues/${pullRequestNumber}/comments`,
+          { headers, params: { per_page: 100, page }, timeout: 15_000 }
+        )
+      )
+      const existing = response.data.find((comment) => comment.body?.includes(marker))
+      if (existing) {
+        return {
+          status: 'already_created',
+          id: existing.id,
+          url: githubHtmlUrl(existing.html_url),
+        }
+      }
+      if (!response.headers.link?.includes('rel="next"')) break
+      if (page === 10) throw new Error('Unable to verify comment idempotency before posting.')
+    }
+    const response = await this.githubRequest(() =>
+      this.api.post<{ id: number; html_url: string }>(
+        `${GITHUB_API_BASE}/repos/${encodedRepository}/issues/${pullRequestNumber}/comments`,
+        { body: `${body}\n\n${marker}` },
+        { headers, timeout: 15_000 }
+      )
+    )
+    return {
+      status: 'created',
+      id: response.data.id,
+      url: githubHtmlUrl(response.data.html_url),
+    }
   }
 
   getAuthorizeUrl(state: string): string {

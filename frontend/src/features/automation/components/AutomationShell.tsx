@@ -5,6 +5,7 @@ import {
   CircleUserRound,
   Command,
   CreditCard,
+  Code2,
   FileSearch,
   Github,
   LayoutDashboard,
@@ -23,6 +24,7 @@ const navigation = [
   { to: '/dashboard', label: 'Overview', icon: LayoutDashboard },
   { to: '/automations', label: 'Command center', icon: Workflow },
   { to: '/automations?view=approvals', label: 'Approval inbox', icon: Bell },
+  { to: '/github/agent', label: 'GitHub agent', icon: Code2 },
   { to: '/reviews', label: 'Code reviews', icon: FileSearch },
   { to: '/github/repos', label: 'Repositories', icon: Github },
 ];

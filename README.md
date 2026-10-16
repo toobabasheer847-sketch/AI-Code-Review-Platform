@@ -11,6 +11,7 @@ AI-CodeGuard is a full-stack application for AI-assisted code review with GitHub
 - **AI-Powered Code Review**: Automated analysis using OpenAI GPT models
 - **Real-time Collaboration**: Socket.io powered chat and discussions
 - **GitHub Integration**: Seamless GitHub repository integration with OAuth
+- **GitHub Development Agent**: Evidence-backed repository and pull-request context with approval-gated issue and comment actions
 - **Subscription Billing**: Stripe integration for payment processing
 - **Background Jobs**: BullMQ for async processing of reviews and emails
 - **Automation MVP**: Approval-gated plans with persisted task status and safe text-draft execution
@@ -164,6 +165,8 @@ Redis, and both job queues and reports retained failed-job counts.
 - `POST /api/automations/:id/reject` - Reject a pending plan without executing tasks
 - `POST /api/automations/:id/cancel` - Cancel a draft or active workflow
 - `POST /api/automations/:id/retry` - Retry a failed workflow
+- `GET /api/github/development/templates` - List supported GitHub workflow templates (authenticated)
+- `POST /api/github/development/workflows` - Create an owned, approval-required GitHub workflow (authenticated)
 
 The command center's supported end-to-end workflow reads up to five of the
 authenticated user's latest completed code-review records, then generates an
@@ -183,12 +186,28 @@ individual task attempts, outputs, failures, and workflow events. Draft-only
 mode does not execute; automatic mode is limited to registered internal
 read/draft actions.
 
-Live GitHub activity, repository writes, external publishing, and social media
-integrations are not available. LinkedIn publishing is not configured and
-requires a provider implementation, OAuth/API credentials, and the relevant
-publishing permissions. The registered actions reject publishing, GitHub
-write, shell, SQL, and arbitrary URL actions. The automation uses the existing
-`OPENAI_API_KEY` and `REDIS_URL`; no LinkedIn variables are required or used.
+The GitHub Development Agent uses the existing encrypted GitHub OAuth
+integration and persists work in the existing automation/task/approval/event
+records. It can collect authorized repository, pull-request, recent-commit,
+check-run (for the selected pull request or the most recently updated one),
+and completed-review context when GitHub exposes those capabilities
+to the connected account. Results retain supporting evidence links and mark
+unavailable sources or partial failures explicitly; missing checks are never
+reported as passing. Suggested fixes and pull-request descriptions are drafts,
+not pushed changes.
+
+Preparing an issue or pull-request comment requires repository write access and
+creates an approval request containing the exact action payload. The server
+revalidates repository/target access and approval before execution, and
+idempotency markers protect retries. The only external write actions are issue
+creation and pull-request comments; pushing branches, creating or changing
+pull requests, merging, and arbitrary GitHub API calls are unsupported.
+GitHub API access remains bounded by the existing OAuth scopes and account
+permissions; broad `repo` scope is retained for compatibility with existing
+private-repository review features. LinkedIn publishing is not configured.
+Shell, filesystem, SQL, and arbitrary network execution are not supported.
+The automation uses the existing `OPENAI_API_KEY` and `REDIS_URL`; no LinkedIn
+variables are required or used.
 Apply reviewed database migrations with
 `npm run prisma:deploy --workspace=backend`; do not run development migrations
 against production data.

@@ -24,6 +24,11 @@ test('mounts protected API routes and rejects requests without a valid token', a
   const protectedRequests: Array<[string, RequestInit?]> = [
     ['/auth/me'],
     ['/github/repos'],
+    ['/github/development/templates'],
+    [
+      '/github/development/workflows',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' },
+    ],
     ['/reviews'],
     ['/billing/usage'],
     ['/chat/message', { method: 'POST' }],

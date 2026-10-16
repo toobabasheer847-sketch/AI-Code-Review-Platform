@@ -15,9 +15,52 @@ export const AUTOMATION_APPROVAL_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 export const AUTOMATION_ACTIONS = {
   COLLECT_REVIEW_RESULTS: 'collect_review_results',
   GENERATE_TEXT_DRAFT: 'generate_text_draft',
+  COLLECT_GITHUB_CONTEXT: 'collect_github_context',
+  CREATE_GITHUB_ISSUE: 'create_github_issue',
+  CREATE_GITHUB_PR_COMMENT: 'create_github_pr_comment',
 } as const;
 
-export const automationActionInputSchema = z.object({}).strict()
+const emptyActionInputSchema = z.object({}).strict();
+const githubRepositoryInput = z
+  .string()
+  .regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/)
+  .max(200);
+const githubPullRequestNumberInput = z.number().int().positive().max(2_147_483_647);
+const githubContextInputSchema = z
+  .object({
+    repository: githubRepositoryInput,
+    pullRequestNumber: githubPullRequestNumberInput.optional(),
+  })
+  .strict();
+const githubIssueInputSchema = z
+  .object({
+    repository: githubRepositoryInput,
+    title: z.string().trim().min(1).max(256),
+    body: z.string().trim().min(1).max(10_000),
+  })
+  .strict();
+const githubPullRequestCommentInputSchema = z
+  .object({
+    repository: githubRepositoryInput,
+    pullRequestNumber: githubPullRequestNumberInput,
+    body: z.string().trim().min(1).max(10_000),
+  })
+  .strict();
+
+export const automationActionInputSchemas = {
+  [AUTOMATION_ACTIONS.COLLECT_REVIEW_RESULTS]: emptyActionInputSchema,
+  [AUTOMATION_ACTIONS.GENERATE_TEXT_DRAFT]: emptyActionInputSchema,
+  [AUTOMATION_ACTIONS.COLLECT_GITHUB_CONTEXT]: githubContextInputSchema,
+  [AUTOMATION_ACTIONS.CREATE_GITHUB_ISSUE]: githubIssueInputSchema,
+  [AUTOMATION_ACTIONS.CREATE_GITHUB_PR_COMMENT]: githubPullRequestCommentInputSchema,
+} as const;
+
+export const automationActionInputSchema = z.union([
+  emptyActionInputSchema,
+  githubContextInputSchema,
+  githubIssueInputSchema,
+  githubPullRequestCommentInputSchema,
+]);
 
 const taskSchema = z
   .object({
@@ -27,6 +70,9 @@ const taskSchema = z
     action: z.enum([
       AUTOMATION_ACTIONS.COLLECT_REVIEW_RESULTS,
       AUTOMATION_ACTIONS.GENERATE_TEXT_DRAFT,
+      AUTOMATION_ACTIONS.COLLECT_GITHUB_CONTEXT,
+      AUTOMATION_ACTIONS.CREATE_GITHUB_ISSUE,
+      AUTOMATION_ACTIONS.CREATE_GITHUB_PR_COMMENT,
     ]),
     input: automationActionInputSchema.default({}),
     dependsOn: z.array(z.string().regex(/^[a-z0-9-]{1,40}$/)).max(MAX_AUTOMATION_TASKS),
@@ -96,6 +142,9 @@ export function orderAutomationTaskKeys(
 
 export function validatePlan(value: unknown): ValidatedPlan {
   const plan = planSchema.parse(value);
+  for (const task of plan.tasks) {
+    automationActionInputSchemas[task.action].parse(task.input);
+  }
   const orderedKeys = orderAutomationTaskKeys(
     plan.tasks.map((task) => ({ key: task.key, dependencies: task.dependsOn }))
   );
@@ -260,7 +309,16 @@ export function isAutomationExecutionAuthorized(input: {
   } | null;
   plan: ApprovalPayloadSource;
 }): boolean {
-  if (input.mode === 'AUTO_LOW_RISK') return true;
+  if (
+    input.mode === 'AUTO_LOW_RISK' &&
+    input.plan.tasks.every(
+      (task) =>
+        task.action !== AUTOMATION_ACTIONS.CREATE_GITHUB_ISSUE &&
+        task.action !== AUTOMATION_ACTIONS.CREATE_GITHUB_PR_COMMENT
+    )
+  ) {
+    return true;
+  }
   if (input.mode !== 'APPROVAL_REQUIRED' || !input.approval) return false;
 
   return (

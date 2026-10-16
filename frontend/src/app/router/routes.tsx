@@ -17,6 +17,9 @@ const BillingDashboard = lazy(() => import('@features/billing/pages/BillingDashb
 const BillingSuccessPage = lazy(() => import('@features/billing/pages/BillingSuccessPage').then((m) => ({ default: m.BillingSuccessPage })))
 const BillingCancelPage = lazy(() => import('@features/billing/pages/BillingCancelPage').then((m) => ({ default: m.BillingCancelPage })))
 const GitHubReposPage = lazy(() => import('@features/github/pages/GitHubReposPage').then((m) => ({ default: m.GitHubReposPage })))
+const GitHubDevelopmentPage = lazy(() =>
+  import('@features/github/pages/GitHubDevelopmentPage').then((m) => ({ default: m.GitHubDevelopmentPage }))
+)
 const ReviewsPage = lazy(() => import('@features/reviews/pages/ReviewsPage').then((m) => ({ default: m.ReviewsPage })))
 const ReviewByIdPage = lazy(() => import('@features/reviews/pages/ReviewByIdPage').then((m) => ({ default: m.ReviewByIdPage })))
 const SettingsPage = lazy(() => import('@features/profile/pages/SettingsPage').then((m) => ({ default: m.SettingsPage })))
@@ -34,6 +37,16 @@ export const routes: RouteObject[] = [
       <ProtectedRoute>
         <Suspense fallback={<LazyFallback />}>
           <GitHubReposPage />
+        </Suspense>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/github/agent',
+    element: (
+      <ProtectedRoute>
+        <Suspense fallback={<LazyFallback />}>
+          <GitHubDevelopmentPage />
         </Suspense>
       </ProtectedRoute>
     ),

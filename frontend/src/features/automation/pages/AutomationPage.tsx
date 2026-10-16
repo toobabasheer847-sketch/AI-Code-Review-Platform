@@ -94,6 +94,10 @@ function StatusBadge({ status }: { status: AutomationStatus }): JSX.Element {
   );
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 function DraftOutput({ task }: { task: AutomationTask }): JSX.Element | null {
   if (typeof task.output !== 'object' || task.output === null) return null;
   if ('draft' in task.output && typeof task.output.draft === 'string') {
@@ -105,6 +109,141 @@ function DraftOutput({ task }: { task: AutomationTask }): JSX.Element | null {
         <p className="whitespace-pre-wrap text-sm leading-6 text-slate-300">{task.output.draft}</p>
       </div>
     );
+  }
+  if ('context' in task.output && isRecord(task.output.context)) {
+    const context = task.output.context;
+    const evidence: Array<{ label: string; url: string }> = [];
+    const addLinks = (key: string, label: string): void => {
+      const value = context[key];
+      if (!Array.isArray(value)) return;
+      value.forEach((item, index) => {
+        if (typeof item !== 'object' || item === null || !('url' in item) || typeof item.url !== 'string') return;
+        try {
+          const url = new URL(item.url);
+          if (url.protocol === 'https:' && url.hostname === 'github.com') {
+            evidence.push({ label: `${label} ${index + 1}`, url: url.toString() });
+          }
+        } catch {
+          return;
+        }
+      });
+    };
+    addLinks('commits', 'Commit');
+    addLinks('pullRequests', 'Pull request');
+    addLinks('completedReviews', 'Completed review');
+    const reviews = context.completedReviews;
+    if (Array.isArray(reviews)) {
+      reviews.forEach((review, reviewIndex) => {
+        if (!isRecord(review) || !Array.isArray(review.findings)) return;
+        review.findings.forEach((finding, findingIndex) => {
+          if (!isRecord(finding) || typeof finding.evidenceUrl !== 'string') return;
+          try {
+            const url = new URL(finding.evidenceUrl);
+            if (url.protocol === 'https:' && url.hostname === 'github.com') {
+              evidence.push({
+                label: `Review ${reviewIndex + 1} finding ${findingIndex + 1}`,
+                url: url.toString(),
+              });
+            }
+          } catch {
+            return;
+          }
+        });
+      });
+    }
+    if (
+      'checks' in context &&
+      typeof context.checks === 'object' &&
+      context.checks !== null &&
+      'runs' in context.checks &&
+      Array.isArray(context.checks.runs)
+    ) {
+      context.checks.runs.forEach((item, index) => {
+        if (typeof item !== 'object' || item === null || !('url' in item) || typeof item.url !== 'string') return;
+        try {
+          const url = new URL(item.url);
+          if (url.protocol === 'https:' && url.hostname === 'github.com') {
+            evidence.push({ label: `CI check ${index + 1}`, url: url.toString() });
+          }
+        } catch {
+          return;
+        }
+      });
+    }
+    const partial = 'status' in context && context.status === 'partial';
+    const ciAvailability =
+      'checks' in context && typeof context.checks === 'object' && context.checks !== null &&
+      'availability' in context.checks && typeof context.checks.availability === 'string'
+        ? context.checks.availability
+        : 'unknown';
+    return (
+      <div className="mt-3 rounded-lg border border-white/[0.07] bg-[#090c12] p-4">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+          GitHub evidence · {partial ? 'partial data' : 'source data'}
+        </p>
+        <p className="mt-2 text-[11px] text-slate-400">
+          CI checks: {ciAvailability}
+          {isRecord(context.checks) && typeof context.checks.pullRequestNumber === 'number'
+            ? ` (pull request #${context.checks.pullRequestNumber})`
+            : ''}
+        </p>
+        {Array.isArray(context.failures) && context.failures.length > 0 && (
+          <ul className="mt-2 list-inside list-disc space-y-1 text-[11px] text-amber-200/80">
+            {context.failures.map((failure, index) => (
+              <li key={index}>
+                {typeof failure === 'object' && failure !== null && 'source' in failure && 'message' in failure
+                  ? `${String(failure.source)}: ${String(failure.message)}`
+                  : 'A GitHub data source was unavailable.'}
+              </li>
+            ))}
+          </ul>
+        )}
+        {evidence.length > 0 ? (
+          <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-2">
+            {evidence.slice(0, 25).map((item, index) => (
+              <li key={`${item.url}-${index}`}>
+                <a
+                  href={item.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[11px] text-indigo-300 underline decoration-indigo-300/30 underline-offset-2 hover:text-indigo-200"
+                >
+                  {item.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-2 text-[11px] text-slate-500">No evidence links were returned.</p>
+        )}
+        <details className="mt-3">
+          <summary className="cursor-pointer text-[10px] text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400">
+            Inspect collected context
+          </summary>
+          <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words text-[10px] leading-4 text-slate-400">
+            {JSON.stringify(context, null, 2)}
+          </pre>
+        </details>
+      </div>
+    );
+  }
+  if ('url' in task.output && typeof task.output.url === 'string') {
+    let resultUrl: URL | null = null;
+    try {
+      resultUrl = new URL(task.output.url);
+    } catch {
+      resultUrl = null;
+    }
+    if (resultUrl?.protocol === 'https:' && resultUrl.hostname === 'github.com') {
+      return (
+        <p className="mt-3 rounded-lg border border-emerald-400/15 bg-emerald-400/[0.035] px-3 py-2 text-[11px] text-emerald-200">
+          GitHub returned a recorded result:{' '}
+          <a href={resultUrl.toString()} target="_blank" rel="noreferrer" className="underline underline-offset-2">
+            Open on GitHub
+          </a>
+        </p>
+      );
+    }
   }
   if (!('reviews' in task.output) || !Array.isArray(task.output.reviews)) return null;
   return (
@@ -121,6 +260,46 @@ function DraftOutput({ task }: { task: AutomationTask }): JSX.Element | null {
       </pre>
     </details>
   );
+}
+
+function ApprovalActionPreview({
+    action,
+    input,
+}: {
+    action: AutomationTask['action'];
+    input: unknown;
+}): JSX.Element | null {
+    if (
+      (action !== 'create_github_issue' && action !== 'create_github_pr_comment') ||
+      !isRecord(input)
+    ) {
+      return null;
+    }
+    const title = typeof input.title === 'string' ? input.title : null;
+    const body = typeof input.body === 'string' ? input.body : null;
+    const repository = typeof input.repository === 'string' ? input.repository : null;
+    const pullRequestNumber =
+      typeof input.pullRequestNumber === 'number' ? input.pullRequestNumber : null;
+    return (
+      <div className="mt-3 rounded-md border border-amber-400/15 bg-amber-400/[0.025] p-3">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-amber-200/80">
+          Exact external action preview
+        </p>
+        {repository && <p className="mt-2 text-[11px] text-slate-400">Repository: {repository}</p>}
+        {title && <p className="mt-1 text-[11px] font-medium text-slate-200">Issue title: {title}</p>}
+        {pullRequestNumber !== null && (
+          <p className="mt-1 text-[11px] text-slate-400">Pull request: #{pullRequestNumber}</p>
+        )}
+        {body && (
+          <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap break-words rounded bg-[#080b12] p-2.5 text-[11px] leading-5 text-slate-300">
+            {body}
+          </pre>
+        )}
+        <p className="mt-2 text-[10px] text-amber-100/60">
+          This exact content is included in the server-verified approval fingerprint.
+        </p>
+      </div>
+    );
 }
 
 function WorkflowCard({
@@ -758,6 +937,7 @@ export const AutomationPage = (): JSX.Element => {
                                   </span>
                                 </div>
                                 <p className="mt-1 text-[11px] leading-4 text-slate-500">{task.description}</p>
+                                <ApprovalActionPreview action={task.action} input={task.input} />
                                 {task.dependencies.length > 0 && (
                                   <p className="mt-1.5 text-[10px] text-slate-600">
                                     Depends on: {task.dependencies.join(', ')}

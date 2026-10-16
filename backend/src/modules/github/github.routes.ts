@@ -1,10 +1,12 @@
 import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
 import { GitHubController } from './github.controller'
+import { GitHubDevelopmentController } from './github-development.controller'
 import { authMiddleware } from '@/middleware/auth.middleware'
 
 const router = Router()
 const controller = new GitHubController()
+const developmentController = new GitHubDevelopmentController()
 
 const githubLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -23,5 +25,11 @@ router.get('/repos', authMiddleware, githubLimiter, (req, res) => controller.get
 router.get('/repos/:owner/:repo/files', authMiddleware, githubLimiter, (req, res) => controller.getRepoFiles(req, res))
 router.get('/repos/:repoName/files', authMiddleware, githubLimiter, (req, res) => controller.getRepoFiles(req, res))
 router.get('/file', authMiddleware, githubLimiter, (req, res) => controller.getFileContent(req, res))
+router.get('/development/templates', authMiddleware, githubLimiter, (req, res) =>
+  developmentController.templates(req, res)
+)
+router.post('/development/workflows', authMiddleware, githubLimiter, (req, res) =>
+  developmentController.createWorkflow(req, res)
+)
 
 export default router

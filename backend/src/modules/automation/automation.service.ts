@@ -21,6 +21,7 @@ import {
   isApprovalUsable,
   ownedAutomationWhere,
   type AutomationModeValue,
+  type ValidatedPlan,
 } from './automation.domain';
 
 const automationInclude = {
@@ -37,17 +38,25 @@ type AutomationRecord = Prisma.AutomationGetPayload<{ include: typeof automation
 export class AutomationService {
   async create(
     userId: string,
-    input: { goal: string; mode: AutomationModeValue; idempotencyKey?: string }
+    input: {
+      goal: string;
+      mode: AutomationModeValue;
+      idempotencyKey?: string;
+      plan?: ValidatedPlan;
+    }
   ): Promise<AutomationRecord> {
     if (input.idempotencyKey) {
       const previous = await prisma.automation.findUnique({
         where: { userId_idempotencyKey: { userId, idempotencyKey: input.idempotencyKey } },
         include: automationInclude,
       });
-      if (previous) return previous;
+      if (previous) {
+        this.assertIdempotencyMatches(previous, input);
+        return previous;
+      }
     }
 
-    const plan = await createAutomationPlan(input.goal);
+    const plan = input.plan ?? (await createAutomationPlan(input.goal));
     const approvalPayload = createApprovalPayload({
       goal: input.goal,
       title: plan.title,
@@ -146,7 +155,10 @@ export class AutomationService {
           where: { userId_idempotencyKey: { userId, idempotencyKey: input.idempotencyKey } },
           include: automationInclude,
         });
-        if (previous) return previous;
+        if (previous) {
+          this.assertIdempotencyMatches(previous, input);
+          return previous;
+        }
       }
       throw error;
     }
@@ -475,6 +487,34 @@ export class AutomationService {
     const automation = await this.get(userId, automationId);
     if (!automation) throw new AutomationError('Automation not found.', 404);
     return automation;
+  }
+
+  private assertIdempotencyMatches(
+    previous: AutomationRecord,
+    input: { goal: string; mode: AutomationModeValue; plan?: ValidatedPlan }
+  ): void {
+    if (
+      previous.goal !== input.goal ||
+      previous.mode !== input.mode ||
+      (input.plan !== undefined &&
+        hashApprovalPayload(createApprovalPayload(previous)) !==
+          hashApprovalPayload(
+            createApprovalPayload({
+              goal: input.goal,
+              title: input.plan.title,
+              tasks: input.plan.tasks.map((task) => ({
+                key: task.key,
+                title: task.title,
+                description: task.description,
+                action: task.action,
+                dependencies: task.dependsOn,
+                input: task.input,
+              })),
+            })
+          ))
+    ) {
+      throw new AutomationError('Idempotency-Key was already used for a different workflow.', 409);
+    }
   }
 
   private async expirePendingApprovals(userId: string, automationId?: string): Promise<void> {

@@ -18,7 +18,12 @@ export interface AutomationTask {
   key: string;
   title: string;
   description: string;
-  action: 'collect_review_results' | 'generate_text_draft';
+  action:
+    | 'collect_review_results'
+    | 'generate_text_draft'
+    | 'collect_github_context'
+    | 'create_github_issue'
+    | 'create_github_pr_comment';
   dependencies: string[];
   output: unknown;
   status:

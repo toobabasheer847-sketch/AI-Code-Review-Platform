@@ -90,6 +90,24 @@ test('planner rejects duplicate keys, unknown dependencies, and dependency cycle
       }),
     /dependency cycle/
   );
+  assert.throws(() =>
+    validatePlan({
+      title: 'Invalid GitHub action input',
+      tasks: [
+        {
+          ...validPlan.tasks[0],
+          action: 'create_github_issue',
+          input: { repository: 'owner/repository', title: 'Allowed title', command: 'whoami' },
+        },
+      ],
+    })
+  );
+  assert.throws(() =>
+    validatePlan({
+      title: 'Mismatched GitHub action input',
+      tasks: [{ ...validPlan.tasks[0], action: 'collect_github_context', input: {} }],
+    })
+  );
 });
 
 test('planner orders dependent tasks before their consumers', () => {
@@ -539,5 +557,44 @@ test('execution requires an owner-matched approval for the unchanged plan', () =
       plan,
     }),
     true
+  );
+  const externalActionPlan = {
+    ...plan,
+    tasks: [
+      {
+        key: 'create-issue',
+        title: 'Create approved issue',
+        description: 'Create the explicitly approved issue.',
+        action: 'create_github_issue',
+        dependencies: [],
+        input: { repository: 'owner/repository', title: 'Title', body: 'Body' },
+      },
+    ],
+  };
+  assert.equal(
+    isAutomationExecutionAuthorized({
+      mode: 'AUTO_LOW_RISK',
+      userId: 'user-a',
+      plan: externalActionPlan,
+    }),
+    false
+  );
+  const changedExternalPayload = {
+    ...approval,
+    payload: {
+      ...plan,
+      tasks: plan.tasks.map((task) =>
+        task.key === 'draft' ? { ...task, input: { changed: true } } : task
+      ),
+    },
+  };
+  assert.equal(
+    isAutomationExecutionAuthorized({
+      mode: 'APPROVAL_REQUIRED',
+      userId: 'user-a',
+      approval: changedExternalPayload,
+      plan,
+    }),
+    false
   );
 });
