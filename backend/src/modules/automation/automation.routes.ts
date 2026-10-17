@@ -14,8 +14,11 @@ const createLimiter = rateLimit({
 });
 
 router.use(authMiddleware);
+router.post('/visual/validate', createLimiter, (req, res) => controller.validateVisual(req, res));
+router.post('/visual', createLimiter, (req, res) => controller.saveVisual(req, res));
 router.get('/', (req, res) => controller.list(req, res));
 router.post('/', createLimiter, (req, res) => controller.create(req, res));
+router.post('/:id/execute-draft', (req, res) => controller.executeDraft(req, res));
 router.get('/:id', (req, res) => controller.get(req, res));
 router.post('/:id/approve', (req, res) => controller.approve(req, res));
 router.post('/:id/reject', (req, res) => controller.reject(req, res));

@@ -1,40 +1,75 @@
-import { Suspense, lazy } from 'react'
-import type { RouteObject } from 'react-router-dom'
+import { Suspense, lazy } from 'react';
+import type { RouteObject } from 'react-router-dom';
 
-import { LoadingSpinner } from '@components/common/LoadingSpinner'
+import { LoadingSpinner } from '@components/common/LoadingSpinner';
 
-import { ProtectedRoute } from './ProtectedRoute'
+import { ProtectedRoute } from './ProtectedRoute';
 
-const LandingPage = lazy(() => import('@pages/LandingPage').then((m) => ({ default: m.default })))
-const LoginPage = lazy(() => import('@features/auth/pages/LoginPage').then((m) => ({ default: m.LoginPage })))
-const RegisterPage = lazy(() => import('@features/auth/pages/RegisterPage').then((m) => ({ default: m.RegisterPage })))
+const LandingPage = lazy(() => import('@pages/LandingPage').then((m) => ({ default: m.default })));
+const LoginPage = lazy(() =>
+  import('@features/auth/pages/LoginPage').then((m) => ({ default: m.LoginPage }))
+);
+const RegisterPage = lazy(() =>
+  import('@features/auth/pages/RegisterPage').then((m) => ({ default: m.RegisterPage }))
+);
 const AccountActionPage = lazy(() =>
   import('@features/auth/pages/AccountActionPage').then((m) => ({ default: m.AccountActionPage }))
-)
-const DashboardPage = lazy(() => import('@features/dashboard/pages/DashboardPage').then((m) => ({ default: m.DashboardPage })))
-const PricingPage = lazy(() => import('@features/billing/pages/PricingPage').then((m) => ({ default: m.PricingPage })))
-const BillingDashboard = lazy(() => import('@features/billing/pages/BillingDashboard').then((m) => ({ default: m.BillingDashboard })))
-const BillingSuccessPage = lazy(() => import('@features/billing/pages/BillingSuccessPage').then((m) => ({ default: m.BillingSuccessPage })))
-const BillingCancelPage = lazy(() => import('@features/billing/pages/BillingCancelPage').then((m) => ({ default: m.BillingCancelPage })))
-const GitHubReposPage = lazy(() => import('@features/github/pages/GitHubReposPage').then((m) => ({ default: m.GitHubReposPage })))
+);
+const DashboardPage = lazy(() =>
+  import('@features/dashboard/pages/DashboardPage').then((m) => ({ default: m.DashboardPage }))
+);
+const PricingPage = lazy(() =>
+  import('@features/billing/pages/PricingPage').then((m) => ({ default: m.PricingPage }))
+);
+const BillingDashboard = lazy(() =>
+  import('@features/billing/pages/BillingDashboard').then((m) => ({ default: m.BillingDashboard }))
+);
+const BillingSuccessPage = lazy(() =>
+  import('@features/billing/pages/BillingSuccessPage').then((m) => ({
+    default: m.BillingSuccessPage,
+  }))
+);
+const BillingCancelPage = lazy(() =>
+  import('@features/billing/pages/BillingCancelPage').then((m) => ({
+    default: m.BillingCancelPage,
+  }))
+);
+const GitHubReposPage = lazy(() =>
+  import('@features/github/pages/GitHubReposPage').then((m) => ({ default: m.GitHubReposPage }))
+);
 const GitHubDevelopmentPage = lazy(() =>
-  import('@features/github/pages/GitHubDevelopmentPage').then((m) => ({ default: m.GitHubDevelopmentPage }))
-)
+  import('@features/github/pages/GitHubDevelopmentPage').then((m) => ({
+    default: m.GitHubDevelopmentPage,
+  }))
+);
 const SocialPublishingPage = lazy(() =>
-  import('@features/social/pages/SocialPublishingPage').then((m) => ({ default: m.SocialPublishingPage }))
-)
+  import('@features/social/pages/SocialPublishingPage').then((m) => ({
+    default: m.SocialPublishingPage,
+  }))
+);
 const WorkMemoryPage = lazy(() =>
   import('@features/memory/pages/WorkMemoryPage').then((m) => ({ default: m.WorkMemoryPage }))
-)
-const ReviewsPage = lazy(() => import('@features/reviews/pages/ReviewsPage').then((m) => ({ default: m.ReviewsPage })))
-const ReviewByIdPage = lazy(() => import('@features/reviews/pages/ReviewByIdPage').then((m) => ({ default: m.ReviewByIdPage })))
-const SettingsPage = lazy(() => import('@features/profile/pages/SettingsPage').then((m) => ({ default: m.SettingsPage })))
+);
+const ReviewsPage = lazy(() =>
+  import('@features/reviews/pages/ReviewsPage').then((m) => ({ default: m.ReviewsPage }))
+);
+const ReviewByIdPage = lazy(() =>
+  import('@features/reviews/pages/ReviewByIdPage').then((m) => ({ default: m.ReviewByIdPage }))
+);
+const SettingsPage = lazy(() =>
+  import('@features/profile/pages/SettingsPage').then((m) => ({ default: m.SettingsPage }))
+);
 const AutomationPage = lazy(() =>
   import('@features/automation/pages/AutomationPage').then((m) => ({ default: m.AutomationPage }))
-)
-const NotFound = lazy(() => import('@pages/NotFound').then((m) => ({ default: m.NotFound })))
+);
+const VisualWorkflowBuilderPage = lazy(() =>
+  import('@features/automation/pages/VisualWorkflowBuilderPage').then((m) => ({
+    default: m.VisualWorkflowBuilderPage,
+  }))
+);
+const NotFound = lazy(() => import('@pages/NotFound').then((m) => ({ default: m.NotFound })));
 
-const LazyFallback = (): JSX.Element => <LoadingSpinner fullScreen />
+const LazyFallback = (): JSX.Element => <LoadingSpinner fullScreen />;
 
 export const routes: RouteObject[] = [
   {
@@ -146,6 +181,16 @@ export const routes: RouteObject[] = [
     ),
   },
   {
+    path: '/automations/builder',
+    element: (
+      <ProtectedRoute>
+        <Suspense fallback={<LazyFallback />}>
+          <VisualWorkflowBuilderPage />
+        </Suspense>
+      </ProtectedRoute>
+    ),
+  },
+  {
     path: '/pricing',
     element: (
       <Suspense fallback={<LazyFallback />}>
@@ -221,4 +266,4 @@ export const routes: RouteObject[] = [
       </Suspense>
     ),
   },
-]
+];

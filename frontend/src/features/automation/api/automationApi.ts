@@ -32,6 +32,7 @@ export interface AutomationTask {
     | 'READY'
     | 'RUNNING'
     | 'COMPLETED'
+    | 'SKIPPED'
     | 'FAILED'
     | 'CANCELED';
   attempts: number;
@@ -45,6 +46,54 @@ export interface AutomationTask {
     startedAt: string;
     completedAt: string | null;
   }>;
+}
+
+export type VisualAction =
+  | 'collect_review_results'
+  | 'generate_text_draft'
+  | 'collect_github_context'
+  | 'create_github_issue'
+  | 'create_github_pr_comment';
+
+export type VisualCondition =
+  | { kind: 'review_count'; operator: 'gt' | 'eq'; value: number }
+  | { kind: 'github_context_status'; equals: 'complete' | 'partial' }
+  | { kind: 'github_write_status'; equals: 'created' | 'already_created' };
+
+export type VisualWorkflowNode =
+  | { id: string; type: 'manual'; label: string }
+  | {
+      id: string;
+      type: 'action';
+      title: string;
+      description: string;
+      action: VisualAction;
+      input: Record<string, unknown>;
+    }
+  | { id: string; type: 'condition'; title: string; condition: VisualCondition }
+  | { id: string; type: 'approval'; title: string; message: string }
+  | { id: string; type: 'end' | 'result'; title: string; resultLabel?: string };
+
+export interface VisualWorkflowDefinition {
+  title: string;
+  nodes: VisualWorkflowNode[];
+  edges: Array<{ id: string; from: string; to: string; branch?: 'true' | 'false' }>;
+}
+
+export interface VisualWorkflowValidation {
+  valid: true;
+  title: string;
+  plan: {
+    title: string;
+    tasks: Array<{
+      key: string;
+      title: string;
+      description: string;
+      action: VisualAction;
+      input: Record<string, unknown>;
+      dependsOn: string[];
+    }>;
+  };
 }
 
 export interface AutomationApproval {
@@ -80,6 +129,7 @@ export interface Automation {
   id: string;
   title: string;
   goal: string;
+  workflowDefinition: VisualWorkflowDefinition | null;
   mode: AutomationMode;
   status: AutomationStatus;
   tasks: AutomationTask[];
@@ -121,6 +171,27 @@ export const automationApi = {
       { goal, mode },
       { headers: { 'Idempotency-Key': idempotencyKey } }
     );
+    return response.data;
+  },
+  validateVisual: async (
+    goal: string,
+    workflow: VisualWorkflowDefinition
+  ): Promise<VisualWorkflowValidation> => {
+    const response = await axiosInstance.post<VisualWorkflowValidation>(
+      '/automations/visual/validate',
+      { goal, workflow }
+    );
+    return response.data;
+  },
+  saveVisual: async (goal: string, workflow: VisualWorkflowDefinition): Promise<Automation> => {
+    const response = await axiosInstance.post<Automation>('/automations/visual', {
+      goal,
+      workflow,
+    });
+    return response.data;
+  },
+  executeDraft: async (id: string): Promise<Automation> => {
+    const response = await axiosInstance.post<Automation>(`/automations/${id}/execute-draft`);
     return response.data;
   },
   approve: async (id: string): Promise<Automation> => {

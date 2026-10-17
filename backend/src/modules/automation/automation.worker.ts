@@ -20,6 +20,12 @@ import {
   orderAutomationTaskKeys,
   shouldExecuteAutomationTask,
 } from './automation.domain';
+import {
+  activeVisualActionIds,
+  VisualWorkflowValidationError,
+  validateAndCompileVisualWorkflow,
+  type VisualWorkflowDefinition,
+} from './visual-workflow.domain';
 
 let worker: Worker<AutomationJobData> | null = null;
 
@@ -44,6 +50,31 @@ async function processAutomation(job: Job<AutomationJobData>): Promise<void> {
   ) {
     return;
   }
+  let visualWorkflow: VisualWorkflowDefinition | null = null;
+  if (automation.workflowDefinition !== null) {
+    try {
+      visualWorkflow = validateAndCompileVisualWorkflow(automation.workflowDefinition).workflow;
+    } catch (error) {
+      if (!(error instanceof VisualWorkflowValidationError)) throw error;
+      await prisma.$transaction(async (transaction) => {
+        await transaction.automation.updateMany({
+          where: {
+            id: automationId,
+            status: { in: [AutomationStatus.QUEUED, AutomationStatus.RUNNING] },
+          },
+          data: { status: AutomationStatus.FAILED },
+        });
+        await transaction.automationEvent.create({
+          data: {
+            automationId,
+            type: 'workflow_validation_failed',
+            message: 'Visual workflow validation failed before execution.',
+          },
+        });
+      });
+      return;
+    }
+  }
   if (
     !isAutomationExecutionAuthorized({
       mode: automation.mode,
@@ -65,7 +96,8 @@ async function processAutomation(job: Job<AutomationJobData>): Promise<void> {
           data: {
             automationId,
             type: 'authorization_failed',
-            message: 'Automation execution was blocked because its server-side authorization was invalid.',
+            message:
+              'Automation execution was blocked because its server-side authorization was invalid.',
           },
         });
       }
@@ -97,6 +129,11 @@ async function processAutomation(job: Job<AutomationJobData>): Promise<void> {
   if (!started) return;
 
   const actions = new AutomationActionRegistry();
+  const visualOutputs = new Map<string, unknown>(
+    automation.tasks
+      .filter((task) => task.status === AutomationTaskStatus.COMPLETED && task.output !== null)
+      .map((task) => [task.key, task.output])
+  );
   for (const task of orderedTasks) {
     const current = await prisma.automation.findUnique({
       where: { id: automationId },
@@ -108,7 +145,51 @@ async function processAutomation(job: Job<AutomationJobData>): Promise<void> {
       current.status === AutomationStatus.REJECTED
     )
       return;
-    if (!shouldExecuteAutomationTask(task.status)) continue;
+    if (visualWorkflow) {
+      const activeNodes = activeVisualActionIds(visualWorkflow, visualOutputs);
+      if (!activeNodes.has(task.key)) {
+        if (
+          task.status !== AutomationTaskStatus.SKIPPED &&
+          task.status !== AutomationTaskStatus.COMPLETED
+        ) {
+          await prisma.$transaction(async (transaction) => {
+            const result = await transaction.automationTask.updateMany({
+              where: {
+                id: task.id,
+                status: {
+                  in: [
+                    AutomationTaskStatus.PENDING,
+                    AutomationTaskStatus.AWAITING_APPROVAL,
+                    AutomationTaskStatus.READY,
+                    AutomationTaskStatus.SKIPPED,
+                  ],
+                },
+              },
+              data: { status: AutomationTaskStatus.SKIPPED },
+            });
+            if (result.count > 0) {
+              await transaction.automationEvent.create({
+                data: {
+                  automationId,
+                  type: 'branch_skipped',
+                  message: 'A task was skipped because its condition selected another branch.',
+                },
+              });
+            }
+          });
+        }
+        continue;
+      }
+      if (task.status === AutomationTaskStatus.SKIPPED) {
+        await prisma.automationTask.updateMany({
+          where: { id: task.id, status: AutomationTaskStatus.SKIPPED },
+          data: { status: AutomationTaskStatus.PENDING },
+        });
+      }
+    }
+    if (!shouldExecuteAutomationTask(task.status) && task.status !== AutomationTaskStatus.SKIPPED) {
+      continue;
+    }
 
     let attemptNumber = 0;
     try {
@@ -200,6 +281,7 @@ async function processAutomation(job: Job<AutomationJobData>): Promise<void> {
           output: dependencyOutput,
         })),
       });
+      visualOutputs.set(task.key, output);
 
       const persisted = await prisma.$transaction(async (transaction) => {
         const [state] = await transaction.$queryRaw<Array<{ status: AutomationStatus }>>`
@@ -237,10 +319,7 @@ async function processAutomation(job: Job<AutomationJobData>): Promise<void> {
       });
       if (!persisted) return;
     } catch {
-      const finalAttempt = isFinalAutomationAttempt(
-        job.attemptsMade,
-        job.opts.attempts ?? 1
-      );
+      const finalAttempt = isFinalAutomationAttempt(job.attemptsMade, job.opts.attempts ?? 1);
       const safeErrorMessage = 'Automation task failed. You can retry this automation.';
       const persisted = await prisma.$transaction(async (transaction) => {
         const [state] = await transaction.$queryRaw<Array<{ status: AutomationStatus }>>`

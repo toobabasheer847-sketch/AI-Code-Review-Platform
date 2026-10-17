@@ -9,6 +9,11 @@ import { prisma } from '@/config/database';
 import { automationJobId, automationQueue } from './automation.queue';
 import { createAutomationPlan } from './automation.planner';
 import { WorkMemoryService } from '@/modules/memory/memory.service';
+import { GitHubService } from '@/modules/github/github.service';
+import {
+  validateAndCompileVisualWorkflow,
+  type VisualWorkflowDefinition,
+} from './visual-workflow.domain';
 import {
   AutomationError,
   AUTOMATION_APPROVAL_TTL_MS,
@@ -46,6 +51,7 @@ export class AutomationService {
       mode: AutomationModeValue;
       idempotencyKey?: string;
       plan?: ValidatedPlan;
+      workflowDefinition?: VisualWorkflowDefinition;
     }
   ): Promise<AutomationRecord> {
     if (input.idempotencyKey) {
@@ -69,6 +75,9 @@ export class AutomationService {
     const approvalPayload = createApprovalPayload({
       goal: input.goal,
       title: plan.title,
+      ...(input.workflowDefinition
+        ? { workflowDefinition: input.workflowDefinition as Prisma.InputJsonValue }
+        : {}),
       tasks: plan.tasks.map((task) => ({
         key: task.key,
         title: task.title,
@@ -177,6 +186,124 @@ export class AutomationService {
       return (await this.get(userId, automation.id)) ?? automation;
     }
     return automation;
+  }
+
+  async validateVisualWorkflow(
+    userId: string,
+    value: unknown
+  ): Promise<{ valid: true; title: string; plan: ValidatedPlan }> {
+    const { workflow, plan } = validateAndCompileVisualWorkflow(value);
+    await this.authorizeVisualWorkflow(userId, workflow);
+    return { valid: true, title: workflow.title, plan };
+  }
+
+  async saveVisualDraft(userId: string, goal: string, value: unknown): Promise<AutomationRecord> {
+    const { workflow, plan } = validateAndCompileVisualWorkflow(value);
+    await this.authorizeVisualWorkflow(userId, workflow);
+    return this.create(userId, {
+      goal,
+      mode: AutomationMode.DRAFT_ONLY,
+      plan,
+      workflowDefinition: workflow,
+    });
+  }
+
+  async executeVisualDraft(userId: string, automationId: string): Promise<AutomationRecord> {
+    const automation = await this.getRequired(userId, automationId);
+    if (
+      automation.mode !== AutomationMode.DRAFT_ONLY ||
+      automation.status !== AutomationStatus.DRAFT ||
+      !automation.workflowDefinition
+    ) {
+      throw new AutomationError('Only a saved visual workflow draft can be executed.', 409);
+    }
+    const { workflow, plan } = validateAndCompileVisualWorkflow(automation.workflowDefinition);
+    await this.authorizeVisualWorkflow(userId, workflow);
+    const expectedPayload = createApprovalPayload({
+      goal: automation.goal,
+      title: plan.title,
+      tasks: plan.tasks.map((task) => ({
+        key: task.key,
+        title: task.title,
+        description: task.description,
+        action: task.action,
+        dependencies: task.dependsOn,
+        input: task.input,
+      })),
+      workflowDefinition: workflow,
+    });
+    if (
+      hashApprovalPayload(expectedPayload) !==
+      hashApprovalPayload(createApprovalPayload(automation))
+    ) {
+      throw new AutomationError('The saved workflow no longer matches its executable graph.', 409);
+    }
+    const approvalNode = workflow.nodes.find(
+      (node): node is Extract<VisualWorkflowDefinition['nodes'][number], { type: 'approval' }> =>
+        node.type === 'approval'
+    );
+
+    await prisma.$transaction(
+      async (transaction) => {
+        await transaction.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+        const activeCount = await transaction.automation.count({
+          where: {
+            userId,
+            status: {
+              in: [
+                AutomationStatus.AWAITING_APPROVAL,
+                AutomationStatus.QUEUED,
+                AutomationStatus.RUNNING,
+              ],
+            },
+          },
+        });
+        if (activeCount >= MAX_ACTIVE_AUTOMATIONS_PER_USER) {
+          throw new AutomationError('Active automation limit reached.', 429);
+        }
+        const updated = await transaction.automation.updateMany({
+          where: {
+            id: automationId,
+            userId,
+            mode: AutomationMode.DRAFT_ONLY,
+            status: AutomationStatus.DRAFT,
+          },
+          data: {
+            mode: AutomationMode.APPROVAL_REQUIRED,
+            status: AutomationStatus.AWAITING_APPROVAL,
+          },
+        });
+        if (updated.count !== 1)
+          throw new AutomationError('Workflow state changed; refresh and retry.', 409);
+        const tasks = await transaction.automationTask.updateMany({
+          where: { automationId, status: AutomationTaskStatus.PENDING },
+          data: { status: AutomationTaskStatus.AWAITING_APPROVAL },
+        });
+        if (tasks.count !== plan.tasks.length) {
+          throw new AutomationError('The saved workflow task set is incomplete.', 409);
+        }
+        await transaction.automationApproval.create({
+          data: {
+            automationId,
+            userId,
+            summary:
+              approvalNode?.message ?? 'Approve this visual workflow before its actions run.',
+            payload: expectedPayload as Prisma.InputJsonValue,
+            payloadHash: hashApprovalPayload(expectedPayload),
+            expiresAt: new Date(Date.now() + AUTOMATION_APPROVAL_TTL_MS),
+          },
+        });
+        await transaction.automationEvent.create({
+          data: {
+            automationId,
+            type: 'approval_requested',
+            message: 'Visual workflow submitted for owner approval.',
+          },
+        });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
+    return this.getRequired(userId, automationId);
   }
 
   async list(userId: string): Promise<AutomationRecord[]> {
@@ -468,7 +595,10 @@ export class AutomationService {
         automation.status === AutomationStatus.FAILED &&
         automation.retryCount >= MAX_AUTOMATION_RETRIES
       ) {
-        throw new AutomationError('The maximum number of automation retries has been reached.', 409);
+        throw new AutomationError(
+          'The maximum number of automation retries has been reached.',
+          409
+        );
       }
       throw new AutomationError('Only failed automations can be retried.', 409);
     }
@@ -496,6 +626,34 @@ export class AutomationService {
     const automation = await this.get(userId, automationId);
     if (!automation) throw new AutomationError('Automation not found.', 404);
     return automation;
+  }
+
+  private async authorizeVisualWorkflow(
+    userId: string,
+    workflow: VisualWorkflowDefinition
+  ): Promise<void> {
+    const github = new GitHubService();
+    for (const node of workflow.nodes) {
+      if (
+        node.type !== 'action' ||
+        (node.action !== 'collect_github_context' &&
+          node.action !== 'create_github_issue' &&
+          node.action !== 'create_github_pr_comment')
+      ) {
+        continue;
+      }
+      const input = node.input as { repository: string };
+      try {
+        await github.validateDevelopmentRepository(
+          userId,
+          input.repository,
+          node.action === 'create_github_issue' || node.action === 'create_github_pr_comment'
+        );
+      } catch (error) {
+        if (error instanceof Error) throw new AutomationError(error.message, 403);
+        throw error;
+      }
+    }
   }
 
   private assertIdempotencyMatches(

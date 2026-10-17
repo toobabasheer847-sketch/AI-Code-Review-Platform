@@ -59,6 +59,26 @@ Integration references should name a provider or configuration location only;
 plaintext secrets and common sensitive values are rejected, but this pattern
 check is not comprehensive and is not a substitute for avoiding sensitive data.
 
+### Visual workflow builder
+
+The authenticated `/automations/builder` page saves workflow graphs as drafts.
+The server validates the complete graph before validation or persistence, checks
+connected-account access for GitHub actions, and compiles supported action nodes
+into the existing automation tasks and dependency engine. Submitting a draft
+creates the existing owner approval, then execution continues through the
+existing queue, active-automation limit, task permissions, and audit events.
+The workflow graph is included in the approval fingerprint and revalidated by
+the worker before execution.
+
+Only manual triggers are supported: this project has no workflow scheduler or
+generic GitHub-event workflow trigger. The approval node must immediately follow
+the manual trigger and represents the existing workflow-level owner approval;
+mid-run approval pauses are not supported. Conditions use only predefined
+review-count and GitHub result checks. Merge/join paths and arbitrary
+expressions or user code are rejected. Graph actions are limited to existing
+automation operations. Apply the `20261017150000_add_visual_workflows` migration
+before deploying this feature.
+
 ### Review processing
 
 Starting a review verifies that the connected GitHub account can access the

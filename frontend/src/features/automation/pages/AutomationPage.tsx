@@ -77,6 +77,7 @@ const taskStatusStyles: Record<AutomationTask['status'], string> = {
   READY: 'text-sky-300',
   RUNNING: 'text-indigo-300',
   COMPLETED: 'text-emerald-300',
+  SKIPPED: 'text-slate-500',
   FAILED: 'text-rose-300',
   CANCELED: 'text-slate-500',
 };
@@ -117,7 +118,13 @@ function DraftOutput({ task }: { task: AutomationTask }): JSX.Element | null {
       const value = context[key];
       if (!Array.isArray(value)) return;
       value.forEach((item, index) => {
-        if (typeof item !== 'object' || item === null || !('url' in item) || typeof item.url !== 'string') return;
+        if (
+          typeof item !== 'object' ||
+          item === null ||
+          !('url' in item) ||
+          typeof item.url !== 'string'
+        )
+          return;
         try {
           const url = new URL(item.url);
           if (url.protocol === 'https:' && url.hostname === 'github.com') {
@@ -159,7 +166,13 @@ function DraftOutput({ task }: { task: AutomationTask }): JSX.Element | null {
       Array.isArray(context.checks.runs)
     ) {
       context.checks.runs.forEach((item, index) => {
-        if (typeof item !== 'object' || item === null || !('url' in item) || typeof item.url !== 'string') return;
+        if (
+          typeof item !== 'object' ||
+          item === null ||
+          !('url' in item) ||
+          typeof item.url !== 'string'
+        )
+          return;
         try {
           const url = new URL(item.url);
           if (url.protocol === 'https:' && url.hostname === 'github.com') {
@@ -172,8 +185,11 @@ function DraftOutput({ task }: { task: AutomationTask }): JSX.Element | null {
     }
     const partial = 'status' in context && context.status === 'partial';
     const ciAvailability =
-      'checks' in context && typeof context.checks === 'object' && context.checks !== null &&
-      'availability' in context.checks && typeof context.checks.availability === 'string'
+      'checks' in context &&
+      typeof context.checks === 'object' &&
+      context.checks !== null &&
+      'availability' in context.checks &&
+      typeof context.checks.availability === 'string'
         ? context.checks.availability
         : 'unknown';
     return (
@@ -191,7 +207,10 @@ function DraftOutput({ task }: { task: AutomationTask }): JSX.Element | null {
           <ul className="mt-2 list-inside list-disc space-y-1 text-[11px] text-amber-200/80">
             {context.failures.map((failure, index) => (
               <li key={index}>
-                {typeof failure === 'object' && failure !== null && 'source' in failure && 'message' in failure
+                {typeof failure === 'object' &&
+                failure !== null &&
+                'source' in failure &&
+                'message' in failure
                   ? `${String(failure.source)}: ${String(failure.message)}`
                   : 'A GitHub data source was unavailable.'}
               </li>
@@ -238,7 +257,12 @@ function DraftOutput({ task }: { task: AutomationTask }): JSX.Element | null {
       return (
         <p className="mt-3 rounded-lg border border-emerald-400/15 bg-emerald-400/[0.035] px-3 py-2 text-[11px] text-emerald-200">
           GitHub returned a recorded result:{' '}
-          <a href={resultUrl.toString()} target="_blank" rel="noreferrer" className="underline underline-offset-2">
+          <a
+            href={resultUrl.toString()}
+            target="_blank"
+            rel="noreferrer"
+            className="underline underline-offset-2"
+          >
             Open on GitHub
           </a>
         </p>
@@ -263,43 +287,43 @@ function DraftOutput({ task }: { task: AutomationTask }): JSX.Element | null {
 }
 
 function ApprovalActionPreview({
-    action,
-    input,
+  action,
+  input,
 }: {
-    action: AutomationTask['action'];
-    input: unknown;
+  action: AutomationTask['action'];
+  input: unknown;
 }): JSX.Element | null {
-    if (
-      (action !== 'create_github_issue' && action !== 'create_github_pr_comment') ||
-      !isRecord(input)
-    ) {
-      return null;
-    }
-    const title = typeof input.title === 'string' ? input.title : null;
-    const body = typeof input.body === 'string' ? input.body : null;
-    const repository = typeof input.repository === 'string' ? input.repository : null;
-    const pullRequestNumber =
-      typeof input.pullRequestNumber === 'number' ? input.pullRequestNumber : null;
-    return (
-      <div className="mt-3 rounded-md border border-amber-400/15 bg-amber-400/[0.025] p-3">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-amber-200/80">
-          Exact external action preview
-        </p>
-        {repository && <p className="mt-2 text-[11px] text-slate-400">Repository: {repository}</p>}
-        {title && <p className="mt-1 text-[11px] font-medium text-slate-200">Issue title: {title}</p>}
-        {pullRequestNumber !== null && (
-          <p className="mt-1 text-[11px] text-slate-400">Pull request: #{pullRequestNumber}</p>
-        )}
-        {body && (
-          <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap break-words rounded bg-[#080b12] p-2.5 text-[11px] leading-5 text-slate-300">
-            {body}
-          </pre>
-        )}
-        <p className="mt-2 text-[10px] text-amber-100/60">
-          This exact content is included in the server-verified approval fingerprint.
-        </p>
-      </div>
-    );
+  if (
+    (action !== 'create_github_issue' && action !== 'create_github_pr_comment') ||
+    !isRecord(input)
+  ) {
+    return null;
+  }
+  const title = typeof input.title === 'string' ? input.title : null;
+  const body = typeof input.body === 'string' ? input.body : null;
+  const repository = typeof input.repository === 'string' ? input.repository : null;
+  const pullRequestNumber =
+    typeof input.pullRequestNumber === 'number' ? input.pullRequestNumber : null;
+  return (
+    <div className="mt-3 rounded-md border border-amber-400/15 bg-amber-400/[0.025] p-3">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-amber-200/80">
+        Exact external action preview
+      </p>
+      {repository && <p className="mt-2 text-[11px] text-slate-400">Repository: {repository}</p>}
+      {title && <p className="mt-1 text-[11px] font-medium text-slate-200">Issue title: {title}</p>}
+      {pullRequestNumber !== null && (
+        <p className="mt-1 text-[11px] text-slate-400">Pull request: #{pullRequestNumber}</p>
+      )}
+      {body && (
+        <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap break-words rounded bg-[#080b12] p-2.5 text-[11px] leading-5 text-slate-300">
+          {body}
+        </pre>
+      )}
+      <p className="mt-2 text-[10px] text-amber-100/60">
+        This exact content is included in the server-verified approval fingerprint.
+      </p>
+    </div>
+  );
 }
 
 function WorkflowCard({
@@ -376,12 +400,20 @@ function WorkflowCard({
         <div className="border-t border-white/[0.06] px-4 pb-5 pt-4 sm:px-5">
           <div className="mb-4 grid gap-3 sm:grid-cols-2">
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600">Goal</p>
-              <p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-slate-400">{automation.goal}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600">
+                Goal
+              </p>
+              <p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-slate-400">
+                {automation.goal}
+              </p>
             </div>
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600">Execution mode</p>
-              <p className="mt-1 text-xs text-slate-400">{automation.mode.replace(/_/g, ' ').toLowerCase()}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600">
+                Execution mode
+              </p>
+              <p className="mt-1 text-xs text-slate-400">
+                {automation.mode.replace(/_/g, ' ').toLowerCase()}
+              </p>
               {automation.approvals[0] && (
                 <p className="mt-1 text-[11px] text-slate-500">
                   Approval {automation.approvals[0].status.toLowerCase()}
@@ -395,7 +427,10 @@ function WorkflowCard({
           {approval && (
             <div className="mb-4 rounded-lg border border-amber-400/20 bg-amber-400/[0.04] p-4">
               <div className="flex items-start gap-3">
-                <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" aria-hidden="true" />
+                <ShieldCheck
+                  className="mt-0.5 h-4 w-4 shrink-0 text-amber-300"
+                  aria-hidden="true"
+                />
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-semibold text-amber-100">Plan approval required</p>
                   <p className="mt-1 text-xs leading-5 text-slate-400">{approval.summary}</p>
@@ -446,9 +481,15 @@ function WorkflowCard({
 
           <ol className="space-y-2" aria-label="Workflow tasks">
             {automation.tasks.map((task, index) => (
-              <li key={task.id} className="relative rounded-lg border border-white/[0.06] bg-[#0a0d14] p-3.5">
+              <li
+                key={task.id}
+                className="relative rounded-lg border border-white/[0.06] bg-[#0a0d14] p-3.5"
+              >
                 {index < automation.tasks.length - 1 && (
-                  <span className="absolute bottom-0 left-[25px] h-2 translate-y-full border-l border-dashed border-white/10" aria-hidden="true" />
+                  <span
+                    className="absolute bottom-0 left-[25px] h-2 translate-y-full border-l border-dashed border-white/10"
+                    aria-hidden="true"
+                  />
                 )}
                 <div className="flex items-start gap-3">
                   <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.025] text-[10px] font-semibold text-slate-400">
@@ -464,13 +505,17 @@ function WorkflowCard({
                     <p className="mt-1 text-[11px] leading-5 text-slate-500">{task.description}</p>
                     <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-slate-600">
                       <span>{task.action.replace(/_/g, ' ')}</span>
-                      <span>{task.attempts} {task.attempts === 1 ? 'attempt' : 'attempts'}</span>
+                      <span>
+                        {task.attempts} {task.attempts === 1 ? 'attempt' : 'attempts'}
+                      </span>
                       {task.dependencies.length > 0 && (
                         <span>After: {task.dependencies.join(', ')}</span>
                       )}
                     </div>
                     {task.errorMessage && (
-                      <p className="mt-2 text-xs text-rose-300" role="alert">{task.errorMessage}</p>
+                      <p className="mt-2 text-xs text-rose-300" role="alert">
+                        {task.errorMessage}
+                      </p>
                     )}
                     <DraftOutput task={task} />
                     {task.executionAttempts.length > 0 && (
@@ -480,12 +525,19 @@ function WorkflowCard({
                         </summary>
                         <ol className="mt-2 space-y-2">
                           {task.executionAttempts.map((attempt) => (
-                            <li key={attempt.id} className="rounded-md border border-white/[0.06] p-3 text-[10px] text-slate-500">
+                            <li
+                              key={attempt.id}
+                              className="rounded-md border border-white/[0.06] p-3 text-[10px] text-slate-500"
+                            >
                               <div className="flex flex-wrap justify-between gap-2">
-                                <span>Attempt {attempt.attemptNumber} · {attempt.status.toLowerCase()}</span>
+                                <span>
+                                  Attempt {attempt.attemptNumber} · {attempt.status.toLowerCase()}
+                                </span>
                                 <time>{new Date(attempt.startedAt).toLocaleString()}</time>
                               </div>
-                              {attempt.errorMessage && <p className="mt-2 text-rose-300">{attempt.errorMessage}</p>}
+                              {attempt.errorMessage && (
+                                <p className="mt-2 text-rose-300">{attempt.errorMessage}</p>
+                              )}
                               {attempt.output !== null && (
                                 <pre className="mt-2 whitespace-pre-wrap break-words text-slate-400">
                                   {JSON.stringify(attempt.output, null, 2)}
@@ -535,8 +587,13 @@ function WorkflowCard({
               <ol className="mt-3 space-y-3 border-l border-white/[0.08] pl-4">
                 {automation.events.map((event) => (
                   <li key={event.id} className="relative text-xs text-slate-400">
-                    <span className="absolute -left-[21px] top-1 h-2 w-2 rounded-full bg-slate-700" aria-hidden="true" />
-                    <time className="mr-2 text-[10px] text-slate-600">{new Date(event.createdAt).toLocaleString()}</time>
+                    <span
+                      className="absolute -left-[21px] top-1 h-2 w-2 rounded-full bg-slate-700"
+                      aria-hidden="true"
+                    />
+                    <time className="mr-2 text-[10px] text-slate-600">
+                      {new Date(event.createdAt).toLocaleString()}
+                    </time>
                     {event.message}
                   </li>
                 ))}
@@ -592,14 +649,20 @@ export const AutomationPage = (): JSX.Element => {
   );
   const matchingApprovals = pendingApprovals.filter((automation) => {
     const query = search.trim().toLowerCase();
-    return !query || automation.title.toLowerCase().includes(query) || automation.goal.toLowerCase().includes(query);
+    return (
+      !query ||
+      automation.title.toLowerCase().includes(query) ||
+      automation.goal.toLowerCase().includes(query)
+    );
   });
   const selectedApprovalAutomation =
-    matchingApprovals.find((automation) => automation.id === selectedApprovalId) ?? matchingApprovals[0];
+    matchingApprovals.find((automation) => automation.id === selectedApprovalId) ??
+    matchingApprovals[0];
   const selectedApproval = selectedApprovalAutomation?.approvals.find(
     (approval) => approval.status === 'PENDING'
   );
-  const actionPending = approve.isPending || reject.isPending || cancel.isPending || retry.isPending;
+  const actionPending =
+    approve.isPending || reject.isPending || cancel.isPending || retry.isPending;
 
   const visibleAutomations = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -613,11 +676,12 @@ export const AutomationPage = (): JSX.Element => {
     });
   }, [items, search, statusFilter]);
 
-  const displayedItems = view === 'history'
-    ? visibleAutomations.filter((automation) =>
-        ['COMPLETED', 'FAILED', 'CANCELED', 'REJECTED'].includes(automation.status)
-      )
-    : visibleAutomations;
+  const displayedItems =
+    view === 'history'
+      ? visibleAutomations.filter((automation) =>
+          ['COMPLETED', 'FAILED', 'CANCELED', 'REJECTED'].includes(automation.status)
+        )
+      : visibleAutomations;
 
   const createPlan = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
@@ -660,9 +724,17 @@ export const AutomationPage = (): JSX.Element => {
             workflow.
           </p>
         </div>
-        <div className="flex items-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2 text-[11px] text-slate-400">
-          <ShieldCheck className="h-4 w-4 text-emerald-400" aria-hidden="true" />
-          Approval-aware · internal actions only
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            to="/automations/builder"
+            className="rounded-lg border border-indigo-300/25 bg-indigo-300/[0.06] px-3 py-2 text-xs font-medium text-indigo-200 hover:bg-indigo-300/10"
+          >
+            Open visual builder
+          </Link>
+          <div className="flex items-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2 text-[11px] text-slate-400">
+            <ShieldCheck className="h-4 w-4 text-emerald-400" aria-hidden="true" />
+            Approval-aware · internal actions only
+          </div>
         </div>
       </div>
 
@@ -747,7 +819,10 @@ export const AutomationPage = (): JSX.Element => {
               onModeChange={setMode}
             />
             {create.isSuccess && createdAutomation && (
-              <p className="mt-3 rounded-lg border border-emerald-400/20 bg-emerald-400/[0.05] px-4 py-3 text-xs text-emerald-200" role="status">
+              <p
+                className="mt-3 rounded-lg border border-emerald-400/20 bg-emerald-400/[0.05] px-4 py-3 text-xs text-emerald-200"
+                role="status"
+              >
                 Plan confirmed by the server. Review “{createdAutomation.title}” in your workflows.
               </p>
             )}
@@ -757,23 +832,34 @@ export const AutomationPage = (): JSX.Element => {
             <p className="text-xs font-semibold text-slate-200">What this MVP can do</p>
             <ul className="mt-4 space-y-3">
               <li className="flex gap-2.5 text-xs leading-5 text-slate-400">
-                <FileSearch className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden="true" />
+                <FileSearch
+                  className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-500"
+                  aria-hidden="true"
+                />
                 Read your latest saved completed code reviews.
               </li>
               <li className="flex gap-2.5 text-xs leading-5 text-slate-400">
-                <ArrowDownRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden="true" />
+                <ArrowDownRight
+                  className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-500"
+                  aria-hidden="true"
+                />
                 Create an internal draft from those results.
               </li>
               <li className="flex gap-2.5 text-xs leading-5 text-slate-400">
-                <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden="true" />
+                <ShieldCheck
+                  className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-500"
+                  aria-hidden="true"
+                />
                 Require server-verified approval for approval-mode workflows.
               </li>
             </ul>
             <div className="mt-5 rounded-lg border border-amber-400/15 bg-amber-400/[0.035] p-3">
-              <p className="text-[11px] font-medium text-amber-100">No external publishing or writes</p>
+              <p className="text-[11px] font-medium text-amber-100">
+                No external publishing or writes
+              </p>
               <p className="mt-1 text-[10px] leading-4 text-slate-500">
-                Live GitHub activity and LinkedIn publishing are not connected. Generated drafts
-                and review text are not independently verified.
+                Live GitHub activity and LinkedIn publishing are not connected. Generated drafts and
+                review text are not independently verified.
               </p>
             </div>
             <div className="mt-5 border-t border-white/[0.06] pt-4">
@@ -800,7 +886,9 @@ export const AutomationPage = (): JSX.Element => {
         <section aria-labelledby="approval-heading">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <h3 id="approval-heading" className="text-sm font-semibold text-white">Approval inbox</h3>
+              <h3 id="approval-heading" className="text-sm font-semibold text-white">
+                Approval inbox
+              </h3>
               <p className="mt-1 text-xs text-slate-500">
                 Review the exact server-stored plan before approving internal execution.
               </p>
@@ -808,7 +896,10 @@ export const AutomationPage = (): JSX.Element => {
             {pendingApprovals.length > 0 && (
               <label className="relative">
                 <span className="sr-only">Search approval requests</span>
-                <ListFilter className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-600" aria-hidden="true" />
+                <ListFilter
+                  className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-600"
+                  aria-hidden="true"
+                />
                 <input
                   type="search"
                   value={search}
@@ -821,12 +912,20 @@ export const AutomationPage = (): JSX.Element => {
           </div>
           {automations.isLoading ? (
             <div className="flex items-center gap-2 py-10 text-xs text-slate-500">
-              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Loading approval requests…
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Loading approval
+              requests…
             </div>
           ) : automations.isError ? (
-            <div className="rounded-xl border border-rose-400/20 bg-rose-400/[0.04] p-5" role="alert">
-              <p className="text-sm font-medium text-rose-200">Approval requests could not be loaded</p>
-              <p className="mt-1 text-xs text-rose-200/70">{getAutomationErrorMessage(automations.error)}</p>
+            <div
+              className="rounded-xl border border-rose-400/20 bg-rose-400/[0.04] p-5"
+              role="alert"
+            >
+              <p className="text-sm font-medium text-rose-200">
+                Approval requests could not be loaded
+              </p>
+              <p className="mt-1 text-xs text-rose-200/70">
+                {getAutomationErrorMessage(automations.error)}
+              </p>
               <button
                 type="button"
                 onClick={() => void automations.refetch()}
@@ -871,8 +970,13 @@ export const AutomationPage = (): JSX.Element => {
                         }`}
                       >
                         <span className="flex items-center justify-between gap-2">
-                          <span className="truncate text-xs font-semibold text-slate-200">{automation.title}</span>
-                          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-300" aria-label="Pending" />
+                          <span className="truncate text-xs font-semibold text-slate-200">
+                            {automation.title}
+                          </span>
+                          <span
+                            className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-300"
+                            aria-label="Pending"
+                          />
                         </span>
                         <span className="mt-1.5 block line-clamp-2 text-[11px] leading-4 text-slate-500">
                           {approval?.summary ?? automation.goal}
@@ -893,20 +997,32 @@ export const AutomationPage = (): JSX.Element => {
                       <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-200/75">
                         Plan approval · Internal actions only
                       </p>
-                      <h4 className="mt-2 text-base font-semibold text-white">{selectedApprovalAutomation.title}</h4>
-                      <p className="mt-1 text-xs leading-5 text-slate-500">{selectedApproval.summary}</p>
+                      <h4 className="mt-2 text-base font-semibold text-white">
+                        {selectedApprovalAutomation.title}
+                      </h4>
+                      <p className="mt-1 text-xs leading-5 text-slate-500">
+                        {selectedApproval.summary}
+                      </p>
                     </div>
                     <StatusBadge status={selectedApprovalAutomation.status} />
                   </div>
                   <div className="space-y-5 p-4 sm:p-5">
                     <div className="grid gap-4 sm:grid-cols-2">
                       <div>
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600">Requested goal</p>
-                        <p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-slate-300">{selectedApproval.payload.goal}</p>
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600">
+                          Requested goal
+                        </p>
+                        <p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-slate-300">
+                          {selectedApproval.payload.goal}
+                        </p>
                       </div>
                       <div>
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600">Expires</p>
-                        <p className="mt-1 text-xs text-slate-300">{new Date(selectedApproval.expiresAt).toLocaleString()}</p>
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600">
+                          Expires
+                        </p>
+                        <p className="mt-1 text-xs text-slate-300">
+                          {new Date(selectedApproval.expiresAt).toLocaleString()}
+                        </p>
                         <p className="mt-1 text-[10px] text-slate-600">
                           Plan created {new Date(selectedApproval.createdAt).toLocaleString()}
                         </p>
@@ -924,19 +1040,26 @@ export const AutomationPage = (): JSX.Element => {
                       </div>
                       <ol className="space-y-2">
                         {selectedApproval.payload.tasks.map((task, index) => (
-                          <li key={task.key} className="rounded-lg border border-white/[0.06] bg-[#0a0d14] p-3">
+                          <li
+                            key={task.key}
+                            className="rounded-lg border border-white/[0.06] bg-[#0a0d14] p-3"
+                          >
                             <div className="flex items-start gap-3">
                               <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-white/[0.08] text-[10px] font-semibold text-slate-400">
                                 {index + 1}
                               </span>
                               <div className="min-w-0 flex-1">
                                 <div className="flex flex-wrap items-center justify-between gap-2">
-                                  <p className="text-xs font-semibold text-slate-200">{task.title}</p>
+                                  <p className="text-xs font-semibold text-slate-200">
+                                    {task.title}
+                                  </p>
                                   <span className="rounded-full bg-indigo-400/[0.08] px-2 py-0.5 text-[9px] text-indigo-200">
                                     {task.action.replace(/_/g, ' ')}
                                   </span>
                                 </div>
-                                <p className="mt-1 text-[11px] leading-4 text-slate-500">{task.description}</p>
+                                <p className="mt-1 text-[11px] leading-4 text-slate-500">
+                                  {task.description}
+                                </p>
                                 <ApprovalActionPreview action={task.action} input={task.input} />
                                 {task.dependencies.length > 0 && (
                                   <p className="mt-1.5 text-[10px] text-slate-600">
@@ -959,14 +1082,21 @@ export const AutomationPage = (): JSX.Element => {
                     </div>
 
                     <div className="rounded-lg border border-amber-400/15 bg-amber-400/[0.035] p-3">
-                      <p className="text-[11px] font-medium text-amber-100">What approval authorizes</p>
+                      <p className="text-[11px] font-medium text-amber-100">
+                        What approval authorizes
+                      </p>
                       <p className="mt-1 text-[10px] leading-4 text-slate-500">
-                        Approval starts only the internal, read-only review collection and text-draft tasks shown above. No external post, message, repository change, or other write will be performed.
+                        Approval starts only the internal, read-only review collection and
+                        text-draft tasks shown above. No external post, message, repository change,
+                        or other write will be performed.
                       </p>
                     </div>
 
                     {actionError && (
-                      <p className="rounded-lg border border-rose-400/20 bg-rose-400/[0.05] px-3 py-2 text-xs text-rose-200" role="alert">
+                      <p
+                        className="rounded-lg border border-rose-400/20 bg-rose-400/[0.05] px-3 py-2 text-xs text-rose-200"
+                        role="alert"
+                      >
                         {getAutomationErrorMessage(actionError)}
                       </p>
                     )}
@@ -983,7 +1113,10 @@ export const AutomationPage = (): JSX.Element => {
                             act(approve.mutateAsync, selectedApprovalAutomation.id);
                           }
                         }}
-                        disabled={actionPending || new Date(selectedApproval.expiresAt).getTime() <= Date.now()}
+                        disabled={
+                          actionPending ||
+                          new Date(selectedApproval.expiresAt).getTime() <= Date.now()
+                        }
                         className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-indigo-400 px-3 text-xs font-semibold text-slate-950 transition hover:bg-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <Check className="h-3.5 w-3.5" aria-hidden="true" />
@@ -1023,7 +1156,10 @@ export const AutomationPage = (): JSX.Element => {
             <div className="flex flex-col gap-2 sm:flex-row">
               <label className="relative">
                 <span className="sr-only">Search workflows</span>
-                <ListFilter className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-600" aria-hidden="true" />
+                <ListFilter
+                  className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-600"
+                  aria-hidden="true"
+                />
                 <input
                   type="search"
                   value={search}
@@ -1036,12 +1172,16 @@ export const AutomationPage = (): JSX.Element => {
                 <span className="sr-only">Filter by workflow status</span>
                 <select
                   value={statusFilter}
-                  onChange={(event) => setStatusFilter(event.target.value as AutomationStatus | 'ALL')}
+                  onChange={(event) =>
+                    setStatusFilter(event.target.value as AutomationStatus | 'ALL')
+                  }
                   className="h-9 w-full rounded-lg border border-white/[0.08] bg-[#0e121b] px-3 text-xs text-slate-300 outline-none focus:border-indigo-400/50 sm:w-auto"
                 >
                   <option value="ALL">All statuses</option>
                   {Object.keys(statusLabel).map((status) => (
-                    <option key={status} value={status}>{statusLabel[status as AutomationStatus]}</option>
+                    <option key={status} value={status}>
+                      {statusLabel[status as AutomationStatus]}
+                    </option>
                   ))}
                 </select>
               </label>
@@ -1049,14 +1189,23 @@ export const AutomationPage = (): JSX.Element => {
           </div>
 
           {createdAutomation && view === 'workflows' && (
-            <div className="mb-4 flex items-start gap-2 rounded-lg border border-emerald-400/20 bg-emerald-400/[0.05] px-4 py-3 text-xs text-emerald-200" role="status">
+            <div
+              className="mb-4 flex items-start gap-2 rounded-lg border border-emerald-400/20 bg-emerald-400/[0.05] px-4 py-3 text-xs text-emerald-200"
+              role="status"
+            >
               <Check className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-              <span>Plan created successfully: <strong>{createdAutomation.title}</strong>. The task plan below reflects the server response.</span>
+              <span>
+                Plan created successfully: <strong>{createdAutomation.title}</strong>. The task plan
+                below reflects the server response.
+              </span>
             </div>
           )}
 
           {actionError && (
-            <div className="mb-4 rounded-lg border border-rose-400/20 bg-rose-400/[0.05] px-4 py-3 text-xs text-rose-200" role="alert">
+            <div
+              className="mb-4 rounded-lg border border-rose-400/20 bg-rose-400/[0.05] px-4 py-3 text-xs text-rose-200"
+              role="alert"
+            >
               {getAutomationErrorMessage(actionError)}
             </div>
           )}
@@ -1066,9 +1215,14 @@ export const AutomationPage = (): JSX.Element => {
             </div>
           )}
           {automations.isError && (
-            <div className="rounded-xl border border-rose-400/20 bg-rose-400/[0.04] p-5" role="alert">
+            <div
+              className="rounded-xl border border-rose-400/20 bg-rose-400/[0.04] p-5"
+              role="alert"
+            >
               <p className="text-sm font-medium text-rose-200">Workflows could not be loaded</p>
-              <p className="mt-1 text-xs text-rose-200/70">{getAutomationErrorMessage(automations.error)}</p>
+              <p className="mt-1 text-xs text-rose-200/70">
+                {getAutomationErrorMessage(automations.error)}
+              </p>
               <button
                 type="button"
                 onClick={() => void automations.refetch()}
@@ -1080,7 +1234,13 @@ export const AutomationPage = (): JSX.Element => {
           )}
           {!automations.isLoading && !automations.isError && displayedItems.length === 0 && (
             <EmptyPanel
-              title={view === 'history' ? 'No execution history yet' : search || statusFilter !== 'ALL' ? 'No matching workflows' : 'No workflows yet'}
+              title={
+                view === 'history'
+                  ? 'No execution history yet'
+                  : search || statusFilter !== 'ALL'
+                    ? 'No matching workflows'
+                    : 'No workflows yet'
+              }
               description={
                 view === 'history'
                   ? 'Workflow outcomes and task attempts will appear here after execution.'
@@ -1110,7 +1270,10 @@ export const AutomationPage = (): JSX.Element => {
 
       <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.06] pt-4 text-[10px] text-slate-600">
         <span>Execution updates refresh automatically while workflows are queued or running.</span>
-        <Link to="/reviews" className="inline-flex items-center gap-1.5 text-slate-500 transition hover:text-slate-300">
+        <Link
+          to="/reviews"
+          className="inline-flex items-center gap-1.5 text-slate-500 transition hover:text-slate-300"
+        >
           <Clock3 className="h-3.5 w-3.5" aria-hidden="true" /> View code reviews
         </Link>
       </div>

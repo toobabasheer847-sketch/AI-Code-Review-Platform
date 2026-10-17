@@ -3,6 +3,7 @@ import type { Request, Response } from 'express';
 import { z } from 'zod';
 import logger from '@/utils/logger';
 import { AutomationError, MAX_AUTOMATION_GOAL_LENGTH } from './automation.domain';
+import { VisualWorkflowValidationError } from './visual-workflow.domain';
 import { AutomationService } from './automation.service';
 
 const service = new AutomationService();
@@ -10,8 +11,52 @@ const createSchema = z.object({
   goal: z.string().trim().min(1).max(MAX_AUTOMATION_GOAL_LENGTH),
   mode: z.nativeEnum(AutomationMode).default(AutomationMode.APPROVAL_REQUIRED),
 });
+const visualWorkflowRequestSchema = z
+  .object({
+    goal: z.string().trim().min(1).max(MAX_AUTOMATION_GOAL_LENGTH),
+    workflow: z.unknown(),
+  })
+  .strict();
 
 export class AutomationController {
+  async validateVisual(req: Request, res: Response): Promise<void> {
+    if (!req.user?.userId) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+    const parsed = visualWorkflowRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Provide a goal and a visual workflow definition.' });
+      return;
+    }
+    try {
+      res.json(await service.validateVisualWorkflow(req.user.userId, parsed.data.workflow));
+    } catch (error) {
+      this.respondError(res, error);
+    }
+  }
+
+  async saveVisual(req: Request, res: Response): Promise<void> {
+    if (!req.user?.userId) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+    const parsed = visualWorkflowRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Provide a goal and a visual workflow definition.' });
+      return;
+    }
+    try {
+      res
+        .status(201)
+        .json(
+          await service.saveVisualDraft(req.user.userId, parsed.data.goal, parsed.data.workflow)
+        );
+    } catch (error) {
+      this.respondError(res, error);
+    }
+  }
+
   async create(req: Request, res: Response): Promise<void> {
     if (!req.user?.userId) {
       res.status(401).json({ error: 'Unauthorized' });
@@ -85,6 +130,10 @@ export class AutomationController {
     await this.perform(req, res, (userId, id) => service.retry(userId, id));
   }
 
+  async executeDraft(req: Request, res: Response): Promise<void> {
+    await this.perform(req, res, (userId, id) => service.executeVisualDraft(userId, id));
+  }
+
   private async perform(
     req: Request,
     res: Response,
@@ -102,6 +151,10 @@ export class AutomationController {
   }
 
   private respondError(res: Response, error: unknown): void {
+    if (error instanceof VisualWorkflowValidationError) {
+      res.status(400).json({ error: 'The visual workflow is invalid.', issues: error.issues });
+      return;
+    }
     if (error instanceof AutomationError) {
       res.status(error.statusCode).json({ error: error.message });
       return;

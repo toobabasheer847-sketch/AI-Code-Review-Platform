@@ -63,6 +63,7 @@ enum AutomationTaskStatus {
   READY
   RUNNING
   COMPLETED
+  SKIPPED
   FAILED
   CANCELED
 }
@@ -88,6 +89,7 @@ model Automation {
   user           User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   goal           String
   title          String
+  workflowDefinition Json?
   mode           AutomationMode       @default(APPROVAL_REQUIRED)
   status         AutomationStatus     @default(DRAFT)
   retryCount     Int                  @default(0)

@@ -115,9 +115,7 @@ export function orderAutomationTaskKeys(
       throw new Error('Automation task contains duplicate dependencies');
     }
     if (
-      task.dependencies.some(
-        (dependency) => !taskKeys.has(dependency) || dependency === task.key
-      )
+      task.dependencies.some((dependency) => !taskKeys.has(dependency) || dependency === task.key)
     ) {
       throw new Error('Automation plan contains an invalid task dependency');
     }
@@ -187,17 +185,15 @@ export function areAutomationDependenciesCompleted(
   return (
     dependencies.length === requiredKeys.length &&
     requiredKeys.every((key) =>
-      dependencies.some(
-        (dependency) => dependency.key === key && dependency.status === 'COMPLETED'
-      )
+      dependencies.some((dependency) => dependency.key === key && dependency.status === 'COMPLETED')
     )
   );
 }
 
 export function isAutomationTaskClaimable(input: {
-  status: AutomationTaskStatus
-  startedAt: Date | null
-  now?: Date
+  status: AutomationTaskStatus;
+  startedAt: Date | null;
+  now?: Date;
   lockDurationMs?: number;
 }): boolean {
   if (input.status === 'READY' || input.status === 'PENDING' || input.status === 'FAILED') {
@@ -229,10 +225,7 @@ export function canClaimAutomationTask(input: {
   );
 }
 
-export function canRetryAutomation(
-  status: AutomationStatusValue,
-  retryCount: number
-): boolean {
+export function canRetryAutomation(status: AutomationStatusValue, retryCount: number): boolean {
   return status === 'FAILED' && retryCount < MAX_AUTOMATION_RETRIES;
 }
 
@@ -243,6 +236,7 @@ export function isFinalAutomationAttempt(attemptsMade: number, maxAttempts: numb
 export interface ApprovalPayloadSource {
   goal: string;
   title: string;
+  workflowDefinition?: unknown;
   tasks: Array<{
     key: string;
     title: string;
@@ -257,6 +251,9 @@ export function createApprovalPayload(source: ApprovalPayloadSource) {
   return {
     goal: source.goal,
     title: source.title,
+    ...(source.workflowDefinition !== undefined && source.workflowDefinition !== null
+      ? { workflowDefinition: source.workflowDefinition }
+      : {}),
     tasks: [...source.tasks]
       .sort((left, right) => left.key.localeCompare(right.key))
       .map((task) => ({
@@ -326,11 +323,7 @@ export function isAutomationExecutionAuthorized(input: {
     input.approval.status === 'APPROVED' &&
     input.approval.decidedAt !== null &&
     input.approval.decidedAt < input.approval.expiresAt &&
-    isApprovalPayloadIntact(
-      input.approval.payload,
-      input.approval.payloadHash,
-      input.plan
-    )
+    isApprovalPayloadIntact(input.approval.payload, input.approval.payloadHash, input.plan)
   );
 }
 
