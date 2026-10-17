@@ -23,6 +23,9 @@ const GitHubDevelopmentPage = lazy(() =>
 const SocialPublishingPage = lazy(() =>
   import('@features/social/pages/SocialPublishingPage').then((m) => ({ default: m.SocialPublishingPage }))
 )
+const WorkMemoryPage = lazy(() =>
+  import('@features/memory/pages/WorkMemoryPage').then((m) => ({ default: m.WorkMemoryPage }))
+)
 const ReviewsPage = lazy(() => import('@features/reviews/pages/ReviewsPage').then((m) => ({ default: m.ReviewsPage })))
 const ReviewByIdPage = lazy(() => import('@features/reviews/pages/ReviewByIdPage').then((m) => ({ default: m.ReviewByIdPage })))
 const SettingsPage = lazy(() => import('@features/profile/pages/SettingsPage').then((m) => ({ default: m.SettingsPage })))
@@ -60,6 +63,16 @@ export const routes: RouteObject[] = [
       <ProtectedRoute>
         <Suspense fallback={<LazyFallback />}>
           <SocialPublishingPage />
+        </Suspense>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/memory',
+    element: (
+      <ProtectedRoute>
+        <Suspense fallback={<LazyFallback />}>
+          <WorkMemoryPage />
         </Suspense>
       </ProtectedRoute>
     ),

@@ -102,6 +102,20 @@ export const SettingsPage = (): JSX.Element => {
         )}
       </section>
 
+      <section className="space-y-3 rounded-xl border border-slate-800 bg-slate-900/40 p-6">
+        <h2 className="text-xl font-semibold">Personal AI work memory</h2>
+        <p className="text-sm text-slate-400">
+          Inspect, correct, disable, or delete the project context you explicitly save for future AI plans.
+        </p>
+        <button
+          type="button"
+          onClick={() => navigate('/memory')}
+          className="rounded border border-slate-600 px-4 py-2 text-sm"
+        >
+          Manage saved memory
+        </button>
+      </section>
+
       <section className="space-y-4 rounded-xl border border-red-900/60 bg-red-950/20 p-6">
         <h2 className="text-xl font-semibold text-red-200">Delete account</h2>
         <p className="text-sm text-slate-300">

@@ -8,6 +8,7 @@ import {
 import { prisma } from '@/config/database';
 import { automationJobId, automationQueue } from './automation.queue';
 import { createAutomationPlan } from './automation.planner';
+import { WorkMemoryService } from '@/modules/memory/memory.service';
 import {
   AutomationError,
   AUTOMATION_APPROVAL_TTL_MS,
@@ -36,6 +37,8 @@ const automationInclude = {
 type AutomationRecord = Prisma.AutomationGetPayload<{ include: typeof automationInclude }>;
 
 export class AutomationService {
+  private readonly workMemory = new WorkMemoryService();
+
   async create(
     userId: string,
     input: {
@@ -56,7 +59,13 @@ export class AutomationService {
       }
     }
 
-    const plan = input.plan ?? (await createAutomationPlan(input.goal));
+    const plan =
+      input.plan ??
+      (await createAutomationPlan(
+        input.goal,
+        undefined,
+        await this.workMemory.contextForPlan(userId, input.goal)
+      ));
     const approvalPayload = createApprovalPayload({
       goal: input.goal,
       title: plan.title,

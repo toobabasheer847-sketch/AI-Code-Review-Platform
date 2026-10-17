@@ -7,6 +7,7 @@ import chatRoutes from '@/modules/chat/chat.routes'
 import pullRequestWebhookRoutes from '@/modules/github/pull-request-webhook.routes'
 import automationRoutes from '@/modules/automation/automation.routes'
 import socialRoutes from '@/modules/social/social.routes'
+import workMemoryRoutes from '@/modules/memory/memory.routes'
 
 /**
  * Aggregates all API routes.
@@ -23,6 +24,7 @@ export const createApiRoutes = (): Router => {
   router.use('/chat', chatRoutes)
   router.use('/automations', automationRoutes)
   router.use('/social', socialRoutes)
+  router.use('/memory', workMemoryRoutes)
   router.use('/webhooks/github', pullRequestWebhookRoutes)
 
   return router

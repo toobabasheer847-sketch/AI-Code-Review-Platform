@@ -36,6 +36,29 @@ npm run seed
 npm run prisma:studio
 ```
 
+### Personal AI work memory
+
+Users can explicitly save project summaries and context, technical decisions,
+preferences, lessons, reviewed AI summaries or inferences, and outcomes from their
+own completed workflows. Each entry records its source, attribution, and
+timestamps, and can optionally be linked to one of that user's repositories.
+Memory is scoped to the authenticated user; the current data model has no
+separate organization or shared-tenant concept.
+
+Saved entries are never collected from conversations automatically. Users can
+inspect, edit, delete, or disable memory in the app under **Settings → Manage
+saved memory**. Disabled memory is not retrieved for AI plans; deleting an entry
+removes it from future retrieval because planning searches the live database and
+does not maintain a vector index or derived document store. Automation planning
+is currently the only AI surface that retrieves memory; it uses simple lexical
+matching over the 100 most recently updated entries and sends at most 8 relevant
+entries (up to 6,000 characters) to the planner. There is no organization-level
+tenant model or shared memory in this application. Completed workflow entries
+are accepted only when the referenced workflow belongs to the user.
+Integration references should name a provider or configuration location only;
+plaintext secrets and common sensitive values are rejected, but this pattern
+check is not comprehensive and is not a substitute for avoiding sensitive data.
+
 ### Review processing
 
 Starting a review verifies that the connected GitHub account can access the
@@ -235,14 +258,17 @@ npm run test:watch
 All endpoints prefixed with `/api`
 
 ### Health Check
+
 - `GET /health` - Server health status
 
 ### Authentication
+
 - `POST /auth/login` - Login user
 - `POST /auth/register` - Register new user
 - `POST /auth/logout` - Logout user
 
 ### Account lifecycle
+
 - `POST /auth/verify-email` - Verify email using a one-time token
 - `POST /auth/password-reset/request` - Request a password-reset email
 - `POST /auth/password-reset/confirm` - Set a new password using a one-time token
@@ -259,13 +285,16 @@ docker-compose up -d
 ## Troubleshooting
 
 ### Database connection failed
+
 - Ensure PostgreSQL is running
 - Check DATABASE_URL in .env
 - Run migrations: `npm run prisma:migrate`
 
 ### Redis connection failed
+
 - Ensure Redis is running
 - Check REDIS_URL in .env
 
 ### Port already in use
+
 - Change PORT in .env or kill process using port 3001

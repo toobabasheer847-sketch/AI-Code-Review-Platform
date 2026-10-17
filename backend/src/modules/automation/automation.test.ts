@@ -43,6 +43,23 @@ test('planner parses and validates structured model output', async () => {
   assert.deepEqual(plan, validPlan);
 });
 
+test('planner passes explicitly saved context separately as untrusted reference data', async () => {
+  let receivedGoal = '';
+  let receivedMemory = '';
+  await createAutomationPlan(
+    'Prepare a PostgreSQL project plan',
+    async (goal, memoryContext) => {
+      receivedGoal = goal;
+      receivedMemory = memoryContext ?? '';
+      return JSON.stringify(validPlan);
+    },
+    'Source: user-provided; saved project decision: PostgreSQL'
+  );
+  assert.equal(receivedGoal, 'Prepare a PostgreSQL project plan');
+  assert.match(receivedMemory, /Source: user-provided/);
+  assert.match(receivedMemory, /PostgreSQL/);
+});
+
 test('planner rejects malformed JSON and plans with unknown fields', async () => {
   await assert.rejects(
     createAutomationPlan('Write a technical update', async () => '{not-json'),
