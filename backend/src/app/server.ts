@@ -12,6 +12,8 @@ import {
   startAutomationWorker,
   stopAutomationWorker,
 } from '@/modules/automation/automation.worker'
+import { closeSocialQueue } from '@/modules/social/social.queue'
+import { startSocialWorker, stopSocialWorker } from '@/modules/social/social.worker'
 import type { Server } from 'node:http'
 
 const app = createApp()
@@ -27,6 +29,7 @@ async function bootstrap(): Promise<void> {
     await startEmailWorker()
     await startReviewWorker()
     await startAutomationWorker()
+    await startSocialWorker()
 
     httpServer = app.listen(env.PORT, () => {
       logger.info(`Server running on port ${env.PORT} in ${env.NODE_ENV} mode`)
@@ -52,8 +55,10 @@ async function shutdown(signal: string): Promise<void> {
     }
     await stopReviewWorker()
     await stopAutomationWorker()
+    await stopSocialWorker()
     await closeReviewQueue()
     await closeAutomationQueue()
+    await closeSocialQueue()
     await closeEmailQueue()
     await disconnectRedis()
     await prisma.$disconnect()

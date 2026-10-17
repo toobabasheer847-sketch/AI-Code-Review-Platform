@@ -29,6 +29,9 @@ model User {
   accountTokens       AccountToken[]
   automations         Automation[]
   automationApprovals AutomationApproval[]
+  socialAccounts      SocialAccount[]
+  socialPosts         SocialPost[]
+  socialPostEvents    SocialPostEvent[]
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
 
@@ -176,6 +179,94 @@ model GitHubAccount {
   accessToken String
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+enum SocialProvider {
+  LINKEDIN
+}
+
+enum SocialPostStatus {
+  DRAFT
+  AWAITING_APPROVAL
+  SCHEDULED
+  PUBLISHING
+  PUBLISHED
+  FAILED
+  PUBLICATION_UNKNOWN
+  CANCELED
+  REJECTED
+}
+
+model SocialAccount {
+  id                String         @id @default(cuid())
+  userId            String
+  user              User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider          SocialProvider
+  providerAccountId String
+  displayName       String
+  accessToken       String
+  scopes            String[]
+  tokenExpiresAt    DateTime
+  posts             SocialPost[]
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  @@unique([userId, provider, providerAccountId])
+  @@index([userId, provider])
+}
+
+model SocialPost {
+  id                   String           @id @default(cuid())
+  userId               String
+  user                 User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId            String?
+  account              SocialAccount?  @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  platform             SocialProvider
+  platformAccountId    String
+  destinationLabel     String
+  content              String
+  instructions         String?
+  evidenceReviewId     String?
+  evidenceUrl          String?
+  status               SocialPostStatus @default(DRAFT)
+  scheduledAt          DateTime?
+  nextAttemptAt        DateTime?
+  approvalHash         String?
+  approvalExpiresAt    DateTime?
+  approvedAt           DateTime?
+  approvedBy           String?
+  scheduleVersion      Int              @default(0)
+  attemptCount         Int              @default(0)
+  retryable            Boolean          @default(false)
+  providerPostId       String?
+  providerUrl          String?
+  errorCode            String?
+  errorMessage         String?
+  idempotencyKey       String?
+  publishedAt          DateTime?
+  events               SocialPostEvent[]
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  @@unique([userId, idempotencyKey])
+  @@index([userId, status, scheduledAt])
+  @@index([status, scheduledAt])
+  @@index([accountId])
+}
+
+model SocialPostEvent {
+  id        String     @id @default(cuid())
+  postId    String
+  post      SocialPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  message   String
+  details   Json?
+  createdAt DateTime   @default(now())
+
+  @@index([postId, createdAt])
+  @@index([userId, createdAt])
 }
 
 enum AccountTokenType {

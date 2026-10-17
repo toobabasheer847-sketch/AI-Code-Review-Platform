@@ -34,6 +34,11 @@ export const env = {
   GITHUB_CLIENT_SECRET: process.env.GITHUB_CLIENT_SECRET || '',
   GITHUB_WEBHOOK_SECRET: process.env.GITHUB_WEBHOOK_SECRET || '',
   GITHUB_CALLBACK_URL: process.env.GITHUB_CALLBACK_URL || 'http://localhost:3001/api/auth/github/callback',
+  LINKEDIN_CLIENT_ID: process.env.LINKEDIN_CLIENT_ID || '',
+  LINKEDIN_CLIENT_SECRET: process.env.LINKEDIN_CLIENT_SECRET || '',
+  LINKEDIN_CALLBACK_URL:
+    process.env.LINKEDIN_CALLBACK_URL || 'http://localhost:3001/api/social/linkedin/callback',
+  LINKEDIN_API_VERSION: process.env.LINKEDIN_API_VERSION || '202609',
   STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || '',
   STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET || '',
   STRIPE_PRO_PRICE_ID: process.env.STRIPE_PRO_PRICE_ID || '',
@@ -118,6 +123,7 @@ export function validateEnvironment(configuration: typeof env): void {
     ['GITHUB_CLIENT_ID', configuration.GITHUB_CLIENT_ID],
     ['GITHUB_CLIENT_SECRET', configuration.GITHUB_CLIENT_SECRET],
     ['GITHUB_WEBHOOK_SECRET', configuration.GITHUB_WEBHOOK_SECRET],
+    ['LINKEDIN_CLIENT_SECRET', configuration.LINKEDIN_CLIENT_SECRET],
     ['STRIPE_SECRET_KEY', configuration.STRIPE_SECRET_KEY],
     ['STRIPE_WEBHOOK_SECRET', configuration.STRIPE_WEBHOOK_SECRET],
     ['STRIPE_PRO_PRICE_ID', configuration.STRIPE_PRO_PRICE_ID],
@@ -155,6 +161,28 @@ export function validateEnvironment(configuration: typeof env): void {
   }
   if (configuration.STRIPE_PRO_PRICE_ID && !configuration.STRIPE_PRO_PRICE_ID.startsWith('price_')) {
     configurationErrors.push('STRIPE_PRO_PRICE_ID must be a Stripe price ID')
+  }
+  if (Boolean(configuration.LINKEDIN_CLIENT_ID) !== Boolean(configuration.LINKEDIN_CLIENT_SECRET)) {
+    configurationErrors.push('LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET must be configured together')
+  }
+  if (configuration.LINKEDIN_CLIENT_ID && configuration.LINKEDIN_CLIENT_SECRET) {
+    let callbackUrl: URL | null = null
+    try {
+      callbackUrl = new URL(configuration.LINKEDIN_CALLBACK_URL)
+    } catch {
+      callbackUrl = null
+    }
+    if (
+      !callbackUrl ||
+      !/^https?:$/.test(callbackUrl.protocol) ||
+      (configuration.NODE_ENV === 'production' &&
+        (callbackUrl.protocol !== 'https:' || isLocalAddress(configuration.LINKEDIN_CALLBACK_URL)))
+    ) {
+      configurationErrors.push('LINKEDIN_CALLBACK_URL must be a valid public HTTPS URL in production')
+    }
+  }
+  if (!/^\d{6}$/.test(configuration.LINKEDIN_API_VERSION)) {
+    configurationErrors.push('LINKEDIN_API_VERSION must use the YYYYMM format')
   }
 
   if (configurationErrors.length > 0) {

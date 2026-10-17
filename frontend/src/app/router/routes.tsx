@@ -20,6 +20,9 @@ const GitHubReposPage = lazy(() => import('@features/github/pages/GitHubReposPag
 const GitHubDevelopmentPage = lazy(() =>
   import('@features/github/pages/GitHubDevelopmentPage').then((m) => ({ default: m.GitHubDevelopmentPage }))
 )
+const SocialPublishingPage = lazy(() =>
+  import('@features/social/pages/SocialPublishingPage').then((m) => ({ default: m.SocialPublishingPage }))
+)
 const ReviewsPage = lazy(() => import('@features/reviews/pages/ReviewsPage').then((m) => ({ default: m.ReviewsPage })))
 const ReviewByIdPage = lazy(() => import('@features/reviews/pages/ReviewByIdPage').then((m) => ({ default: m.ReviewByIdPage })))
 const SettingsPage = lazy(() => import('@features/profile/pages/SettingsPage').then((m) => ({ default: m.SettingsPage })))
@@ -47,6 +50,16 @@ export const routes: RouteObject[] = [
       <ProtectedRoute>
         <Suspense fallback={<LazyFallback />}>
           <GitHubDevelopmentPage />
+        </Suspense>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/social',
+    element: (
+      <ProtectedRoute>
+        <Suspense fallback={<LazyFallback />}>
+          <SocialPublishingPage />
         </Suspense>
       </ProtectedRoute>
     ),

@@ -12,6 +12,7 @@ AI-CodeGuard is a full-stack application for AI-assisted code review with GitHub
 - **Real-time Collaboration**: Socket.io powered chat and discussions
 - **GitHub Integration**: Seamless GitHub repository integration with OAuth
 - **GitHub Development Agent**: Evidence-backed repository and pull-request context with approval-gated issue and comment actions
+- **Social Publishing**: Evidence-backed LinkedIn drafts, approval inbox, and scheduled member text posts
 - **Subscription Billing**: Stripe integration for payment processing
 - **Background Jobs**: BullMQ for async processing of reviews and emails
 - **Automation MVP**: Approval-gated plans with persisted task status and safe text-draft execution
@@ -167,6 +168,13 @@ Redis, and both job queues and reports retained failed-job counts.
 - `POST /api/automations/:id/retry` - Retry a failed workflow
 - `GET /api/github/development/templates` - List supported GitHub workflow templates (authenticated)
 - `POST /api/github/development/workflows` - Create an owned, approval-required GitHub workflow (authenticated)
+- `GET /api/social/status` and `GET /api/social/posts` - Read the authenticated user's provider configuration, accounts, drafts, approvals, calendar, and publication history
+- `POST /api/social/linkedin/connect` - Begin LinkedIn OAuth (requires LinkedIn app configuration)
+- `POST /api/social/drafts/generate` - Draft a post from user instructions and one owned, completed review
+- `POST /api/social/drafts` and `PATCH /api/social/posts/:postId` - Create or edit a LinkedIn text draft
+- `POST /api/social/posts/:postId/request-approval` - Request approval for the exact account, content, and schedule
+- `POST /api/social/posts/:postId/approve` and `/reject` - Decide the approval request
+- `POST /api/social/posts/:postId/retry` - Retry only provider-confirmed non-publication failures
 
 The command center's supported end-to-end workflow reads up to five of the
 authenticated user's latest completed code-review records, then generates an
@@ -204,10 +212,60 @@ creation and pull-request comments; pushing branches, creating or changing
 pull requests, merging, and arbitrary GitHub API calls are unsupported.
 GitHub API access remains bounded by the existing OAuth scopes and account
 permissions; broad `repo` scope is retained for compatibility with existing
-private-repository review features. LinkedIn publishing is not configured.
-Shell, filesystem, SQL, and arbitrary network execution are not supported.
-The automation uses the existing `OPENAI_API_KEY` and `REDIS_URL`; no LinkedIn
-variables are required or used.
+private-repository review features. Shell, filesystem, SQL, and arbitrary
+network execution are not supported.
+
+### Phase 9: Social publishing
+
+The protected `/social` workspace provides editable LinkedIn text drafts,
+AI-assisted drafts grounded in one of the authenticated user's completed code
+reviews, a calendar, an approval inbox, and retained publication history.
+Drafting works without any social provider credentials. The initial provider
+implementation supports member text posts only; organization publishing,
+media uploads, and other social platforms are not enabled.
+
+LinkedIn OAuth is available only when the backend has `LINKEDIN_CLIENT_ID` and
+`LINKEDIN_CLIENT_SECRET`. In the LinkedIn developer portal, configure the
+Sign In with LinkedIn using OpenID Connect and Share on LinkedIn products,
+register `LINKEDIN_CALLBACK_URL`, and grant the minimum `openid`, `profile`,
+and `w_member_social` scopes. Set these values in the backend environment,
+restart the server, then connect the member account from the Social Publishing
+page. Access tokens are encrypted with the existing
+`GITHUB_TOKEN_ENCRYPTION_KEY`; they are never returned to the browser. Expired
+or revoked tokens require reconnecting. Organization posting is intentionally
+excluded because it requires `w_organization_social` and an eligible Page role.
+
+Verified LinkedIn Posts API behavior (documentation checked October 16, 2026):
+member text posts are created with `POST https://api.linkedin.com/rest/posts`,
+`lifecycleState: PUBLISHED`, and the versioned REST headers. The required
+member write permission is `w_member_social`. The API schema states PUBLISHED
+is the only accepted lifecycle state during post creation; native scheduled
+creation is not available in this integration. CodeGuard therefore uses its
+own delayed job queue (maximum 30 days) and only enqueues after approval of the
+exact account, content, and schedule. The LinkedIn text editor enforces a
+3,000-character limit.
+
+Before a scheduled request, the worker verifies the stored owner, account,
+approval fingerprint, and schedule version. Duplicate jobs cannot claim a
+post twice. A LinkedIn HTTP 201 response with a valid returned post identifier
+is required before the post is marked published. A confirmed HTTP 429 rejection
+may receive a bounded safe retry. A timeout, server-side failure, missing
+confirmation, or worker interruption is marked outcome-unknown and is never
+automatically retried, because the API does not provide a client idempotency
+key for this create operation. Publishing history retains provider identifiers,
+URLs, errors, and audit events.
+
+Official references:
+- [LinkedIn Posts API](https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/posts-api?view=li-lms-2026-09)
+- [LinkedIn Post Schema](https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/post-api-schema?view=li-lms-2026-09)
+- [LinkedIn Authorization Code Flow](https://learn.microsoft.com/en-us/linkedin/shared/authentication/authorization-code-flow)
+- [LinkedIn OAuth permissions](https://learn.microsoft.com/en-us/linkedin/shared/authentication/authentication)
+- [LinkedIn refresh-token eligibility](https://learn.microsoft.com/en-us/linkedin/shared/authentication/programmatic-refresh-tokens)
+
+No LinkedIn credentials are present in the checked-in environment example, so
+live connection and publishing are not verified in this environment. Missing
+credentials are reported as setup-required; the API does not simulate a
+connected account or successful publication.
 Apply reviewed database migrations with
 `npm run prisma:deploy --workspace=backend`; do not run development migrations
 against production data.

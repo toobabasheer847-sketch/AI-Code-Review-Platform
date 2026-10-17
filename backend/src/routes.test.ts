@@ -36,6 +36,13 @@ test('mounts protected API routes and rejects requests without a valid token', a
     ['/automations', { method: 'POST' }],
     ['/automations/not-owned/reject', { method: 'POST' }],
     ['/automations/not-owned/approve', { method: 'POST' }],
+    ['/social/status'],
+    ['/social/posts'],
+    ['/social/linkedin/connect', { method: 'POST' }],
+    ['/social/drafts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }],
+    ['/social/drafts/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }],
+    ['/social/posts/not-owned/approve', { method: 'POST' }],
+    ['/social/posts/not-owned/retry', { method: 'POST' }],
   ];
 
   for (const [path, options] of protectedRequests) {

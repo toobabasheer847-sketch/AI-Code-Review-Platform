@@ -12,6 +12,7 @@ import {
   LogOut,
   Search,
   Settings,
+  Send,
   Workflow,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -25,6 +26,7 @@ const navigation = [
   { to: '/automations', label: 'Command center', icon: Workflow },
   { to: '/automations?view=approvals', label: 'Approval inbox', icon: Bell },
   { to: '/github/agent', label: 'GitHub agent', icon: Code2 },
+  { to: '/social', label: 'Social publishing', icon: Send },
   { to: '/reviews', label: 'Code reviews', icon: FileSearch },
   { to: '/github/repos', label: 'Repositories', icon: Github },
 ];
