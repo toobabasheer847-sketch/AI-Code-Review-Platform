@@ -132,7 +132,7 @@ docker-compose exec backend npm run seed
 
 Compose is for local development and uses local-only database credentials. Do
 not use it as a production deployment template. `GET /health` checks PostgreSQL,
-Redis, and both job queues and reports retained failed-job counts.
+Redis, the configured job queues, and scheduler state.
 
 ## 📚 API Documentation
 
@@ -166,6 +166,10 @@ Redis, and both job queues and reports retained failed-job counts.
 - `POST /api/automations/:id/reject` - Reject a pending plan without executing tasks
 - `POST /api/automations/:id/cancel` - Cancel a draft or active workflow
 - `POST /api/automations/:id/retry` - Retry a failed workflow
+- `GET /api/automations/schedules` and `POST /api/automations/schedules` - List and create owned daily or weekly workflow schedules
+- `PATCH /api/automations/schedules/:id` - Update the schedule's local time, timezone, or recurrence
+- `POST /api/automations/schedules/:id/pause` and `/resume`; `DELETE /api/automations/schedules/:id` - Manage schedule state
+- `GET /api/automations/notification-preferences` and `PUT /api/automations/notification-preferences` - Configure failure alerts and daily summaries
 - `GET /api/github/development/templates` - List supported GitHub workflow templates (authenticated)
 - `POST /api/github/development/workflows` - Create an owned, approval-required GitHub workflow (authenticated)
 - `GET /api/social/status` and `GET /api/social/posts` - Read the authenticated user's provider configuration, accounts, drafts, approvals, calendar, and publication history
@@ -321,6 +325,49 @@ before deploying this phase.
 Apply reviewed database migrations with
 `npm run prisma:deploy --workspace=backend`; do not run development migrations
 against production data.
+
+### Phase 13: Scheduled automation and reliability
+
+Authenticated users can create daily or weekly schedules from their saved
+visual workflow drafts in the Automation Schedules view. Schedules persist in
+PostgreSQL and are polled every 15 seconds by the backend; BullMQ/Redis remains
+the execution queue. Apply migrations and regenerate Prisma before deploying:
+
+```powershell
+npm run prisma:generate --workspace=backend
+npm run prisma:deploy --workspace=backend
+```
+
+Schedules use the selected IANA time zone and 24-hour local time. During a
+daylight-saving overlap, the earlier matching instant is selected; a
+nonexistent local time is skipped until the next recurrence. One late
+occurrence is allowed if the service returns before the next interval; if
+multiple occurrences were missed, one skipped history record represents the
+outage and the `missedRuns` counter records the number skipped. The next
+future run is retained. Schedules are capped at one
+active schedule on Free and five on Pro; the existing automation active-run
+limit still applies. Each automation is limited to two concurrent tasks per
+user, retried by BullMQ up to three times with exponential backoff, and has a
+persisted ten-minute execution deadline checked between actions. A currently
+in-flight provider request is not forcibly killed; provider-side request
+timeouts and action idempotency remain necessary for safe recovery.
+
+Workflows requiring approval remain approval-gated for every scheduled run.
+Pausing or canceling skips unclaimed occurrences; canceling a schedule does
+not forcibly stop an already-running workflow. External GitHub actions keep
+their task marker checks and must be manually verified if provider visibility
+is ambiguous. No automation-specific billing budget exists in the current
+billing model, so there is no separate execution-credit budget.
+
+The scheduler reconciles persisted schedule runs, re-enqueues stale queued or
+running automation records after worker loss, skips stale missed intervals,
+and tracks repeated failures. Five consecutive failures pause a schedule.
+Email notifications use the existing SMTP environment variables and a
+database outbox; queue delivery is retried, and a crash after SMTP acceptance
+but before the outbox update can result in a duplicate email (SMTP has no
+shared idempotency transaction). Daily summaries use only stored owner-scoped
+workflow events from the prior 24 hours. `/health` reports queue counts and
+sanitized scheduler state; it does not include credentials or raw error text.
 
 ## 🔐 Environment Variables
 

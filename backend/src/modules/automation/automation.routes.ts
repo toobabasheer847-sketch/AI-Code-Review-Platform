@@ -14,6 +14,18 @@ const createLimiter = rateLimit({
 });
 
 router.use(authMiddleware);
+router.get('/schedules', (req, res) => controller.schedules(req, res));
+router.post('/schedules', createLimiter, (req, res) => controller.createSchedule(req, res));
+router.patch('/schedules/:id', (req, res) => controller.updateSchedule(req, res));
+router.get('/notification-preferences', (req, res) =>
+  controller.notificationPreferences(req, res)
+);
+router.put('/notification-preferences', (req, res) =>
+  controller.notificationPreferences(req, res)
+);
+router.post('/schedules/:id/pause', (req, res) => controller.pauseSchedule(req, res));
+router.post('/schedules/:id/resume', (req, res) => controller.resumeSchedule(req, res));
+router.delete('/schedules/:id', (req, res) => controller.cancelSchedule(req, res));
 router.post('/visual/validate', createLimiter, (req, res) => controller.validateVisual(req, res));
 router.post('/visual', createLimiter, (req, res) => controller.saveVisual(req, res));
 router.get('/', (req, res) => controller.list(req, res));

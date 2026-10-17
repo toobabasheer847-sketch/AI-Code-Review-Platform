@@ -29,6 +29,7 @@ import {
 } from '../api/automationApi';
 import { automationExamples } from '../automation.constants';
 import { AutomationCommandInput } from '../components/AutomationCommandInput';
+import { AutomationSchedulesPanel } from '../components/AutomationSchedulesPanel';
 import { AutomationShell } from '../components/AutomationShell';
 import { DashboardMetricCard } from '../components/DashboardMetricCard';
 import {
@@ -40,13 +41,14 @@ import {
   useRetryAutomation,
 } from '../hooks/useAutomations';
 
-type View = 'command' | 'workflows' | 'approvals' | 'history';
+type View = 'command' | 'workflows' | 'approvals' | 'history' | 'schedules';
 
 const viewOptions: Array<{ id: View; label: string }> = [
   { id: 'command', label: 'Command' },
   { id: 'workflows', label: 'Workflows' },
   { id: 'approvals', label: 'Approval inbox' },
   { id: 'history', label: 'Execution history' },
+  { id: 'schedules', label: 'Schedules' },
 ];
 
 const statusStyles: Record<AutomationStatus, string> = {
@@ -1267,6 +1269,8 @@ export const AutomationPage = (): JSX.Element => {
           </div>
         </section>
       )}
+
+      {view === 'schedules' && <AutomationSchedulesPanel />}
 
       <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.06] pt-4 text-[10px] text-slate-600">
         <span>Execution updates refresh automatically while workflows are queued or running.</span>

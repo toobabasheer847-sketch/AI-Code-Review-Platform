@@ -11,6 +11,7 @@ export const MAX_AUTOMATION_GOAL_LENGTH = 2_000;
 export const MAX_AUTOMATION_TASKS = 5;
 export const MAX_ACTIVE_AUTOMATIONS_PER_USER = 5;
 export const MAX_AUTOMATION_RETRIES = 3;
+export const AUTOMATION_TASK_LOCK_DURATION_MS = 180_000;
 export const AUTOMATION_APPROVAL_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 export const AUTOMATION_ACTIONS = {
   COLLECT_REVIEW_RESULTS: 'collect_review_results',
@@ -289,7 +290,9 @@ export function isAutomationTaskClaimable(input: {
   if (input.status === 'READY' || input.status === 'PENDING' || input.status === 'FAILED') {
     return true;
   }
-  const staleBefore = (input.now ?? new Date()).getTime() - (input.lockDurationMs ?? 180_000);
+  const staleBefore =
+    (input.now ?? new Date()).getTime() -
+    (input.lockDurationMs ?? AUTOMATION_TASK_LOCK_DURATION_MS);
   return (
     input.status === 'RUNNING' &&
     input.startedAt !== null &&

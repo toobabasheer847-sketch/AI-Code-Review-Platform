@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer'
 import { env } from '../../config/env.js'
 import { ReviewCompletePayload } from './email.types.js'
+import type { AutomationNotificationPayload } from './email.types.js'
 import type { AccountEmailPayload } from './account-email.types.js'
 import fs from 'fs'
 import path from 'path'
@@ -74,6 +75,17 @@ export class MailService {
 			to: payload.to,
 			subject: 'Reset your AI CodeGuard password',
 			html: `<p>A password reset was requested for your account.</p><p><a href="${url}">Reset password</a></p><p>This link expires in 30 minutes. If you did not request a reset, you can ignore this message.</p>`,
+		})
+	}
+
+	public async sendAutomationNotification(payload: AutomationNotificationPayload) {
+		const details = payload.details.map((detail) => `<li>${escapeHtml(detail)}</li>`).join('')
+		const url = escapeHtml(payload.url)
+		return this.transporter.sendMail({
+			from: env.MAIL_FROM,
+			to: payload.to,
+			subject: payload.subject,
+			html: `<h1>${escapeHtml(payload.heading)}</h1><ul>${details}</ul><p><a href="${url}">Open AI CodeGuard</a></p>`,
 		})
 	}
 }

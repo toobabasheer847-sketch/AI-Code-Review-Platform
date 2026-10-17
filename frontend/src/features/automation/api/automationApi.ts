@@ -138,6 +138,54 @@ export interface Automation {
   createdAt: string;
 }
 
+export type AutomationScheduleStatus = 'ACTIVE' | 'PAUSED' | 'CANCELED';
+export type AutomationScheduleRunStatus =
+  | 'PENDING'
+  | 'AWAITING_APPROVAL'
+  | 'QUEUED'
+  | 'RUNNING'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'SKIPPED';
+
+export interface AutomationScheduleRun {
+  id: string;
+  scheduledFor: string;
+  status: AutomationScheduleRunStatus;
+  automationId: string | null;
+  errorCode: string | null;
+  updatedAt: string;
+}
+
+export interface AutomationSchedule {
+  id: string;
+  title: string;
+  frequency: 'DAILY' | 'WEEKLY';
+  timeZone: string;
+  localTime: string;
+  dayOfWeek: number | null;
+  status: AutomationScheduleStatus;
+  nextRunAt: string;
+  lastRunAt: string | null;
+  consecutiveFailures: number;
+  missedRuns: number;
+  totalRuns: number;
+  runs: AutomationScheduleRun[];
+}
+
+export interface AutomationNotificationPreferences {
+  failureNotifications: boolean;
+  repeatedFailureThreshold: number;
+  dailySummaryEnabled: boolean;
+  dailySummaryTime: string;
+  dailySummaryTimeZone: string;
+}
+
+export interface AutomationSchedulesResponse {
+  schedules: AutomationSchedule[];
+  notificationPreferences: AutomationNotificationPreferences;
+}
+
 export function getAutomationErrorMessage(error: unknown): string {
   if (
     typeof error === 'object' &&
@@ -159,6 +207,59 @@ export function getAutomationErrorMessage(error: unknown): string {
 export const automationApi = {
   list: async (): Promise<Automation[]> => {
     const response = await axiosInstance.get<Automation[]>('/automations');
+    return response.data;
+  },
+  schedules: async (): Promise<AutomationSchedulesResponse> => {
+    const response = await axiosInstance.get<AutomationSchedulesResponse>('/automations/schedules');
+    return response.data;
+  },
+  createSchedule: async (input: {
+    automationId: string;
+    frequency: 'DAILY' | 'WEEKLY';
+    timeZone: string;
+    localTime: string;
+    dayOfWeek?: number;
+  }): Promise<AutomationSchedule> => {
+    const response = await axiosInstance.post<AutomationSchedule>('/automations/schedules', input);
+    return response.data;
+  },
+  updateSchedule: async (
+    id: string,
+    input: {
+      frequency: 'DAILY' | 'WEEKLY';
+      timeZone: string;
+      localTime: string;
+      dayOfWeek?: number;
+    }
+  ): Promise<AutomationSchedule> => {
+    const response = await axiosInstance.patch<AutomationSchedule>(
+      `/automations/schedules/${id}`,
+      input
+    );
+    return response.data;
+  },
+  setScheduleStatus: async (
+    id: string,
+    status: 'ACTIVE' | 'PAUSED'
+  ): Promise<AutomationSchedule> => {
+    const response = await axiosInstance.post<AutomationSchedule>(
+      `/automations/schedules/${id}/${status === 'ACTIVE' ? 'resume' : 'pause'}`
+    );
+    return response.data;
+  },
+  cancelSchedule: async (id: string): Promise<{ id: string; status: 'CANCELED' }> => {
+    const response = await axiosInstance.delete<{ id: string; status: 'CANCELED' }>(
+      `/automations/schedules/${id}`
+    );
+    return response.data;
+  },
+  updateNotificationPreferences: async (
+    input: AutomationNotificationPreferences
+  ): Promise<AutomationNotificationPreferences> => {
+    const response = await axiosInstance.put<AutomationNotificationPreferences>(
+      '/automations/notification-preferences',
+      input
+    );
     return response.data;
   },
   create: async (

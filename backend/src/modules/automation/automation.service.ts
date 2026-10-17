@@ -52,6 +52,8 @@ export class AutomationService {
       idempotencyKey?: string;
       plan?: ValidatedPlan;
       workflowDefinition?: VisualWorkflowDefinition;
+      scheduleId?: string;
+      scheduledFor?: Date;
     }
   ): Promise<AutomationRecord> {
     if (input.idempotencyKey) {
@@ -123,6 +125,8 @@ export class AutomationService {
               mode: input.mode,
               status: initialStatus,
               idempotencyKey: input.idempotencyKey,
+              scheduleId: input.scheduleId,
+              scheduledFor: input.scheduledFor,
               tasks: {
                 create: plan.tasks.map((task) => ({
                   key: task.key,

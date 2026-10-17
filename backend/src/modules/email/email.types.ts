@@ -7,3 +7,12 @@ export interface ReviewCompletePayload {
   reviewId: string
   reviewUrl?: string
 }
+
+export interface AutomationNotificationPayload {
+  outboxId: string;
+  to: string;
+  subject: string;
+  heading: string;
+  details: string[];
+  url: string;
+}

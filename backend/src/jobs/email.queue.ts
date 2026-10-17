@@ -5,10 +5,12 @@ import { MailService } from '@/modules/email/mail.service'
 import { env } from '@/config/env'
 import logger from '@/utils/logger'
 import type { AccountEmailJob } from '@/modules/email/account-email.types'
-import type { ReviewCompletePayload } from '@/modules/email/email.types'
+import type { AutomationNotificationPayload, ReviewCompletePayload } from '@/modules/email/email.types'
+import { prisma } from '@/config/database'
 
 type EmailJobData =
   | { type: 'review:complete'; payload: ReviewCompletePayload }
+  | { type: 'automation:notification'; payload: AutomationNotificationPayload }
   | AccountEmailJob
 
 let connection: IORedis | null = null
@@ -64,6 +66,13 @@ export async function startEmailWorker(): Promise<void> {
         case 'auth:password-reset':
           await mailer.sendPasswordReset(payload)
           break
+        case 'automation:notification':
+          await mailer.sendAutomationNotification(payload)
+          await prisma.automationNotification.updateMany({
+            where: { id: payload.outboxId, status: 'QUEUED' },
+            data: { status: 'SENT', sentAt: new Date(), lastError: null },
+          })
+          break
 
         default:
           throw new Error('Unsupported email job type')
@@ -80,6 +89,42 @@ export async function startEmailWorker(): Promise<void> {
 
   emailWorker.on('failed', (job) => {
     logger.error({ jobId: job?.id }, 'Email job failed')
+    if (
+      job?.data.type === 'automation:notification' &&
+      job.attemptsMade >= (job.opts.attempts ?? 1)
+    ) {
+      void prisma.automationNotification.updateMany({
+        where: {
+          id: job.data.payload.outboxId,
+          status: 'QUEUED',
+          attemptCount: { lt: 2 },
+        },
+        data: {
+          status: 'PENDING',
+          queuedAt: null,
+          attemptCount: { increment: 1 },
+          lastError: 'EMAIL_DELIVERY_FAILED',
+        },
+      }).catch((error: unknown) => {
+        logger.error(
+          { errorType: error instanceof Error ? error.name : 'UnknownError' },
+          'Failed to persist automation notification delivery failure'
+        )
+      })
+      void prisma.automationNotification.updateMany({
+        where: {
+          id: job.data.payload.outboxId,
+          status: 'QUEUED',
+          attemptCount: { gte: 2 },
+        },
+        data: { status: 'FAILED', queuedAt: null, lastError: 'EMAIL_DELIVERY_FAILED' },
+      }).catch((error: unknown) => {
+        logger.error(
+          { errorType: error instanceof Error ? error.name : 'UnknownError' },
+          'Failed to persist terminal automation notification failure'
+        )
+      })
+    }
   })
 
   emailWorker.on('error', () => {

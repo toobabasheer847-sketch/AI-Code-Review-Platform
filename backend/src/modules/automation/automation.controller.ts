@@ -5,8 +5,11 @@ import logger from '@/utils/logger';
 import { AutomationError, MAX_AUTOMATION_GOAL_LENGTH } from './automation.domain';
 import { VisualWorkflowValidationError } from './visual-workflow.domain';
 import { AutomationService } from './automation.service';
+import { AutomationScheduleService } from './automation-schedule.service';
+import { AutomationScheduleFrequency, AutomationScheduleStatus } from '@prisma/client';
 
 const service = new AutomationService();
+const scheduleService = new AutomationScheduleService(service);
 const createSchema = z.object({
   goal: z.string().trim().min(1).max(MAX_AUTOMATION_GOAL_LENGTH),
   mode: z.nativeEnum(AutomationMode).default(AutomationMode.APPROVAL_REQUIRED),
@@ -17,8 +20,130 @@ const visualWorkflowRequestSchema = z
     workflow: z.unknown(),
   })
   .strict();
+const scheduleSchema = z
+  .object({
+    automationId: z.string().cuid(),
+    frequency: z.nativeEnum(AutomationScheduleFrequency),
+    timeZone: z.string().min(1).max(100),
+    localTime: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/),
+    dayOfWeek: z.number().int().min(0).max(6).optional(),
+  })
+  .strict();
+const scheduleUpdateSchema = scheduleSchema.omit({ automationId: true });
+const notificationPreferenceSchema = z
+  .object({
+    failureNotifications: z.boolean(),
+    repeatedFailureThreshold: z.number().int().min(2).max(10),
+    dailySummaryEnabled: z.boolean(),
+    dailySummaryTime: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/),
+    dailySummaryTimeZone: z.string().min(1).max(100),
+  })
+  .strict();
 
 export class AutomationController {
+  async schedules(req: Request, res: Response): Promise<void> {
+    if (!req.user?.userId) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+    try {
+      res.json(await scheduleService.list(req.user.userId));
+    } catch (error) {
+      this.respondError(res, error);
+    }
+  }
+
+  async createSchedule(req: Request, res: Response): Promise<void> {
+    if (!req.user?.userId) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+    const parsed = scheduleSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Provide a saved workflow, valid timezone, frequency, and local run time.' });
+      return;
+    }
+    try {
+      res.status(201).json(await scheduleService.create(req.user.userId, parsed.data));
+    } catch (error) {
+      this.respondError(res, error);
+    }
+  }
+
+  async pauseSchedule(req: Request, res: Response): Promise<void> {
+    await this.performScheduleStatus(req, res, AutomationScheduleStatus.PAUSED);
+  }
+
+  async resumeSchedule(req: Request, res: Response): Promise<void> {
+    await this.performScheduleStatus(req, res, AutomationScheduleStatus.ACTIVE);
+  }
+
+  async cancelSchedule(req: Request, res: Response): Promise<void> {
+    if (!req.user?.userId) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+    try {
+      res.json(await scheduleService.cancel(req.user.userId, req.params.id));
+    } catch (error) {
+      this.respondError(res, error);
+    }
+  }
+
+  async updateSchedule(req: Request, res: Response): Promise<void> {
+    if (!req.user?.userId) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+    const parsed = scheduleUpdateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Provide a valid timezone, frequency, and local run time.' });
+      return;
+    }
+    try {
+      res.json(await scheduleService.update(req.user.userId, req.params.id, parsed.data));
+    } catch (error) {
+      this.respondError(res, error);
+    }
+  }
+
+  async notificationPreferences(req: Request, res: Response): Promise<void> {
+    if (!req.user?.userId) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+    try {
+      if (req.method === 'GET') {
+        res.json(await scheduleService.getNotificationPreferences(req.user.userId));
+        return;
+      }
+      const parsed = notificationPreferenceSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: 'Notification preferences are invalid.' });
+        return;
+      }
+      res.json(await scheduleService.updateNotificationPreferences(req.user.userId, parsed.data));
+    } catch (error) {
+      this.respondError(res, error);
+    }
+  }
+
+  private async performScheduleStatus(
+    req: Request,
+    res: Response,
+    status: 'PAUSED' | 'ACTIVE'
+  ): Promise<void> {
+    if (!req.user?.userId) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+    try {
+      res.json(await scheduleService.setStatus(req.user.userId, req.params.id, status));
+    } catch (error) {
+      this.respondError(res, error);
+    }
+  }
+
   async validateVisual(req: Request, res: Response): Promise<void> {
     if (!req.user?.userId) {
       res.status(401).json({ error: 'Unauthorized' });

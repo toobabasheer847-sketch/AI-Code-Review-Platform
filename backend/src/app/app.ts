@@ -12,6 +12,7 @@ import { redis } from '@/config/redis'
 import { reviewQueue } from '@/jobs/review.queue'
 import { emailQueue } from '@/jobs/email.queue'
 import { automationQueue } from '@/modules/automation/automation.queue'
+import { getAutomationSchedulerHealth } from '@/modules/automation/automation.scheduler'
 import { socialQueue } from '@/modules/social/social.queue'
 
 // Rate limiting middleware
@@ -69,25 +70,43 @@ export const createApp = (): Express => {
       await prisma.$queryRaw`SELECT 1`
       await redis.ping()
       const [reviewJobs, emailJobs, automationJobs, socialJobs] = await Promise.all([
-        reviewQueue.getJobCounts('failed'),
-        emailQueue.getJobCounts('failed'),
-        automationQueue.getJobCounts('failed'),
-        socialQueue.getJobCounts('failed'),
+        reviewQueue.getJobCounts('waiting', 'active', 'delayed', 'failed'),
+        emailQueue.getJobCounts('waiting', 'active', 'delayed', 'failed'),
+        automationQueue.getJobCounts('waiting', 'active', 'delayed', 'failed'),
+        socialQueue.getJobCounts('waiting', 'active', 'delayed', 'failed'),
       ])
+      const scheduler = getAutomationSchedulerHealth()
+      const schedulerStatus = !scheduler.running
+        ? 'starting'
+        : scheduler.lastSuccessfulTickAt &&
+            scheduler.lastFailureType === null
+          ? 'ok'
+          : scheduler.lastFailureType
+            ? 'degraded'
+            : 'starting'
       res.json({
-        status: 'ok',
+        status: schedulerStatus === 'degraded' ? 'degraded' : 'ok',
         timestamp: new Date().toISOString(),
         environment: env.NODE_ENV,
-        dependencies: { database: 'ok', redis: 'ok', queues: 'ok' },
-        failedJobs: {
-          reviews: reviewJobs.failed ?? 0,
-          email: emailJobs.failed ?? 0,
-          automations: automationJobs.failed ?? 0,
-          socialPublications: socialJobs.failed ?? 0,
+        dependencies: {
+          database: 'ok',
+          redis: 'ok',
+          queues: 'ok',
+          scheduler: schedulerStatus,
         },
+        queues: {
+          reviews: reviewJobs,
+          email: emailJobs,
+          automations: automationJobs,
+          socialPublications: socialJobs,
+        },
+        scheduler,
       })
-    } catch {
-      logger.error('Readiness health check failed')
+    } catch (error) {
+      logger.error(
+        { errorType: error instanceof Error ? error.name : 'UnknownError' },
+        'Readiness health check failed'
+      )
       res.status(503).json({
         status: 'error',
         timestamp: new Date().toISOString(),

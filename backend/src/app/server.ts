@@ -12,6 +12,10 @@ import {
   startAutomationWorker,
   stopAutomationWorker,
 } from '@/modules/automation/automation.worker'
+import {
+  startAutomationScheduler,
+  stopAutomationScheduler,
+} from '@/modules/automation/automation.scheduler'
 import { closeSocialQueue } from '@/modules/social/social.queue'
 import { startSocialWorker, stopSocialWorker } from '@/modules/social/social.worker'
 import type { Server } from 'node:http'
@@ -29,6 +33,7 @@ async function bootstrap(): Promise<void> {
     await startEmailWorker()
     await startReviewWorker()
     await startAutomationWorker()
+    startAutomationScheduler()
     await startSocialWorker()
 
     httpServer = app.listen(env.PORT, () => {
@@ -54,6 +59,7 @@ async function shutdown(signal: string): Promise<void> {
       })
     }
     await stopReviewWorker()
+    await stopAutomationScheduler()
     await stopAutomationWorker()
     await stopSocialWorker()
     await closeReviewQueue()

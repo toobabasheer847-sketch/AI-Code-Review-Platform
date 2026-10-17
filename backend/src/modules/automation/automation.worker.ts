@@ -9,10 +9,17 @@ import IORedis from 'ioredis';
 import { env } from '@/config/env';
 import { prisma } from '@/config/database';
 import logger from '@/utils/logger';
+import { automationJobId, automationQueue } from './automation.queue';
+import {
+  AUTOMATION_EXECUTION_TIMEOUT_MS,
+  MAX_RUNNING_AUTOMATION_TASKS_PER_USER,
+  isAutomationExecutionTimedOut,
+} from './schedule.domain';
 import { AutomationActionRegistry } from './automation.actions';
 import type { AutomationJobData } from './automation.queue';
 import {
   areAutomationDependenciesCompleted,
+  AUTOMATION_TASK_LOCK_DURATION_MS,
   canClaimAutomationTask,
   createApprovalPayload,
   isAutomationExecutionAuthorized,
@@ -121,6 +128,10 @@ async function processAutomation(job: Job<AutomationJobData>): Promise<void> {
       data: { status: AutomationStatus.RUNNING },
     });
     if (result.count === 0) return false;
+    await transaction.automation.updateMany({
+      where: { id: automationId, executionTimeoutAt: null },
+      data: { executionTimeoutAt: new Date(Date.now() + AUTOMATION_EXECUTION_TIMEOUT_MS) },
+    });
     await transaction.automationEvent.create({
       data: { automationId, type: 'started', message: 'Automation execution started.' },
     });
@@ -129,6 +140,7 @@ async function processAutomation(job: Job<AutomationJobData>): Promise<void> {
   if (!started) return;
 
   const actions = new AutomationActionRegistry();
+  let deferredDueToConcurrency = false;
   const visualOutputs = new Map<string, unknown>(
     automation.tasks
       .filter((task) => task.status === AutomationTaskStatus.COMPLETED && task.output !== null)
@@ -137,7 +149,7 @@ async function processAutomation(job: Job<AutomationJobData>): Promise<void> {
   for (const task of orderedTasks) {
     const current = await prisma.automation.findUnique({
       where: { id: automationId },
-      select: { status: true },
+      select: { status: true, executionTimeoutAt: true, userId: true },
     });
     if (
       !current ||
@@ -145,6 +157,62 @@ async function processAutomation(job: Job<AutomationJobData>): Promise<void> {
       current.status === AutomationStatus.REJECTED
     )
       return;
+    if (isAutomationExecutionTimedOut(current.executionTimeoutAt)) {
+      await prisma.$transaction(async (transaction) => {
+        const recentTask = await transaction.automationTask.findFirst({
+          where: {
+            automationId,
+            status: AutomationTaskStatus.RUNNING,
+            startedAt: { gt: new Date(Date.now() - AUTOMATION_TASK_LOCK_DURATION_MS) },
+          },
+          select: { id: true },
+        });
+        if (recentTask) return false;
+        const changed = await transaction.automation.updateMany({
+          where: { id: automationId, status: AutomationStatus.RUNNING },
+          data: { status: AutomationStatus.FAILED },
+        });
+        if (changed.count === 1) {
+          await transaction.automationTask.updateMany({
+            where: {
+              automationId,
+              status: {
+                in: [
+                  AutomationTaskStatus.PENDING,
+                  AutomationTaskStatus.READY,
+                  AutomationTaskStatus.AWAITING_APPROVAL,
+                  AutomationTaskStatus.RUNNING,
+                ],
+              },
+            },
+            data: {
+              status: AutomationTaskStatus.FAILED,
+              errorMessage: 'Automation exceeded its execution time limit.',
+            },
+          });
+          await transaction.automationExecutionAttempt.updateMany({
+            where: {
+              task: { automationId },
+              status: AutomationAttemptStatus.RUNNING,
+            },
+            data: {
+              status: AutomationAttemptStatus.FAILED,
+              errorMessage: 'Automation exceeded its execution time limit.',
+              completedAt: new Date(),
+            },
+          });
+          await transaction.automationEvent.create({
+            data: {
+              automationId,
+              type: 'execution_timed_out',
+              message: `Automation exceeded the ${AUTOMATION_EXECUTION_TIMEOUT_MS / 60_000} minute execution limit.`,
+            },
+          });
+        }
+        return changed.count === 1;
+      });
+      return;
+    }
     if (visualWorkflow) {
       const activeNodes = activeVisualActionIds(visualWorkflow, visualOutputs);
       if (!activeNodes.has(task.key)) {
@@ -198,6 +266,17 @@ async function processAutomation(job: Job<AutomationJobData>): Promise<void> {
           SELECT "status" FROM "Automation" WHERE "id" = ${automationId} FOR UPDATE
         `;
         if (!state || state.status !== AutomationStatus.RUNNING) return false;
+        await transaction.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${automation.userId} FOR UPDATE`;
+        const activeTaskCount = await transaction.automationTask.count({
+          where: {
+            status: AutomationTaskStatus.RUNNING,
+            automation: { userId: automation.userId, status: AutomationStatus.RUNNING },
+          },
+        });
+        if (activeTaskCount >= MAX_RUNNING_AUTOMATION_TASKS_PER_USER) {
+          deferredDueToConcurrency = true;
+          return false;
+        }
         const currentTask = await transaction.automationTask.findUnique({
           where: { id: task.id },
           select: { status: true, startedAt: true },
@@ -384,7 +463,7 @@ async function processAutomation(job: Job<AutomationJobData>): Promise<void> {
     }
   }
 
-  await prisma.$transaction(async (transaction) => {
+  const hasUnfinishedTasks = await prisma.$transaction(async (transaction) => {
     const unfinishedTasks = await transaction.automationTask.count({
       where: {
         automationId,
@@ -399,7 +478,7 @@ async function processAutomation(job: Job<AutomationJobData>): Promise<void> {
         },
       },
     });
-    if (unfinishedTasks > 0) return;
+    if (unfinishedTasks > 0) return true;
     const result = await transaction.automation.updateMany({
       where: { id: automationId, status: AutomationStatus.RUNNING },
       data: { status: AutomationStatus.COMPLETED },
@@ -430,15 +509,27 @@ async function processAutomation(job: Job<AutomationJobData>): Promise<void> {
         data: { automationId, type: 'completed', message: 'Automation completed.' },
       });
     }
+    return false;
   });
+  if (hasUnfinishedTasks && deferredDueToConcurrency) {
+    const minute = Math.floor(Date.now() / 60_000);
+    await automationQueue.add(
+      'execute-deferred',
+      { automationId },
+      {
+        jobId: `${automationJobId(automationId, automation.retryCount)}-capacity-${minute}`,
+        delay: 15_000,
+      }
+    );
+  }
 }
 
 export async function startAutomationWorker(): Promise<void> {
   if (worker) return;
   worker = new Worker<AutomationJobData>('automation', async (job) => processAutomation(job), {
     connection: new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null }),
-    concurrency: 2,
-    lockDuration: 180_000,
+    concurrency: 5,
+    lockDuration: AUTOMATION_TASK_LOCK_DURATION_MS,
   });
   worker.on('failed', (job, error) => {
     logger.error(
