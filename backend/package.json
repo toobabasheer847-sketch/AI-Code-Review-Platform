@@ -1,7 +1,7 @@
 {
   "name": "ai-codeguard-backend",
   "version": "1.0.0",
-  "description": "AI-CodeGuard - Production-level SaaS Code Review Platform Backend",
+  "description": "AI-CodeGuard API backend",
   "main": "dist/app/server.js",
   "type": "module",
   "scripts": {
@@ -13,6 +13,7 @@
     "format": "prettier --write \"src/**/*.ts\"",
     "type-check": "tsc --noEmit",
     "prisma:generate": "prisma generate --schema src/prisma/schema.prisma",
+    "prisma:validate": "prisma validate --schema src/prisma/schema.prisma",
     "prisma:migrate": "prisma migrate dev --schema src/prisma/schema.prisma",
     "prisma:deploy": "prisma migrate deploy --schema src/prisma/schema.prisma",
     "prisma:studio": "prisma studio --schema src/prisma/schema.prisma",
@@ -21,7 +22,6 @@
     "test:watch": "tsx --test --watch src/modules/code-review/review.pipeline.test.ts"
   },
   "dependencies": {
-    "@langchain/openai": "^0.0.2",
     "@prisma/client": "^5.8.0",
     "axios": "^1.6.0",
     "bcrypt": "^6.0.0",
@@ -32,9 +32,6 @@
     "express-rate-limit": "^7.1.0",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
-    "langchain": "^0.1.11",
-    "morgan": "^1.10.0",
-    "next": "^14.0.0",
     "nodemailer": "^6.9.0",
     "octokit": "^3.1.0",
     "openai": "^4.26.0",
@@ -43,7 +40,6 @@
     "redis": "^4.6.0",
     "socket.io": "^4.7.0",
     "stripe": "^14.25.0",
-    "uuid": "^9.0.0",
     "zod": "^3.22.0"
   },
   "devDependencies": {
@@ -52,7 +48,6 @@
     "@types/express": "^4.17.0",
     "@types/jest": "^29.0.0",
     "@types/jsonwebtoken": "^9.0.0",
-    "@types/morgan": "^1.9.0",
     "@types/node": "^20.0.0",
     "@types/nodemailer": "^6.4.0",
     "@typescript-eslint/eslint-plugin": "^7.18.0",

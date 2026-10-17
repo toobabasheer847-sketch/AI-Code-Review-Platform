@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
 import { AuthController } from './auth.controller'
-import { authMiddleware } from '@/middleware/auth.middleware'
+import { accountLifecycleAuthMiddleware } from '@/middleware/auth.middleware'
 
 const router = Router()
 const authController = new AuthController()
@@ -27,12 +27,12 @@ router.post('/password-reset/confirm', accountActionLimiter, (req, res) =>
 )
 
 // Protected routes
-router.post('/logout', authMiddleware, (req, res) => authController.logout(req, res))
-router.get('/me', authMiddleware, (req, res) => authController.getCurrentUser(req, res))
-router.post('/verification-email', authMiddleware, accountActionLimiter, (req, res) =>
+router.post('/logout', accountLifecycleAuthMiddleware, (req, res) => authController.logout(req, res))
+router.get('/me', accountLifecycleAuthMiddleware, (req, res) => authController.getCurrentUser(req, res))
+router.post('/verification-email', accountLifecycleAuthMiddleware, accountActionLimiter, (req, res) =>
   authController.resendVerificationEmail(req, res)
 )
-router.delete('/account', authMiddleware, accountActionLimiter, (req, res) =>
+router.delete('/account', accountLifecycleAuthMiddleware, accountActionLimiter, (req, res) =>
   authController.deleteAccount(req, res)
 )
 

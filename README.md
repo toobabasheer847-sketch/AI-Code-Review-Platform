@@ -17,7 +17,7 @@ AI-CodeGuard is a full-stack application for AI-assisted code review with GitHub
 - **Background Jobs**: BullMQ for async processing of reviews and emails
 - **Automation MVP**: Approval-gated plans with persisted task status and safe text-draft execution
 - **Real-time Analytics**: Dashboard with comprehensive insights
-- **Enterprise Security**: JWT authentication, encryption, CORS, and helmet protection
+- **Security controls**: JWT authentication, encrypted provider credentials, CORS, and Helmet
 - **Multi-language Support**: Support for various programming languages
 - **Email Notifications**: Nodemailer integration for alerts and notifications
 - **Redis Caching**: High-performance caching layer
@@ -34,7 +34,7 @@ AI-CodeGuard/
 │   │   ├── lib/             # Utilities and configurations
 │   │   └── types/           # TypeScript type definitions
 │   └── package.json
-└── backend/                 # Express + Next.js API server
+└── backend/                 # Express API server
     ├── src/
     │   ├── app/             # Express application setup
     │   ├── config/          # Configuration files
@@ -62,14 +62,12 @@ AI-CodeGuard/
 
 ### Backend
 - **Express.js** - Web framework
-- **Next.js** - React meta-framework (optional for API routes)
 - **TypeScript** - Type safety
 - **Prisma ORM** - Database abstraction
 - **PostgreSQL** - Relational database
 - **Redis** - Caching and job queue storage
 - **BullMQ** - Background job processing
 - **OpenAI API** - AI-powered code analysis
-- **LangChain** - LLM orchestration framework
 - **Socket.io** - Real-time bidirectional communication
 - **JWT** - Authentication tokens
 - **Stripe** - Payment processing
@@ -133,6 +131,11 @@ docker-compose exec backend npm run seed
 Compose is for local development and uses local-only database credentials. Do
 not use it as a production deployment template. `GET /health` checks PostgreSQL,
 Redis, the configured job queues, and scheduler state.
+
+See [SAAS-LAUNCH-READINESS.md](./SAAS-LAUNCH-READINESS.md) for production
+environment setup, release checks, deployment and rollback guidance, backup
+and restore steps, and audited launch limitations. The application has not
+been independently verified in a production deployment.
 
 ## 📚 API Documentation
 

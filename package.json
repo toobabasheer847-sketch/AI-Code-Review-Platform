@@ -1,7 +1,7 @@
 {
   "name": "ai-codeguard-monorepo",
   "version": "1.0.0",
-  "description": "AI-CodeGuard - Production SaaS Code Review Platform",
+  "description": "AI-CodeGuard - AI Code Review Platform",
   "private": true,
   "workspaces": [
     "frontend",

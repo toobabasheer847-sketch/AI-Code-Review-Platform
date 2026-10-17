@@ -8,6 +8,22 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ai_codeguard
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ai_codeguard"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ai_codeguard?schema=public
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -15,7 +31,10 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      - run: npm audit --audit-level=critical
       - run: npm run prisma:generate --workspace=backend
+      - run: npm run prisma:validate --workspace=backend
+      - run: npm run prisma:deploy --workspace=backend
       - run: npm run lint
       - run: npm run type-check
       - run: npm test

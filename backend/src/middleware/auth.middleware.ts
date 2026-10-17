@@ -12,7 +12,22 @@ export function isTokenVersionCurrent(
     : payload.tokenVersion === currentVersion
 }
 
-type TokenVersionReader = (userId: string) => Promise<number | null>
+interface UserAuthState {
+  tokenVersion: number
+  isVerified: boolean
+}
+
+type UserAuthStateReader = (userId: string) => Promise<UserAuthState | null>
+
+const readUserAuthState: UserAuthStateReader = async (userId) => {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { tokenVersion: true, isVerified: true },
+  })
+  return user
+    ? { tokenVersion: user.tokenVersion, isVerified: user.isVerified }
+    : null
+}
 
 declare global {
   namespace Express {
@@ -23,13 +38,8 @@ declare global {
 }
 
 export function createAuthMiddleware(
-  readTokenVersion: TokenVersionReader = async (userId) => {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { tokenVersion: true },
-    })
-    return user?.tokenVersion ?? null
-  }
+  readAuthState: UserAuthStateReader = readUserAuthState,
+  options: { permitUnverified?: boolean } = {}
 ) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     let decoded: JWTPayload
@@ -48,9 +58,16 @@ export function createAuthMiddleware(
     }
 
     try {
-      const tokenVersion = await readTokenVersion(decoded.userId)
-      if (tokenVersion === null || !isTokenVersionCurrent(decoded, tokenVersion)) {
+      const authState = await readAuthState(decoded.userId)
+      if (
+        authState === null ||
+        !isTokenVersionCurrent(decoded, authState.tokenVersion)
+      ) {
         res.status(401).json({ error: 'Invalid or revoked token' })
+        return
+      }
+      if (!options.permitUnverified && !authState.isVerified) {
+        res.status(403).json({ error: 'Email verification required' })
         return
       }
       req.user = decoded
@@ -62,3 +79,6 @@ export function createAuthMiddleware(
 }
 
 export const authMiddleware = createAuthMiddleware()
+export const accountLifecycleAuthMiddleware = createAuthMiddleware(readUserAuthState, {
+  permitUnverified: true,
+})

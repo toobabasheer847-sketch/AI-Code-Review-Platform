@@ -8,7 +8,9 @@ import { generateToken } from '@/utils/jwt'
 
 async function invokeMiddleware(
   authorization: string | undefined,
-  currentVersion: number | null
+  currentVersion: number | null,
+  isVerified = true,
+  permitUnverified = false
 ) {
   let statusCode: number | undefined
   let responseBody: { error: string } | undefined
@@ -31,7 +33,11 @@ async function invokeMiddleware(
     nextError = error
   }
 
-  await createAuthMiddleware(async () => currentVersion)(req, res, next)
+  await createAuthMiddleware(
+    async () =>
+      currentVersion === null ? null : { tokenVersion: currentVersion, isVerified },
+    { permitUnverified }
+  )(req, res, next)
   return { statusCode, responseBody, nextCalled, nextError, user: req.user }
 }
 
@@ -76,4 +82,21 @@ test('auth middleware accepts a valid token when its session version matches', a
   assert.equal(result.nextCalled, true)
   assert.equal(result.user?.userId, 'user-1')
   assert.equal(result.nextError, undefined)
+})
+
+test('protected routes reject unverified users while account lifecycle routes remain available', async () => {
+  const token = generateToken({
+    userId: 'user-1',
+    email: 'person@example.com',
+    tokenVersion: 0,
+  })
+  const authorization = 'Bearer ' + token
+  const protectedResult = await invokeMiddleware(authorization, 0, false)
+  assert.equal(protectedResult.statusCode, 403)
+  assert.deepEqual(protectedResult.responseBody, { error: 'Email verification required' })
+  assert.equal(protectedResult.nextCalled, false)
+
+  const lifecycleResult = await invokeMiddleware(authorization, 0, false, true)
+  assert.equal(lifecycleResult.nextCalled, true)
+  assert.equal(lifecycleResult.user?.userId, 'user-1')
 })
