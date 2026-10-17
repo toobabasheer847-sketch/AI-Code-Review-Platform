@@ -47,6 +47,11 @@ const SocialPublishingPage = lazy(() =>
     default: m.SocialPublishingPage,
   }))
 );
+const IntegrationsPage = lazy(() =>
+  import('@features/integrations/pages/IntegrationsPage').then((m) => ({
+    default: m.IntegrationsPage,
+  }))
+);
 const WorkMemoryPage = lazy(() =>
   import('@features/memory/pages/WorkMemoryPage').then((m) => ({ default: m.WorkMemoryPage }))
 );
@@ -88,6 +93,16 @@ export const routes: RouteObject[] = [
       <ProtectedRoute>
         <Suspense fallback={<LazyFallback />}>
           <GitHubDevelopmentPage />
+        </Suspense>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/integrations',
+    element: (
+      <ProtectedRoute>
+        <Suspense fallback={<LazyFallback />}>
+          <IntegrationsPage />
         </Suspense>
       </ProtectedRoute>
     ),

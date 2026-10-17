@@ -7,7 +7,7 @@ export function getGitHubAuthorizeUrl(state: string): string {
   const params = new URLSearchParams({
     client_id: env.GITHUB_CLIENT_ID,
     redirect_uri: env.GITHUB_CALLBACK_URL,
-    scope: 'repo read:user',
+    scope: 'repo',
     state,
     allow_signup: 'true',
   })
@@ -28,6 +28,15 @@ export interface GitHubTokenResponse {
   access_token: string
   scope: string
   token_type: string
+}
+
+export function parseGitHubGrantedScopes(value: unknown): string[] {
+  if (typeof value !== 'string') return []
+  return [...new Set(value.split(/[,\s]+/).map((scope) => scope.trim()).filter(Boolean))]
+}
+
+export function hasRequiredGitHubScopes(scopes: string[]): boolean {
+  return scopes.includes('repo')
 }
 
 export interface GitHubUserProfile {

@@ -8,6 +8,7 @@ import pullRequestWebhookRoutes from '@/modules/github/pull-request-webhook.rout
 import automationRoutes from '@/modules/automation/automation.routes'
 import socialRoutes from '@/modules/social/social.routes'
 import workMemoryRoutes from '@/modules/memory/memory.routes'
+import integrationsRoutes from '@/modules/integrations/integrations.routes'
 
 /**
  * Aggregates all API routes.
@@ -25,6 +26,7 @@ export const createApiRoutes = (): Router => {
   router.use('/automations', automationRoutes)
   router.use('/social', socialRoutes)
   router.use('/memory', workMemoryRoutes)
+  router.use('/integrations', integrationsRoutes)
   router.use('/webhooks/github', pullRequestWebhookRoutes)
 
   return router

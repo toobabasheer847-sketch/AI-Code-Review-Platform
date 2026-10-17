@@ -596,6 +596,22 @@ test('execution requires an owner-matched approval for the unchanged plan', () =
     }),
     false
   );
+  assert.equal(
+    isAutomationExecutionAuthorized({
+      mode: 'AUTO_LOW_RISK',
+      userId: 'user-a',
+      plan: {
+        ...externalActionPlan,
+        tasks: [
+          {
+            ...externalActionPlan.tasks[0]!,
+            action: 'create_github_pr_comment',
+          },
+        ],
+      },
+    }),
+    false
+  );
   const changedExternalPayload = {
     ...approval,
     payload: {

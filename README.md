@@ -169,6 +169,8 @@ Redis, and both job queues and reports retained failed-job counts.
 - `GET /api/github/development/templates` - List supported GitHub workflow templates (authenticated)
 - `POST /api/github/development/workflows` - Create an owned, approval-required GitHub workflow (authenticated)
 - `GET /api/social/status` and `GET /api/social/posts` - Read the authenticated user's provider configuration, accounts, drafts, approvals, calendar, and publication history
+- `GET /api/integrations` - List supported integrations, owner-scoped connection status, granted permissions, setup steps, capabilities, limitations, and workflow action contracts
+- `POST /api/integrations/:provider/check` - Verify the authenticated owner's GitHub or LinkedIn account against the provider and record the last successful check
 - `POST /api/social/linkedin/connect` - Begin LinkedIn OAuth (requires LinkedIn app configuration)
 - `POST /api/social/drafts/generate` - Draft a post from user instructions and one owned, completed review
 - `POST /api/social/drafts` and `PATCH /api/social/posts/:postId` - Create or edit a LinkedIn text draft
@@ -256,6 +258,9 @@ key for this create operation. Publishing history retains provider identifiers,
 URLs, errors, and audit events.
 
 Official references:
+- [GitHub OAuth Apps authorization](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps)
+- [GitHub authenticated user endpoint](https://docs.github.com/en/rest/users/users#get-the-authenticated-user)
+- [GitHub OAuth application token revocation](https://docs.github.com/en/rest/apps/oauth-applications#delete-an-app-authorization)
 - [LinkedIn Posts API](https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/posts-api?view=li-lms-2026-09)
 - [LinkedIn Post Schema](https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/post-api-schema?view=li-lms-2026-09)
 - [LinkedIn Authorization Code Flow](https://learn.microsoft.com/en-us/linkedin/shared/authentication/authorization-code-flow)
@@ -266,6 +271,53 @@ No LinkedIn credentials are present in the checked-in environment example, so
 live connection and publishing are not verified in this environment. Missing
 credentials are reported as setup-required; the API does not simulate a
 connected account or successful publication.
+
+### Phase 12: Integration management
+
+The protected `/integrations` page and `GET /api/integrations` use a single
+catalog for the only currently implemented user-connected providers: GitHub
+and LinkedIn. Provider connections are marked verified only after their OAuth
+callbacks exchange credentials and confirm the account identity; the manual
+check endpoint calls the provider again and stores a per-account
+`lastSuccessfulConnectionCheckAt`. Catalog responses never include tokens or
+client secrets. OAuth credentials remain encrypted in the backend database
+using `GITHUB_TOKEN_ENCRYPTION_KEY`. Both OAuth flows use short-lived,
+HTTP-only state and user cookies, compare 256-bit state values in constant
+time, and clear them on callback. Provider account reads and disconnects are
+scoped to the authenticated owner. GitHub callback validates and persists the
+granted OAuth scopes; existing connections without recorded permission
+evidence must reconnect.
+
+GitHub asks only for the `repo` OAuth scope to support private repository
+reviews and the currently implemented read/write actions. Account identity
+uses the public `login` and `id` fields returned by GitHub's authenticated-user
+endpoint; the integration does not request private user-profile data.
+The classic `repo` scope is broad; GitHub OAuth Apps do not provide this flow
+with per-repository grants. Writes are limited to approval-required issue
+creation and pull-request comments, and execution is recorded in the owned
+workflow event history. Pull-request reviews, branch pushes, merges, and
+arbitrary GitHub API calls are unavailable.
+Workflow jobs may retry a failed action up to three times with exponential
+backoff. Issue/comment actions first look for their task-key marker to avoid
+duplicates when GitHub exposes the prior write; if provider visibility is
+delayed, manually verify the destination before retrying.
+Granted scopes are checked on callback and stored with the account; older
+connections without recorded scope evidence are marked for reconnection rather
+than being presented as fully authorized.
+
+LinkedIn asks for `openid`, `profile`, and `w_member_social`. Only member text
+posts are implemented. The exact draft/account/schedule must be approved
+before publishing, and ambiguous create outcomes are not retried. Disconnect
+removes the encrypted local credential and cancels pending posts; provider-side
+revocation is not reported as successful by this implementation. LinkedIn
+users should revoke app access in LinkedIn settings when remote revocation is
+needed. Organization posts, media posts, platform-native scheduling, and
+refresh-token automation are unavailable.
+
+No other providers are advertised: currently verified supported APIs and
+authorization paths do not justify adding placeholder integrations. Apply the
+health-check timestamp migration with `npm run prisma:deploy --workspace=backend`
+before deploying this phase.
 Apply reviewed database migrations with
 `npm run prisma:deploy --workspace=backend`; do not run development migrations
 against production data.

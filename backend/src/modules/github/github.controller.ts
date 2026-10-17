@@ -3,6 +3,7 @@ import { Request, Response } from 'express'
 import { env } from '@/config/env'
 import { GitHubService } from './github.service'
 import { decrypt, encrypt } from '@/utils/crypto'
+import { isValidOAuthState } from '@/modules/integrations/oauth-state'
 
 const githubService = new GitHubService()
 
@@ -32,7 +33,7 @@ export class GitHubController {
         return
       }
 
-      const state = crypto.randomUUID()
+      const state = crypto.randomBytes(32).toString('hex')
       const authorizeUrl = githubService.getAuthorizeUrl(state)
 
       res.cookie('github_oauth_state', state, {
@@ -55,26 +56,33 @@ export class GitHubController {
   }
 
   async callback(req: Request, res: Response): Promise<void> {
+    res.clearCookie('github_oauth_state')
+    res.clearCookie('github_oauth_user')
     try {
       const code = String(req.query.code || '')
       const state = String(req.query.state || '')
       const cookieState = parseCookieValue(req.headers.cookie, 'github_oauth_state')
       const cookieUser = parseCookieValue(req.headers.cookie, 'github_oauth_user')
 
-      if (!code || !state || !cookieState || state !== cookieState || !cookieUser) {
+      if (!code || !isValidOAuthState(state, cookieState) || !cookieUser) {
         res.status(400).json({ error: 'Invalid GitHub callback state' })
         return
       }
 
       const userId = decrypt(cookieUser)
-      const accessToken = await githubService.exchangeCodeForToken(code)
-      const profile = await githubService.fetchGitHubProfile(accessToken)
-      await githubService.saveGitHubAccount(userId, profile, accessToken)
+      const authorization = await githubService.exchangeCodeForToken(code)
+      const profile = await githubService.fetchGitHubProfile(authorization.accessToken)
+      await githubService.saveGitHubAccount(
+        userId,
+        profile,
+        authorization.accessToken,
+        authorization.scopes
+      )
 
-      res.clearCookie('github_oauth_state')
-      res.clearCookie('github_oauth_user')
       res.redirect(`${env.FRONTEND_URL}/github/repos?connected=true`)
     } catch {
+      res.clearCookie('github_oauth_state')
+      res.clearCookie('github_oauth_user')
       res.status(400).json({ error: 'GitHub authorization could not be completed' })
     }
   }

@@ -8,6 +8,7 @@ import {
   Code2,
   FileSearch,
   Github,
+  Cable,
   LayoutDashboard,
   LogOut,
   Search,
@@ -27,6 +28,7 @@ const navigation = [
   { to: '/automations?view=approvals', label: 'Approval inbox', icon: Bell },
   { to: '/github/agent', label: 'GitHub agent', icon: Code2 },
   { to: '/social', label: 'Social publishing', icon: Send },
+  { to: '/integrations', label: 'Integrations', icon: Cable },
   { to: '/reviews', label: 'Code reviews', icon: FileSearch },
   { to: '/github/repos', label: 'Repositories', icon: Github },
 ];

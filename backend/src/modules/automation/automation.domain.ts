@@ -23,7 +23,7 @@ export const AUTOMATION_ACTIONS = {
 const emptyActionInputSchema = z.object({}).strict();
 const githubRepositoryInput = z
   .string()
-  .regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/)
+  .regex(/^(?!\.{1,2}\/)[A-Za-z0-9_.-]+\/(?!\.{1,2}$)[A-Za-z0-9_.-]+$/)
   .max(200);
 const githubPullRequestNumberInput = z.number().int().positive().max(2_147_483_647);
 const githubContextInputSchema = z
@@ -54,6 +54,96 @@ export const automationActionInputSchemas = {
   [AUTOMATION_ACTIONS.CREATE_GITHUB_ISSUE]: githubIssueInputSchema,
   [AUTOMATION_ACTIONS.CREATE_GITHUB_PR_COMMENT]: githubPullRequestCommentInputSchema,
 } as const;
+
+export const automationActionCatalog = [
+  {
+    id: AUTOMATION_ACTIONS.COLLECT_REVIEW_RESULTS,
+    provider: 'internal',
+    name: 'Collect completed code reviews',
+    description: 'Read recent completed reviews owned by the workflow owner.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    permissions: ['Read completed code reviews owned by the authenticated user'],
+    retryBehavior: 'Safe to retry; this action is read-only.',
+    approvalRequired: false,
+  },
+  {
+    id: AUTOMATION_ACTIONS.GENERATE_TEXT_DRAFT,
+    provider: 'internal',
+    name: 'Generate internal text draft',
+    description: 'Generate an unpublished draft from approved workflow inputs.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    permissions: ['AI provider configuration'],
+    retryBehavior: 'Safe to retry; this action creates no external publication.',
+    approvalRequired: false,
+  },
+  {
+    id: AUTOMATION_ACTIONS.COLLECT_GITHUB_CONTEXT,
+    provider: 'github',
+    name: 'Collect repository and pull request context',
+    description: 'Read commits, pull requests, checks, and completed review evidence.',
+    inputSchema: {
+      type: 'object',
+      required: ['repository'],
+      properties: {
+        repository: {
+          type: 'string',
+          pattern: '^(?!\\.{1,2}/)[A-Za-z0-9_.-]+/(?!\\.{1,2}$)[A-Za-z0-9_.-]+$',
+        },
+        pullRequestNumber: { type: 'integer', minimum: 1 },
+      },
+      additionalProperties: false,
+    },
+    permissions: ['GitHub OAuth repo'],
+    retryBehavior: 'Read-only; one bounded retry for eligible rate limits.',
+    approvalRequired: false,
+  },
+  {
+    id: AUTOMATION_ACTIONS.CREATE_GITHUB_ISSUE,
+    provider: 'github',
+    name: 'Create GitHub issue',
+    description: 'Create one issue in a repository the owner can write to.',
+    inputSchema: {
+      type: 'object',
+      required: ['repository', 'title', 'body'],
+      properties: {
+        repository: {
+          type: 'string',
+          pattern: '^(?!\\.{1,2}/)[A-Za-z0-9_.-]+/(?!\\.{1,2}$)[A-Za-z0-9_.-]+$',
+        },
+        title: { type: 'string', minLength: 1, maxLength: 256 },
+        body: { type: 'string', minLength: 1, maxLength: 10000 },
+      },
+      additionalProperties: false,
+    },
+    permissions: ['GitHub OAuth repo', 'Repository issue-write access'],
+    retryBehavior:
+      'Workflow retries up to three times with exponential backoff; task-key marker lookup prevents duplicates when GitHub exposes prior writes, otherwise verify manually.',
+    approvalRequired: true,
+  },
+  {
+    id: AUTOMATION_ACTIONS.CREATE_GITHUB_PR_COMMENT,
+    provider: 'github',
+    name: 'Comment on GitHub pull request',
+    description: 'Create a pull request comment in a repository the owner can write to.',
+    inputSchema: {
+      type: 'object',
+      required: ['repository', 'pullRequestNumber', 'body'],
+      properties: {
+        repository: {
+          type: 'string',
+          pattern: '^(?!\\.{1,2}/)[A-Za-z0-9_.-]+/(?!\\.{1,2}$)[A-Za-z0-9_.-]+$',
+        },
+        pullRequestNumber: { type: 'integer', minimum: 1 },
+        body: { type: 'string', minLength: 1, maxLength: 10000 },
+      },
+      additionalProperties: false,
+    },
+    permissions: ['GitHub OAuth repo', 'Repository pull-request write access'],
+    retryBehavior:
+      'Workflow retries up to three times with exponential backoff; task-key marker lookup prevents duplicates when GitHub exposes prior writes, otherwise verify manually.',
+    approvalRequired: true,
+  },
+] as const;
 
 export const automationActionInputSchema = z.union([
   emptyActionInputSchema,
@@ -306,14 +396,11 @@ export function isAutomationExecutionAuthorized(input: {
   } | null;
   plan: ApprovalPayloadSource;
 }): boolean {
-  if (
-    input.mode === 'AUTO_LOW_RISK' &&
-    input.plan.tasks.every(
-      (task) =>
-        task.action !== AUTOMATION_ACTIONS.CREATE_GITHUB_ISSUE &&
-        task.action !== AUTOMATION_ACTIONS.CREATE_GITHUB_PR_COMMENT
-    )
-  ) {
+  const actionsMayRunWithoutApproval = input.plan.tasks.every((task) => {
+    const contract = automationActionCatalog.find((action) => action.id === task.action)
+    return contract !== undefined && !contract.approvalRequired
+  })
+  if (input.mode === 'AUTO_LOW_RISK' && actionsMayRunWithoutApproval) {
     return true;
   }
   if (input.mode !== 'APPROVAL_REQUIRED' || !input.approval) return false;

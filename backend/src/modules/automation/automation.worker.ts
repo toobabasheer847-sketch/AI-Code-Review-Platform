@@ -313,7 +313,11 @@ async function processAutomation(job: Job<AutomationJobData>): Promise<void> {
           throw new Error('Automation execution attempt could not be completed');
         }
         await transaction.automationEvent.create({
-          data: { automationId, type: 'task_completed', message: 'An automation task completed.' },
+          data: {
+            automationId,
+            type: 'action_executed',
+            message: `Workflow action ${task.action} completed for its owner.`,
+          },
         });
         return true;
       });
@@ -357,8 +361,8 @@ async function processAutomation(job: Job<AutomationJobData>): Promise<void> {
         await transaction.automationEvent.create({
           data: {
             automationId,
-            type: 'task_failed',
-            message: 'An automation task failed. Retry is available after the job stops retrying.',
+            type: 'action_failed',
+            message: `Workflow action ${task.action} failed. Retry is available after the job stops retrying.`,
           },
         });
         return true;

@@ -228,6 +228,23 @@ test('disconnect removes local credential even when GitHub revocation fails', as
       throw new Error('mock provider failure')
     },
   })
+
+  test('disconnect removes a credential locally when its ciphertext can no longer be decrypted', async () => {
+    let removed = false
+    const github = new GitHubService(axios.create(), undefined, {
+      async findCredential() {
+        return { id: 'account-1', accessToken: 'invalid-ciphertext' }
+      },
+      async removeCredential(userId, accountId) {
+        assert.equal(userId, 'user-1')
+        assert.equal(accountId, 'account-1')
+        removed = true
+      },
+    })
+
+    assert.deepEqual(await github.disconnectAccount('user-1'), { providerRevoked: false })
+    assert.equal(removed, true)
+  })
   const github = new GitHubService(api, undefined, {
     async findCredential() {
       return { id: 'account-1', accessToken: encrypt('mock-github-token') }

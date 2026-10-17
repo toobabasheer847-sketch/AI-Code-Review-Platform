@@ -37,6 +37,8 @@ test('mounts protected API routes and rejects requests without a valid token', a
     ['/automations/not-owned/reject', { method: 'POST' }],
     ['/automations/not-owned/approve', { method: 'POST' }],
     ['/social/status'],
+    ['/integrations'],
+    ['/integrations/github/check', { method: 'POST' }],
     ['/social/posts'],
     ['/social/linkedin/connect', { method: 'POST' }],
     ['/social/drafts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }],

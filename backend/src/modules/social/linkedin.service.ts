@@ -107,12 +107,14 @@ export class LinkedInService {
         accessToken: encrypt(tokenResponse.access_token),
         scopes: grantedScopes,
         tokenExpiresAt: new Date(Date.now() + tokenResponse.expires_in * 1_000),
+        lastSuccessfulConnectionCheckAt: new Date(),
       },
       update: {
         displayName: (profile.name ?? 'LinkedIn member').slice(0, 200),
         accessToken: encrypt(tokenResponse.access_token),
         scopes: grantedScopes,
         tokenExpiresAt: new Date(Date.now() + tokenResponse.expires_in * 1_000),
+        lastSuccessfulConnectionCheckAt: new Date(),
       },
     });
   }
@@ -161,6 +163,31 @@ export class LinkedInService {
     } catch {
       throw new SocialProviderError('Stored LinkedIn authorization cannot be decrypted. Reconnect the account.', 'TOKEN_UNAVAILABLE');
     }
+  }
+
+  async checkConnection(userId: string, accountId: string): Promise<{ checkedAt: Date }> {
+    const { account, accessToken } = await this.getAccessToken(userId, accountId)
+    let profile: LinkedInProfile
+    try {
+      const response = await this.http.get<LinkedInProfile>('https://api.linkedin.com/v2/userinfo', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
+      profile = response.data
+    } catch {
+      throw new SocialProviderError(
+        'LinkedIn authorization could not be verified. Reconnect the account if this continues.',
+        'CONNECTION_CHECK_FAILED'
+      )
+    }
+    if (profile.sub !== account.providerAccountId) {
+      throw new SocialProviderError('LinkedIn returned a different account identity.', 'IDENTITY_MISMATCH')
+    }
+    const checkedAt = new Date()
+    await prisma.socialAccount.updateMany({
+      where: { id: account.id, userId, provider: SocialProvider.LINKEDIN },
+      data: { lastSuccessfulConnectionCheckAt: checkedAt },
+    })
+    return { checkedAt }
   }
 
   async disconnect(userId: string, accountId: string): Promise<void> {

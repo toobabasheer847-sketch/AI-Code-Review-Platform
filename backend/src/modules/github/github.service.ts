@@ -8,6 +8,8 @@ import {
   GITHUB_TOKEN_URL,
   GitHubTokenResponse,
   GitHubUserProfile,
+  hasRequiredGitHubScopes,
+  parseGitHubGrantedScopes,
 } from './github.oauth'
 
 const GITHUB_API_BASE = 'https://api.github.com'
@@ -792,7 +794,7 @@ export class GitHubService {
     return getGitHubAuthorizeUrl(state)
   }
 
-  async exchangeCodeForToken(code: string): Promise<string> {
+  async exchangeCodeForToken(code: string): Promise<{ accessToken: string; scopes: string[] }> {
     if (!env.GITHUB_CLIENT_ID || !env.GITHUB_CLIENT_SECRET || !env.GITHUB_CALLBACK_URL) {
       throw new Error('GitHub OAuth environment variables are missing')
     }
@@ -807,7 +809,12 @@ export class GitHubService {
       throw new Error('Failed to exchange GitHub authorization code for access token')
     }
 
-    return response.data.access_token
+    const scopes = parseGitHubGrantedScopes(response.data.scope)
+    if (!hasRequiredGitHubScopes(scopes)) {
+      throw new Error('GitHub did not grant all required repository and identity permissions')
+    }
+
+    return { accessToken: response.data.access_token, scopes }
   }
 
   async fetchGitHubProfile(accessToken: string): Promise<GitHubUserProfile> {
@@ -826,7 +833,12 @@ export class GitHubService {
     await this.fetchGitHubProfile(accessToken)
   }
 
-  async saveGitHubAccount(userId: string, profile: GitHubUserProfile, accessToken: string) {
+  async saveGitHubAccount(
+    userId: string,
+    profile: GitHubUserProfile,
+    accessToken: string,
+    scopes: string[]
+  ) {
     const existingAccount = await prisma.gitHubAccount.findUnique({
       where: {
         githubId: profile.id.toString(),
@@ -847,11 +859,15 @@ export class GitHubService {
           githubId: profile.id.toString(),
           username: profile.login,
           accessToken: encryptedToken,
+          scopes,
+          lastSuccessfulConnectionCheckAt: new Date(),
         },
         update: {
           githubId: profile.id.toString(),
           username: profile.login,
           accessToken: encryptedToken,
+          scopes,
+          lastSuccessfulConnectionCheckAt: new Date(),
         },
       }),
       prisma.user.update({
@@ -890,12 +906,41 @@ export class GitHubService {
     return token
   }
 
+  async checkConnection(userId: string): Promise<{ username: string; checkedAt: Date }> {
+    const account = await prisma.gitHubAccount.findUnique({ where: { userId } })
+    if (!account) {
+      throw new GitHubIntegrationError('GitHub is not connected for this user.', 404)
+    }
+    const { plaintext: token, needsReEncryption } = decryptWithRotation(account.accessToken)
+    const profile = await this.fetchGitHubProfile(token)
+    if (!hasRequiredGitHubScopes(account.scopes)) {
+      throw new GitHubIntegrationError('GitHub authorization is missing required permissions.', 403)
+    }
+    if (profile.id.toString() !== account.githubId) {
+      throw new GitHubIntegrationError('GitHub returned a different account identity.', 403)
+    }
+    const checkedAt = new Date()
+    await prisma.gitHubAccount.update({
+      where: { id: account.id, userId },
+      data: {
+        lastSuccessfulConnectionCheckAt: checkedAt,
+        ...(needsReEncryption ? { accessToken: encrypt(token) } : {}),
+      },
+    })
+    return { username: profile.login, checkedAt }
+  }
+
   async disconnectAccount(userId: string): Promise<{ providerRevoked: boolean }> {
     const account = await this.accountLifecycleStore.findCredential(userId)
     if (!account) return { providerRevoked: false }
 
-    const { plaintext: accessToken } = decryptWithRotation(account.accessToken)
-    const providerRevoked = await this.revokeAccessToken(accessToken)
+    let providerRevoked = false
+    try {
+      const { plaintext: accessToken } = decryptWithRotation(account.accessToken)
+      providerRevoked = await this.revokeAccessToken(accessToken)
+    } catch {
+      providerRevoked = false
+    }
 
     await this.accountLifecycleStore.removeCredential(userId, account.id)
     return { providerRevoked }

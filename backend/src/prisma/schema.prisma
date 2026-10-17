@@ -181,6 +181,8 @@ model GitHubAccount {
   githubId    String   @unique
   username    String
   accessToken String
+  scopes      String[] @default([])
+  lastSuccessfulConnectionCheckAt DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
@@ -211,6 +213,7 @@ model SocialAccount {
   accessToken       String
   scopes            String[]
   tokenExpiresAt    DateTime
+  lastSuccessfulConnectionCheckAt DateTime?
   posts             SocialPost[]
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt

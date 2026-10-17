@@ -7,6 +7,7 @@ import logger from '@/utils/logger';
 import { SocialService, SocialServiceError } from './social.service';
 import { LinkedInService } from './linkedin.service';
 import { SocialProviderError } from './social.provider';
+import { isValidOAuthState } from '@/modules/integrations/oauth-state';
 
 const socialService = new SocialService();
 const linkedinService = new LinkedInService();
@@ -106,7 +107,7 @@ export class SocialController {
     res.clearCookie('social_linkedin_state', clearCookie);
     res.clearCookie('social_linkedin_user', clearCookie);
     try {
-      if (!state || !code || !cookieState || state !== cookieState || !cookieUser) {
+      if (!code || !isValidOAuthState(state, cookieState) || !cookieUser) {
         throw new SocialProviderError('LinkedIn authorization state is invalid or expired.', 'INVALID_OAUTH_STATE');
       }
       const userId = decrypt(cookieUser);
