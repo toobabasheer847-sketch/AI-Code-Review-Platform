@@ -89,8 +89,11 @@ export const ReviewDetails = ({ review }: { review: ReviewDetail }): JSX.Element
             >
               <div className={`text-5xl font-bold ${scoreStyles.text}`}>{qualityScore}</div>
               <div className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-400">
-                Quality Score
+                Heuristic review score
               </div>
+              <p className="mt-1 max-w-28 text-center text-[9px] leading-3 text-slate-500">
+                Based on reported findings; not a guarantee of overall code quality.
+              </p>
             </div>
           )}
         </div>
@@ -112,7 +115,10 @@ export const ReviewDetails = ({ review }: { review: ReviewDetail }): JSX.Element
             Issues ({review.findings.length})
           </h3>
           {review.findings.length === 0 ? (
-            <p className="text-sm text-slate-400">No issues found. Great code!</p>
+            <p className="text-sm text-slate-400">
+              No findings were validated for the supplied source. This does not guarantee the code
+              is free of issues.
+            </p>
           ) : (
             <ul className="space-y-4 divide-y divide-slate-800/80">
               {review.findings.map((f, i) => (

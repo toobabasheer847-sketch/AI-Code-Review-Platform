@@ -97,16 +97,16 @@ export function validateAnalysis(
   limitations: string[] = []
 ): ReviewAnalysis {
   const analysis = analysisSchema.parse(value)
-  const fileByPath = new Map(
-    files.map((file) => [file.path, file.content.split(/\r?\n/)])
-  )
+  const fileByPath = new Map(files.map((file) => [file.path, file]))
   const findings: ReviewFinding[] = []
   const duplicateKeys = new Set<string>()
 
   for (const finding of analysis.findings) {
-    const sourceLines = fileByPath.get(finding.file)
+    const sourceFile = fileByPath.get(finding.file)
+    const sourceLines = sourceFile?.content.split(/\r?\n/)
     const endLine = finding.endLine ?? finding.line
     if (
+      sourceFile === undefined ||
       sourceLines === undefined ||
       finding.line > sourceLines.length ||
       endLine < finding.line ||
@@ -123,11 +123,21 @@ export function validateAnalysis(
     if (!sourceExcerpt.includes(evidence)) {
       throw new Error('AI returned finding evidence that is not present at the cited location')
     }
+    if (
+      sourceFile.changedLines &&
+      sourceFile.changedLines.length > 0 &&
+      !Array.from({ length: endLine - finding.line + 1 }, (_, index) =>
+        sourceFile.changedLines?.includes(finding.line + index)
+      ).every(Boolean)
+    ) {
+      throw new Error('AI returned a finding outside the changed lines')
+    }
 
     const key = [
       finding.file.toLowerCase(),
       finding.category,
-      normalizeEvidence(finding.title).toLowerCase(),
+      finding.line,
+      endLine,
       evidence.toLowerCase(),
     ].join('\u0000')
     if (duplicateKeys.has(key)) continue

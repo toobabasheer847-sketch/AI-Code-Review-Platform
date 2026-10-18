@@ -8,7 +8,7 @@ AI-CodeGuard is a full-stack application for AI-assisted code review with GitHub
 
 ## 🚀 Features
 
-- **AI-Powered Code Review**: Automated analysis using OpenAI GPT models
+- **AI-Powered Code Review**: Automated analysis using OpenAI GPT models. Findings are validated against supplied source (and available pull-request diff lines); displayed scores are heuristic indicators, not guarantees that code is safe or issue-free.
 - **Real-time Collaboration**: Socket.io powered chat and discussions
 - **GitHub Integration**: Seamless GitHub repository integration with OAuth
 - **GitHub Development Agent**: Evidence-backed repository and pull-request context with approval-gated issue and comment actions

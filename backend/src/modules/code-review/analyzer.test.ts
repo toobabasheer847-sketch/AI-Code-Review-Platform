@@ -84,12 +84,49 @@ test('deduplicates repeated findings within a review', () => {
   const result = validateAnalysis(
     {
       summary: 'Review',
-      findings: [finding, { ...finding, suggestions: ['Use a validation helper.'] }],
+      findings: [
+        finding,
+        {
+          ...finding,
+          title: 'A differently worded duplicate',
+          suggestions: ['Use a validation helper.'],
+        },
+      ],
     },
     files
   )
   assert.equal(result.findings.length, 1)
   assert.equal(result.analytics.totalIssues, 1)
+})
+
+test('requires pull request findings to identify changed lines when diff lines are available', () => {
+  const pullRequestFile = { ...files[0], changedLines: [1] }
+  assert.throws(
+    () =>
+      validateAnalysis(
+        { summary: 'Review', findings: [finding] },
+        [pullRequestFile]
+      ),
+    /outside the changed lines/
+  )
+  assert.equal(
+    validateAnalysis(
+      {
+        summary: 'Review',
+        findings: [{ ...finding, line: 1, endLine: 1, evidence: 'const input' }],
+      },
+      [{ ...files[0], changedLines: [1, 2] }]
+    ).findings.length,
+    1
+  )
+})
+
+test('fails explicitly when no source context is available', async () => {
+  await assert.rejects(analyzeCode([]), /No supported source files/)
+  assert.throws(
+    () => prepareReviewContext([]),
+    /No source files fit within the AI review context limit/
+  )
 })
 
 test('keeps repository prompt-injection text in untrusted user data', async () => {

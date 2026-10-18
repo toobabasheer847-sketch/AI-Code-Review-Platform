@@ -11,12 +11,15 @@ export const ReviewsPage = (): JSX.Element => {
   const q = useMemo(() => new URLSearchParams(search), [search])
   const repoParam = q.get('repo') || undefined
 
-  const { data: reviews = [], isLoading } = useListReviews()
+  const reviewsQuery = useListReviews()
+  const reviews = reviewsQuery.data ?? []
+  const { isLoading } = reviewsQuery
 
   const matched = repoParam
     ? reviews.find((r) => r.repository === decodeURIComponent(repoParam))
     : undefined
-  const { data: reviewDetail, isLoading: loadingDetail } = useGetReview(matched?.id)
+  const reviewDetailQuery = useGetReview(matched?.id)
+  const { data: reviewDetail, isLoading: loadingDetail } = reviewDetailQuery
 
   return (
     <div className="min-h-screen bg-[#0f172a] text-slate-100">
@@ -44,6 +47,26 @@ export const ReviewsPage = (): JSX.Element => {
             return <p className="text-sm text-slate-400">Loading reviews...</p>
           }
 
+          if (reviewsQuery.isError && reviews.length === 0) {
+            return (
+              <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-6" role="alert">
+                <p className="text-sm text-red-200">Reviews could not be loaded.</p>
+                <p className="mt-1 text-sm text-red-200/80">
+                  {reviewsQuery.error instanceof Error
+                    ? reviewsQuery.error.message
+                    : 'Unable to load reviews.'}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void reviewsQuery.refetch()}
+                  className="mt-3 rounded-lg border border-red-300/30 px-3 py-2 text-sm text-red-100 hover:bg-red-400/10"
+                >
+                  Try again
+                </button>
+              </div>
+            )
+          }
+
           if (repoParam) {
             if (!matched) {
               return (
@@ -56,6 +79,26 @@ export const ReviewsPage = (): JSX.Element => {
                     return a scorecard).
                   </p>
                   <StartReviewButton repo={decodeURIComponent(repoParam)} />
+                </div>
+              )
+            }
+
+            if (reviewDetailQuery.isError) {
+              return (
+                <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-6" role="alert">
+                  <p className="text-sm text-red-200">Review details could not be loaded.</p>
+                  <p className="mt-1 text-sm text-red-200/80">
+                    {reviewDetailQuery.error instanceof Error
+                      ? reviewDetailQuery.error.message
+                      : 'Unable to load this review.'}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void reviewDetailQuery.refetch()}
+                    className="mt-3 rounded-lg border border-red-300/30 px-3 py-2 text-sm text-red-100 hover:bg-red-400/10"
+                  >
+                    Try again
+                  </button>
                 </div>
               )
             }
@@ -113,8 +156,11 @@ export const ReviewsPage = (): JSX.Element => {
                       </div>
                       <div className="text-right">
                         <div className={`text-3xl font-bold ${scoreColor}`}>
-                          {r.score ?? '—'}
+                          {r.status === 'completed' ? (r.score ?? '—') : '—'}
                         </div>
+                        {r.status === 'completed' && r.score !== null && (
+                          <div className="text-[10px] text-slate-500">Heuristic score</div>
+                        )}
                         <div className="mt-1 text-sm text-slate-400">Issues: {r.issues}</div>
                       </div>
                     </div>
@@ -135,6 +181,11 @@ export const ReviewsPage = (): JSX.Element => {
             </div>
           )
         })()}
+        {reviewsQuery.isError && reviews.length > 0 && (
+          <p className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100" role="alert">
+            Could not refresh reviews. Showing previously loaded results.
+          </p>
+        )}
       </div>
     </div>
   )
