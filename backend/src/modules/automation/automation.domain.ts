@@ -146,6 +146,19 @@ export const automationActionCatalog = [
   },
 ] as const;
 
+export function automationApprovalSummary(
+  tasks: ReadonlyArray<{ action: string }>
+): string {
+  const requiresExternalApproval = tasks.some((task) => {
+    const action = automationActionCatalog.find((item) => item.id === task.action);
+    return action?.approvalRequired ?? true;
+  });
+
+  return requiresExternalApproval
+    ? 'Approve this workflow to authorize only the external write action(s) shown in the plan. The server rechecks current provider access before execution; no other external actions are authorized.'
+    : 'Approve this workflow to authorize only the listed read-only actions and draft generation. No external write or publication will be performed.';
+}
+
 export const automationActionInputSchema = z.union([
   emptyActionInputSchema,
   githubContextInputSchema,
@@ -320,6 +333,73 @@ export function canClaimAutomationTask(input: {
 
 export function canRetryAutomation(status: AutomationStatusValue, retryCount: number): boolean {
   return status === 'FAILED' && retryCount < MAX_AUTOMATION_RETRIES;
+}
+
+export function automationFailureMessage(error: unknown, action: string): string {
+  const value =
+    typeof error === 'object' && error !== null ? (error as Record<string, unknown>) : {};
+  const response =
+    typeof value.response === 'object' && value.response !== null
+      ? (value.response as Record<string, unknown>)
+      : {};
+  const status =
+    typeof value.statusCode === 'number'
+      ? value.statusCode
+      : typeof value.status === 'number'
+        ? value.status
+        : typeof response.status === 'number'
+          ? response.status
+          : null;
+  const retryAfterSeconds = value.retryAfterSeconds;
+  if (status === 429 || (typeof retryAfterSeconds === 'number' && retryAfterSeconds > 0)) {
+    return 'The provider rate limit was reached. The workflow uses bounded retries with backoff.';
+  }
+  if (status === 401 || status === 403) {
+    return 'The provider denied this action. Reconnect the integration or verify its permissions.';
+  }
+  if (status === 404) {
+    return 'The provider resource was not found or is no longer accessible.';
+  }
+  if (status === 408 || (status !== null && status >= 500)) {
+    return 'The provider is temporarily unavailable. The workflow uses bounded retries with backoff.';
+  }
+  if (status !== null && status >= 400) {
+    return 'The provider rejected this action. Review the workflow inputs and provider requirements.';
+  }
+
+  const code =
+    typeof value.code === 'string'
+      ? value.code
+      : typeof value.cause === 'object' &&
+          value.cause !== null &&
+          'code' in value.cause &&
+          typeof value.cause.code === 'string'
+        ? value.cause.code
+        : null;
+  if (
+    code &&
+    ['ECONNABORTED', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'ENOTFOUND'].includes(
+      code
+    )
+  ) {
+    return 'A network or timeout error interrupted the action. Verify connectivity and try again.';
+  }
+  if (value.name === 'ZodError') {
+    return 'Workflow action input failed validation. Review the saved plan inputs.';
+  }
+
+  const actionMessages: Record<string, string> = {
+    collect_review_results: 'Completed review data could not be loaded for this action.',
+    generate_text_draft:
+      'Draft generation did not complete. Verify AI-provider configuration and availability.',
+    collect_github_context:
+      'GitHub context could not be loaded. Verify repository access and try again.',
+    create_github_issue:
+      'GitHub did not confirm issue creation. Check the repository before retrying.',
+    create_github_pr_comment:
+      'GitHub did not confirm comment creation. Check the pull request before retrying.',
+  };
+  return actionMessages[action] ?? 'The workflow action failed unexpectedly.';
 }
 
 export function isFinalAutomationAttempt(attemptsMade: number, maxAttempts: number): boolean {

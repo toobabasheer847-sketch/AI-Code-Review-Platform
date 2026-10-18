@@ -1,10 +1,24 @@
-import { AutomationScheduleFrequency, AutomationStatus } from '@prisma/client';
+import {
+  AutomationScheduleFrequency,
+  AutomationScheduleRunStatus,
+  AutomationStatus,
+} from '@prisma/client';
 
 export const MAX_SCHEDULES_PER_USER = 5;
 export const MAX_CONSECUTIVE_SCHEDULE_FAILURES = 5;
 export const MAX_RUNNING_AUTOMATION_TASKS_PER_USER = 2;
 export const AUTOMATION_EXECUTION_TIMEOUT_MS = 10 * 60 * 1_000;
 export const AUTOMATION_RECOVERY_STALE_MS = 60_000;
+export const RETRYABLE_SCHEDULE_RUN_STATUSES: AutomationScheduleRunStatus[] = [
+  AutomationScheduleRunStatus.AWAITING_APPROVAL,
+  AutomationScheduleRunStatus.QUEUED,
+  AutomationScheduleRunStatus.RUNNING,
+  AutomationScheduleRunStatus.FAILED,
+];
+
+export function canRetryScheduledOccurrence(status: AutomationScheduleRunStatus): boolean {
+  return RETRYABLE_SCHEDULE_RUN_STATUSES.includes(status);
+}
 
 export function isRecoverableAutomation(
   status: AutomationStatus,

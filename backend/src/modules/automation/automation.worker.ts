@@ -22,6 +22,7 @@ import {
   AUTOMATION_TASK_LOCK_DURATION_MS,
   canClaimAutomationTask,
   createApprovalPayload,
+  automationFailureMessage,
   isAutomationExecutionAuthorized,
   isFinalAutomationAttempt,
   orderAutomationTaskKeys,
@@ -401,9 +402,12 @@ async function processAutomation(job: Job<AutomationJobData>): Promise<void> {
         return true;
       });
       if (!persisted) return;
-    } catch {
+    } catch (error) {
       const finalAttempt = isFinalAutomationAttempt(job.attemptsMade, job.opts.attempts ?? 1);
-      const safeErrorMessage = 'Automation task failed. You can retry this automation.';
+      const safeErrorMessage = automationFailureMessage(error, task.action);
+      const retryMessage = finalAttempt
+        ? 'Automatic retries are exhausted; retry the workflow manually if appropriate.'
+        : 'A bounded automatic retry will be attempted with backoff.';
       const persisted = await prisma.$transaction(async (transaction) => {
         const [state] = await transaction.$queryRaw<Array<{ status: AutomationStatus }>>`
           SELECT "status" FROM "Automation" WHERE "id" = ${automationId} FOR UPDATE
@@ -441,7 +445,7 @@ async function processAutomation(job: Job<AutomationJobData>): Promise<void> {
           data: {
             automationId,
             type: 'action_failed',
-            message: `Workflow action ${task.action} failed. Retry is available after the job stops retrying.`,
+            message: `Workflow action ${task.action} failed. ${safeErrorMessage} ${retryMessage}`,
           },
         });
         return true;

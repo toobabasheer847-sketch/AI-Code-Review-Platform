@@ -18,6 +18,7 @@ export const integrationProviders = [
       'GitHub OAuth classic repo scope can grant broad access to repositories available to the account; repository-specific scope selection is not supported by this OAuth flow.',
       'Organization SSO or policy restrictions can deny repository access even when OAuth succeeds.',
       'Pull request review submission and repository file changes are not available workflow actions. Write retries use task-key markers, but a provider visibility delay can require manual verification.',
+      'Configured pull-request webhooks can publish review comments automatically after signature, repository, and commit checks; this webhook review path does not use the in-app automation approval inbox.',
     ],
     actions: automationActionCatalog.filter((action) => action.provider === 'github'),
   },

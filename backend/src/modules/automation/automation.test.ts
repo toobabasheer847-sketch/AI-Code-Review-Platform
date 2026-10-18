@@ -3,9 +3,11 @@ import test from 'node:test';
 import { AutomationActionRegistry, type ReviewResult } from './automation.actions';
 import {
   areAutomationDependenciesCompleted,
+  automationFailureMessage,
   canClaimAutomationTask,
   canRetryAutomation,
   canTransitionAutomation,
+  automationApprovalSummary,
   createApprovalPayload,
   hashApprovalPayload,
   isApprovalPayloadIntact,
@@ -35,6 +37,26 @@ const validPlan = {
     },
   ],
 };
+
+test('approval summaries distinguish internal plans from approved external writes', () => {
+  assert.match(automationApprovalSummary(validPlan.tasks), /read-only actions/i);
+  assert.match(
+    automationApprovalSummary([
+      {
+        action: 'create_github_issue',
+      },
+    ]),
+    /external write action/
+  );
+  assert.match(
+    automationApprovalSummary([
+      {
+        action: 'create_github_pr_comment',
+      },
+    ]),
+    /rechecks current provider access/
+  );
+});
 
 test('planner parses and validates structured model output', async () => {
   const plan = await createAutomationPlan('Write a technical update', async () =>
@@ -281,6 +303,27 @@ test('retry and worker failure state boundaries remain bounded and deterministic
   assert.equal(canRetryAutomation('RUNNING', 0), false);
   assert.equal(isFinalAutomationAttempt(0, 3), false);
   assert.equal(isFinalAutomationAttempt(2, 3), true);
+});
+
+test('automation failure details are actionable without exposing provider error payloads', () => {
+  const secretMessage = 'Request failed with token=private-token-value';
+  assert.equal(
+    automationFailureMessage(
+      { name: 'GitHubIntegrationError', statusCode: 403, message: secretMessage },
+      'create_github_issue'
+    ),
+    'The provider denied this action. Reconnect the integration or verify its permissions.'
+  );
+  assert.equal(
+    automationFailureMessage(
+      { name: 'OpenAIError', status: 429, message: secretMessage },
+      'generate_text_draft'
+    ),
+    'The provider rate limit was reached. The workflow uses bounded retries with backoff.'
+  );
+  const unknownFailure = automationFailureMessage(new Error(secretMessage), 'generate_text_draft');
+  assert.match(unknownFailure, /AI-provider configuration and availability/);
+  assert.doesNotMatch(unknownFailure, /private-token-value/);
 });
 
 test('action registry runs the injected draft provider and rejects unsupported actions', async () => {

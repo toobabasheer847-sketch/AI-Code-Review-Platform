@@ -1,4 +1,6 @@
+import { isAxiosError } from 'axios'
 import { Github, Loader2 } from 'lucide-react'
+import { Link } from 'react-router-dom'
 
 import { useConnectGitHub } from '../hooks/useGitHub'
 
@@ -8,6 +10,10 @@ interface ConnectGitHubButtonProps {
 
 export const ConnectGitHubButton = ({ className = '' }: ConnectGitHubButtonProps): JSX.Element => {
   const { mutate: connectGitHub, isPending, error } = useConnectGitHub()
+  const verificationRequired =
+    isAxiosError<{ error?: unknown }>(error) &&
+    error.response?.status === 403 &&
+    error.response.data?.error === 'Email verification required'
 
   return (
     <div className={className}>
@@ -22,7 +28,17 @@ export const ConnectGitHubButton = ({ className = '' }: ConnectGitHubButtonProps
       </button>
       {error && (
         <p className="mt-2 text-sm text-destructive">
-          {error instanceof Error ? error.message : 'Unable to start GitHub connection'}
+          {verificationRequired ? (
+            <>
+              Verify your email before connecting GitHub.{' '}
+              <Link to="/settings" className="font-semibold underline underline-offset-4">
+                Go to Account security
+              </Link>{' '}
+              to resend the verification email.
+            </>
+          ) : (
+            error.message || 'Unable to start GitHub connection'
+          )}
         </p>
       )}
     </div>

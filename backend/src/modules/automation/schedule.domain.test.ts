@@ -5,6 +5,7 @@ import {
   activeScheduleLimit,
   automationRecoveryJobId,
   AUTOMATION_RECOVERY_STALE_MS,
+  canRetryScheduledOccurrence,
   canExecuteScheduledRun,
   isRecoverableAutomation,
   isAutomationExecutionTimedOut,
@@ -98,10 +99,25 @@ test('fires a daily summary once per local date at or after its configured wall 
     assert.equal(shouldSkipMissedOccurrences(1), false);
     assert.equal(shouldSkipMissedOccurrences(2), true);
     const occurrence = new Date('2026-06-10T09:00:00.000Z');
+    const occurrenceKey = scheduledAutomationIdempotencyKey('schedule-id', occurrence);
     assert.equal(
-      scheduledAutomationIdempotencyKey('schedule-id', occurrence),
+      occurrenceKey,
       scheduledAutomationIdempotencyKey('schedule-id', new Date(occurrence))
     );
+    assert.notEqual(
+      occurrenceKey,
+      scheduledAutomationIdempotencyKey(
+        'schedule-id',
+        new Date('2026-06-11T09:00:00.000Z')
+      )
+    );
+  });
+
+  test('allows an eligible scheduled occurrence to return to queued on workflow retry', () => {
+    assert.equal(canRetryScheduledOccurrence('FAILED'), true);
+    assert.equal(canRetryScheduledOccurrence('RUNNING'), true);
+    assert.equal(canRetryScheduledOccurrence('COMPLETED'), false);
+    assert.equal(canRetryScheduledOccurrence('SKIPPED'), false);
   });
 
   test('uses an inclusive, persisted execution deadline', () => {

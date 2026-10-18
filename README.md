@@ -216,13 +216,21 @@ not pushed changes.
 Preparing an issue or pull-request comment requires repository write access and
 creates an approval request containing the exact action payload. The server
 revalidates repository/target access and approval before execution, and
-idempotency markers protect retries. The only external write actions are issue
+idempotency markers protect retries. The only GitHub Development Agent external write actions are issue
 creation and pull-request comments; pushing branches, creating or changing
 pull requests, merging, and arbitrary GitHub API calls are unsupported.
 GitHub API access remains bounded by the existing OAuth scopes and account
 permissions; broad `repo` scope is retained for compatibility with existing
 private-repository review features. Shell, filesystem, SQL, and arbitrary
 network execution are not supported.
+
+Separately, a configured pull-request webhook can queue a review whose findings
+are submitted as a GitHub pull-request review comment after webhook signature,
+connected-account repository, and pull-request commit checks pass. This webhook
+review publication is automatic and does not create an in-app approval request;
+the webhook configuration is the opt-in for that behavior. It is distinct from
+GitHub Development Agent issue/comment actions, which require an explicit
+approval for the exact write payload.
 
 ### Phase 9: Social publishing
 
@@ -354,6 +362,10 @@ user, retried by BullMQ up to three times with exponential backoff, and has a
 persisted ten-minute execution deadline checked between actions. A currently
 in-flight provider request is not forcibly killed; provider-side request
 timeouts and action idempotency remain necessary for safe recovery.
+Task failures show an action-specific sanitized explanation in workflow history;
+provider response bodies, credentials, and raw exception messages are not shown.
+Retrying a failed scheduled workflow returns its occurrence to queued history and
+increments that occurrence's retry counter.
 
 Workflows requiring approval remain approval-gated for every scheduled run.
 Pausing or canceling skips unclaimed occurrences; canceling a schedule does

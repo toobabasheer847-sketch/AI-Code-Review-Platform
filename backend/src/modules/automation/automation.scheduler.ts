@@ -357,40 +357,18 @@ async function syncCompletedScheduleExecutions(): Promise<void> {
         },
       });
     } else if (automation.status === AutomationStatus.FAILED) {
-      const currentSchedule = await prisma.automationSchedule.findUnique({
-        where: { id: run.scheduleId },
-        select: { consecutiveFailures: true },
-      });
-      const preferences = await prisma.automationNotificationPreference.findUnique({
-        where: { userId: run.schedule.userId },
-      });
-      const nextFailureCount = (currentSchedule?.consecutiveFailures ?? 0) + 1;
-      const threshold = preferences?.repeatedFailureThreshold ?? FAILURE_NOTIFICATION_THRESHOLD;
-      if (preferences?.failureNotifications ?? true) {
-        await createAutomationNotification({
-          userId: run.schedule.userId,
-          dedupeKey: `schedule-execution-failed:${run.id}`,
-          subject: `Scheduled workflow failed: ${run.schedule.title}`,
-          heading: 'A scheduled workflow failed',
-          details: ['The workflow reached a terminal failed state after its bounded retries.'],
-        });
-        if (nextFailureCount >= threshold) {
-          await createAutomationNotification({
-            userId: run.schedule.userId,
-            dedupeKey: `schedule-repeated-failure:${run.scheduleId}:${nextFailureCount}`,
-            subject: `Repeated scheduled workflow failures: ${run.schedule.title}`,
-            heading: 'Repeated scheduled workflow failures',
-            details: [`This schedule has failed ${nextFailureCount} consecutive times.`],
-          });
-        }
-      }
-
-      await prisma.$transaction(async (transaction) => {
+      const nextFailureCount = await prisma.$transaction(async (transaction) => {
+        const [currentAutomation] = await transaction.$queryRaw<
+          Array<{ status: AutomationStatus }>
+        >`
+          SELECT "status" FROM "Automation" WHERE "id" = ${run.automationId} FOR UPDATE
+        `;
+        if (currentAutomation?.status !== AutomationStatus.FAILED) return null;
         const changed = await transaction.automationScheduleRun.updateMany({
           where: { id: run.id, status: { in: ACTIVE_SCHEDULE_RUN_STATUSES } },
           data: { status: AutomationScheduleRunStatus.FAILED, errorCode: 'WORKFLOW_FAILED' },
         });
-        if (changed.count !== 1) return;
+        if (changed.count !== 1) return null;
         const schedule = await transaction.automationSchedule.update({
           where: { id: run.scheduleId },
           data: { consecutiveFailures: { increment: 1 } },
@@ -402,7 +380,33 @@ async function syncCompletedScheduleExecutions(): Promise<void> {
             data: { status: AutomationScheduleStatus.PAUSED },
           });
         }
+        const preferences = await transaction.automationNotificationPreference.findUnique({
+          where: { userId: run.schedule.userId },
+        });
+        const threshold = preferences?.repeatedFailureThreshold ?? FAILURE_NOTIFICATION_THRESHOLD;
+        if (preferences?.failureNotifications ?? true) {
+          await createAutomationNotification({
+            userId: run.schedule.userId,
+            dedupeKey: `schedule-execution-failed:${run.id}`,
+            subject: `Scheduled workflow failed: ${run.schedule.title}`,
+            heading: 'A scheduled workflow failed',
+            details: ['The workflow reached a terminal failed state after its bounded retries.'],
+          });
+          if (schedule.consecutiveFailures >= threshold) {
+            await createAutomationNotification({
+              userId: run.schedule.userId,
+              dedupeKey: `schedule-repeated-failure:${run.scheduleId}:${schedule.consecutiveFailures}`,
+              subject: `Repeated scheduled workflow failures: ${run.schedule.title}`,
+              heading: 'Repeated scheduled workflow failures',
+              details: [
+                `This schedule has failed ${schedule.consecutiveFailures} consecutive times.`,
+              ],
+            });
+          }
+        }
+        return schedule.consecutiveFailures;
       });
+      if (nextFailureCount === null) continue;
     }
   }
 }

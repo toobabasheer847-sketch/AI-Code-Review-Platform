@@ -113,8 +113,9 @@ export const AutomationCommandInput = ({
     <div className="flex items-start gap-2 border-t border-white/[0.06] bg-white/[0.015] px-5 py-3 sm:px-6">
       <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" aria-hidden="true" />
       <p className="text-[11px] leading-5 text-slate-500">
-        Only saved, completed code reviews and internal drafts are supported. No external action is
-        available to run. Your plan is subject to server-side validation.
+        This composer supports saved, completed code reviews and internal drafts only. Separate
+        GitHub Development Agent workflows can propose issue or pull-request comment writes, which
+        require approval. Your plan is subject to server-side validation.
       </p>
     </div>
   </section>

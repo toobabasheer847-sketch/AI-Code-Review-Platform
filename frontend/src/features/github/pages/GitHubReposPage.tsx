@@ -110,8 +110,15 @@ export const GitHubReposPage = (): JSX.Element => {
               <RefreshCw className={`h-4 w-4 ${isFetching || isRefreshingUser ? 'animate-spin' : ''}`} />
               Refresh
             </button>
-          ) : (
+          ) : user?.isVerified ? (
             <ConnectGitHubButton className="rounded-xl bg-slate-900/60 border border-slate-800 text-white" />
+          ) : (
+            <Link
+              to="/settings"
+              className="inline-flex h-10 items-center justify-center rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 text-sm font-medium text-amber-200 transition hover:bg-amber-500/20"
+            >
+              Verify email to connect GitHub
+            </Link>
           )}
         </div>
 
@@ -127,7 +134,22 @@ export const GitHubReposPage = (): JSX.Element => {
             <p className="mt-2 max-w-2xl text-sm text-slate-400">
               AI-CodeGuard needs repository access before it can prepare source files for review.
             </p>
-            <ConnectGitHubButton className="mt-5 rounded-xl bg-gradient-to-r from-indigo-500 to-blue-600 text-white" />
+            {user?.isVerified ? (
+              <ConnectGitHubButton className="mt-5 rounded-xl bg-gradient-to-r from-indigo-500 to-blue-600 text-white" />
+            ) : (
+              <div
+                role="alert"
+                className="mt-5 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100"
+              >
+                <p>Verify your email address before connecting GitHub.</p>
+                <Link
+                  to="/settings"
+                  className="mt-2 inline-block font-semibold text-amber-200 underline underline-offset-4 hover:text-white"
+                >
+                  Go to Account security to resend the verification email
+                </Link>
+              </div>
+            )}
           </section>
         )}
 

@@ -1,6 +1,7 @@
 import {
   AutomationMode,
   AutomationApprovalStatus,
+  AutomationScheduleRunStatus,
   AutomationStatus,
   AutomationTaskStatus,
   Prisma,
@@ -21,6 +22,7 @@ import {
   MAX_AUTOMATION_RETRIES,
   canRetryAutomation,
   canTransitionAutomation,
+  automationApprovalSummary,
   createApprovalPayload,
   hashApprovalPayload,
   isApprovalPayloadIntact,
@@ -29,6 +31,7 @@ import {
   type AutomationModeValue,
   type ValidatedPlan,
 } from './automation.domain';
+import { RETRYABLE_SCHEDULE_RUN_STATUSES } from './schedule.domain';
 
 const automationInclude = {
   tasks: {
@@ -150,8 +153,7 @@ export class AutomationService {
                     approvals: {
                       create: {
                         userId,
-                        summary:
-                          'Approve this internal workflow plan. It can read your completed code reviews and generate a draft, but cannot publish or modify external services.',
+                        summary: automationApprovalSummary(plan.tasks),
                         payload: approvalPayload as Prisma.InputJsonValue,
                         payloadHash: hashApprovalPayload(approvalPayload),
                         expiresAt: new Date(Date.now() + AUTOMATION_APPROVAL_TTL_MS),
@@ -290,8 +292,7 @@ export class AutomationService {
           data: {
             automationId,
             userId,
-            summary:
-              approvalNode?.message ?? 'Approve this visual workflow before its actions run.',
+            summary: `${automationApprovalSummary(plan.tasks)}\nWorkflow note: ${approvalNode?.message ?? 'No additional note provided.'}`,
             payload: expectedPayload as Prisma.InputJsonValue,
             payloadHash: hashApprovalPayload(expectedPayload),
             expiresAt: new Date(Date.now() + AUTOMATION_APPROVAL_TTL_MS),
@@ -618,6 +619,22 @@ export class AutomationService {
         where: { automationId, status: AutomationTaskStatus.FAILED },
         data: { status: AutomationTaskStatus.PENDING, errorMessage: null },
       });
+      if (automation.scheduleId && automation.scheduledFor) {
+        const scheduleRun = await transaction.automationScheduleRun.updateMany({
+          where: {
+            scheduleId: automation.scheduleId,
+            scheduledFor: automation.scheduledFor,
+            status: { in: RETRYABLE_SCHEDULE_RUN_STATUSES },
+          },
+          data: {
+            status: AutomationScheduleRunStatus.QUEUED,
+            retryCount: { increment: 1 },
+          },
+        });
+        if (scheduleRun.count !== 1) {
+          throw new AutomationError('Scheduled occurrence state changed; refresh and retry.', 409);
+        }
+      }
       await transaction.automationEvent.create({
         data: { automationId, type: 'retry', message: 'Automation retry queued.' },
       });

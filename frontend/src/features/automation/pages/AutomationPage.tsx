@@ -101,6 +101,33 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+type ApprovalTask = { action: string };
+
+function hasExternalGitHubWrite(tasks: ApprovalTask[]): boolean {
+  return tasks.some(
+    (task) =>
+      task.action === 'create_github_issue' || task.action === 'create_github_pr_comment'
+  );
+}
+
+function approvalScopeDescription(tasks: ApprovalTask[]): string {
+  return hasExternalGitHubWrite(tasks)
+    ? 'Approval authorizes only the exact GitHub issue or pull-request comment action shown below, along with its listed read steps. The server rechecks repository access before the write; no other external action is authorized.'
+    : 'Approval authorizes only the listed read-only actions and draft generation. No external write or publication will be performed.';
+}
+
+function approvalConfirmation(title: string, tasks: ApprovalTask[]): string {
+  return hasExternalGitHubWrite(tasks)
+    ? `Approve "${title}"? This authorizes only the exact GitHub issue or pull-request comment action shown in the plan, after the server rechecks repository access.`
+    : `Approve "${title}"? This authorizes only the listed read-only actions and draft generation. No external write will be performed.`;
+}
+
+function approvalWorkflowNote(summary: string): string | null {
+  const marker = 'Workflow note: ';
+  const noteStart = summary.indexOf(marker);
+  return noteStart === -1 ? null : summary.slice(noteStart + marker.length).trim();
+}
+
 function DraftOutput({ task }: { task: AutomationTask }): JSX.Element | null {
   if (typeof task.output !== 'object' || task.output === null) return null;
   if ('draft' in task.output && typeof task.output.draft === 'string') {
@@ -435,10 +462,17 @@ function WorkflowCard({
                 />
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-semibold text-amber-100">Plan approval required</p>
-                  <p className="mt-1 text-xs leading-5 text-slate-400">{approval.summary}</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-400">
+                    {approvalScopeDescription(approval.payload.tasks)}
+                  </p>
+                  {approvalWorkflowNote(approval.summary) && (
+                    <p className="mt-1 text-xs leading-5 text-slate-500">
+                      Workflow note: {approvalWorkflowNote(approval.summary)}
+                    </p>
+                  )}
                   <p className="mt-2 text-[10px] text-slate-500">
-                    Expires {new Date(approval.expiresAt).toLocaleString()}. Approving starts only
-                    the internal steps listed below; it cannot publish or change external services.
+                    Expires {new Date(approval.expiresAt).toLocaleString()}. The server checks the
+                    unchanged approval fingerprint before execution.
                   </p>
                   <details className="mt-3">
                     <summary className="cursor-pointer text-[10px] font-medium text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400">
@@ -454,7 +488,7 @@ function WorkflowCard({
                       onClick={() => {
                         if (
                           window.confirm(
-                            `Approve "${automation.title}"? This authorizes only the listed internal read and draft tasks. No external action will be performed.`
+                            approvalConfirmation(automation.title, approval.payload.tasks)
                           )
                         ) {
                           onApprove(automation.id);
@@ -464,7 +498,9 @@ function WorkflowCard({
                       className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-amber-300 px-3 text-xs font-semibold text-slate-950 transition hover:bg-amber-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-200 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <Check className="h-3.5 w-3.5" aria-hidden="true" />
-                      Approve internal plan
+                      {hasExternalGitHubWrite(approval.payload.tasks)
+                        ? 'Approve plan and GitHub write'
+                        : 'Approve read-only plan'}
                     </button>
                     <button
                       type="button"
@@ -735,7 +771,7 @@ export const AutomationPage = (): JSX.Element => {
           </Link>
           <div className="flex items-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2 text-[11px] text-slate-400">
             <ShieldCheck className="h-4 w-4 text-emerald-400" aria-hidden="true" />
-            Approval-aware · internal actions only
+            Approval-aware · exact external writes require approval
           </div>
         </div>
       </div>
@@ -857,11 +893,12 @@ export const AutomationPage = (): JSX.Element => {
             </ul>
             <div className="mt-5 rounded-lg border border-amber-400/15 bg-amber-400/[0.035] p-3">
               <p className="text-[11px] font-medium text-amber-100">
-                No external publishing or writes
+                Command plans make no external writes
               </p>
               <p className="mt-1 text-[10px] leading-4 text-slate-500">
-                Live GitHub activity and LinkedIn publishing are not connected. Generated drafts and
-                review text are not independently verified.
+                This composer can read completed reviews and create drafts. GitHub issue and
+                pull-request comment actions are available through the GitHub Development Agent and
+                require approval. Generated drafts and review text are not independently verified.
               </p>
             </div>
             <div className="mt-5 border-t border-white/[0.06] pt-4">
@@ -892,7 +929,8 @@ export const AutomationPage = (): JSX.Element => {
                 Approval inbox
               </h3>
               <p className="mt-1 text-xs text-slate-500">
-                Review the exact server-stored plan before approving internal execution.
+                Review the exact server-stored plan before approving. Some plans authorize the
+                specific GitHub write shown in the preview.
               </p>
             </div>
             {pendingApprovals.length > 0 && (
@@ -939,7 +977,7 @@ export const AutomationPage = (): JSX.Element => {
           ) : pendingApprovals.length === 0 ? (
             <EmptyPanel
               title="You’re all caught up"
-              description="There are no pending plan approvals. This MVP does not support external publishing or writes."
+              description="There are no pending plan approvals. Supported GitHub issue and pull-request comment writes are limited to the exact actions shown in an approval request."
             />
           ) : matchingApprovals.length === 0 ? (
             <EmptyPanel
@@ -981,7 +1019,9 @@ export const AutomationPage = (): JSX.Element => {
                           />
                         </span>
                         <span className="mt-1.5 block line-clamp-2 text-[11px] leading-4 text-slate-500">
-                          {approval?.summary ?? automation.goal}
+                          {approval
+                            ? approvalScopeDescription(approval.payload.tasks)
+                            : automation.goal}
                         </span>
                         <span className="mt-2 block text-[10px] text-slate-600">
                           {new Date(approval?.createdAt ?? automation.createdAt).toLocaleString()}
@@ -997,14 +1037,21 @@ export const AutomationPage = (): JSX.Element => {
                   <div className="flex flex-wrap items-start justify-between gap-3 border-b border-white/[0.06] px-4 py-4 sm:px-5">
                     <div className="min-w-0">
                       <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-200/75">
-                        Plan approval · Internal actions only
+                        {hasExternalGitHubWrite(selectedApproval.payload.tasks)
+                          ? 'Plan approval · GitHub write action'
+                          : 'Plan approval · Read-only plan'}
                       </p>
                       <h4 className="mt-2 text-base font-semibold text-white">
                         {selectedApprovalAutomation.title}
                       </h4>
                       <p className="mt-1 text-xs leading-5 text-slate-500">
-                        {selectedApproval.summary}
+                        {approvalScopeDescription(selectedApproval.payload.tasks)}
                       </p>
+                      {approvalWorkflowNote(selectedApproval.summary) && (
+                        <p className="mt-1 text-xs leading-5 text-slate-600">
+                          Workflow note: {approvalWorkflowNote(selectedApproval.summary)}
+                        </p>
+                      )}
                     </div>
                     <StatusBadge status={selectedApprovalAutomation.status} />
                   </div>
@@ -1088,9 +1135,7 @@ export const AutomationPage = (): JSX.Element => {
                         What approval authorizes
                       </p>
                       <p className="mt-1 text-[10px] leading-4 text-slate-500">
-                        Approval starts only the internal, read-only review collection and
-                        text-draft tasks shown above. No external post, message, repository change,
-                        or other write will be performed.
+                        {approvalScopeDescription(selectedApproval.payload.tasks)}
                       </p>
                     </div>
 
@@ -1109,7 +1154,10 @@ export const AutomationPage = (): JSX.Element => {
                         onClick={() => {
                           if (
                             window.confirm(
-                              `Approve "${selectedApprovalAutomation.title}"? This authorizes only the listed internal read and draft tasks. No external action will be performed.`
+                              approvalConfirmation(
+                                selectedApprovalAutomation.title,
+                                selectedApproval.payload.tasks
+                              )
                             )
                           ) {
                             act(approve.mutateAsync, selectedApprovalAutomation.id);
@@ -1122,7 +1170,9 @@ export const AutomationPage = (): JSX.Element => {
                         className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-indigo-400 px-3 text-xs font-semibold text-slate-950 transition hover:bg-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <Check className="h-3.5 w-3.5" aria-hidden="true" />
-                        Approve internal plan
+                        {hasExternalGitHubWrite(selectedApproval.payload.tasks)
+                          ? 'Approve plan and GitHub write'
+                          : 'Approve read-only plan'}
                       </button>
                       <button
                         type="button"
