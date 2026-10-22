@@ -3,6 +3,7 @@ import { emailQueue } from '@/jobs/email.queue'
 import { reviewQueue } from '@/jobs/review.queue'
 import { GitHubService } from '@/modules/github/github.service'
 import { releaseReviewQuota, reserveReviewQuota } from '@/modules/billing/review-quota'
+import { summarizeFindingLifecycle } from './finding-lifecycle.domain'
 
 export class ReviewNotFoundError extends Error {
 	public readonly statusCode = 404
@@ -15,7 +16,14 @@ export class ReviewNotFoundError extends Error {
 
 const reviewRelations = {
 	repository: true,
-	findings: true,
+	findings: {
+		include: {
+			feedback: {
+				include: { user: { select: { fullName: true } } },
+				orderBy: { createdAt: 'asc' as const },
+			},
+		},
+	},
 	analytics: true,
 	chatConversation: {
 		include: { messages: { orderBy: { createdAt: 'asc' as const } } },
@@ -161,6 +169,7 @@ export class ReviewService {
 			description: review.description,
 			fileContent: review.fileContent,
 			findings: review.findings,
+			findingLifecycleAnalytics: summarizeFindingLifecycle(review.findings),
 			analytics: review.analytics,
 			chat: review.chatConversation,
 			status: review.status,

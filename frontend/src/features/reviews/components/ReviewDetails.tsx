@@ -1,4 +1,155 @@
-import type { ReviewDetail } from '@/features/reviews/api/reviewApi'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useState, type FormEvent } from 'react'
+
+import {
+  findingStatuses,
+  reviewApi,
+  type FindingStatus,
+  type ReviewDetail,
+} from '@/features/reviews/api/reviewApi'
+
+const statusLabels: Record<FindingStatus, string> = {
+  UNREVIEWED: 'Unreviewed',
+  CONFIRMED: 'Confirmed',
+  FALSE_POSITIVE: 'False positive',
+  DUPLICATE: 'Duplicate',
+  FIXED: 'Fixed (developer-marked)',
+  WONT_FIX: "Won't fix",
+}
+
+const allowedNextStatuses: Record<FindingStatus, FindingStatus[]> = {
+  UNREVIEWED: ['CONFIRMED', 'FALSE_POSITIVE', 'DUPLICATE', 'FIXED', 'WONT_FIX'],
+  CONFIRMED: ['UNREVIEWED', 'FALSE_POSITIVE', 'DUPLICATE', 'FIXED', 'WONT_FIX'],
+  FALSE_POSITIVE: ['UNREVIEWED', 'CONFIRMED'],
+  DUPLICATE: ['UNREVIEWED', 'CONFIRMED'],
+  FIXED: ['UNREVIEWED', 'CONFIRMED'],
+  WONT_FIX: ['UNREVIEWED', 'CONFIRMED'],
+}
+
+function FindingLifecyclePanel({
+  reviewId,
+  finding,
+}: {
+  reviewId: string
+  finding: ReviewDetail['findings'][number]
+}): JSX.Element {
+  const queryClient = useQueryClient()
+  const [nextStatus, setNextStatus] = useState<FindingStatus>(finding.status)
+  const [reason, setReason] = useState('')
+  const updateStatus = useMutation({
+    mutationFn: () =>
+      reviewApi.updateFindingStatus(finding.id, {
+        status: nextStatus,
+        ...(reason.trim() ? { reason: reason.trim() } : {}),
+      }),
+    onSuccess: async () => {
+      setReason('')
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['reviews', reviewId] }),
+        queryClient.invalidateQueries({ queryKey: ['reviews'] }),
+      ])
+    },
+  })
+
+  useEffect(() => setNextStatus(finding.status), [finding.status])
+
+  const submit = (event: FormEvent<HTMLFormElement>): void => {
+    event.preventDefault()
+    if (nextStatus !== finding.status) updateStatus.mutate()
+  }
+
+  return (
+    <div className="mt-4 rounded-lg border border-slate-700/70 bg-slate-950/40 p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-slate-400">Developer status</span>
+        <span className="rounded-full border border-indigo-400/20 bg-indigo-400/10 px-2.5 py-1 text-xs font-medium text-indigo-200">
+          {statusLabels[finding.status]}
+        </span>
+        {finding.status === 'FIXED' && (
+          <span className="text-xs text-slate-500">
+            {finding.independentlyVerifiedAt
+              ? `Independently verified ${new Date(finding.independentlyVerifiedAt).toLocaleString()}`
+              : 'Not independently verified'}
+          </span>
+        )}
+      </div>
+
+      <form onSubmit={submit} className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto]">
+        <label className="sr-only" htmlFor={`finding-status-${finding.id}`}>
+          Update finding status
+        </label>
+        <select
+          id={`finding-status-${finding.id}`}
+          value={nextStatus}
+          onChange={(event) => setNextStatus(event.target.value as FindingStatus)}
+          disabled={updateStatus.isPending}
+          className="min-h-10 rounded-lg border border-slate-700 bg-slate-900 px-3 text-sm text-slate-200 focus:border-indigo-500 focus:outline-none"
+        >
+          <option value={finding.status}>{statusLabels[finding.status]}</option>
+          {allowedNextStatuses[finding.status].map((status) => (
+            <option key={status} value={status}>
+              {statusLabels[status]}
+            </option>
+          ))}
+        </select>
+        <label className="sr-only" htmlFor={`finding-reason-${finding.id}`}>
+          Optional feedback reason
+        </label>
+        <input
+          id={`finding-reason-${finding.id}`}
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+          maxLength={1_000}
+          disabled={updateStatus.isPending}
+          placeholder="Optional reason or developer feedback"
+          className="min-h-10 rounded-lg border border-slate-700 bg-slate-900 px-3 text-sm text-slate-200 placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
+        />
+        <button
+          type="submit"
+          disabled={updateStatus.isPending || nextStatus === finding.status}
+          className="min-h-10 rounded-lg bg-indigo-500/20 px-4 text-sm font-medium text-indigo-200 hover:bg-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {updateStatus.isPending ? 'Saving…' : 'Save status'}
+        </button>
+      </form>
+
+      {updateStatus.isError && (
+        <p role="alert" className="mt-2 text-sm text-red-300">
+          {updateStatus.error instanceof Error
+            ? updateStatus.error.message
+            : 'Finding status could not be saved.'}
+        </p>
+      )}
+
+      <div className="mt-4">
+        <h5 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+          Feedback history
+        </h5>
+        {finding.feedback.length === 0 ? (
+          <p className="mt-2 text-xs text-slate-500">No developer feedback yet.</p>
+        ) : (
+          <ol className="mt-2 space-y-2">
+            {finding.feedback.map((entry) => (
+              <li
+                key={entry.id}
+                className="border-l border-slate-700 pl-3 text-xs text-slate-400"
+              >
+                <p>
+                  <span className="text-slate-200">{entry.user.fullName}</span>
+                  {' · '}
+                  {statusLabels[entry.previousStatus]} → {statusLabels[entry.status]}
+                  {' · '}
+                  {new Date(entry.createdAt).toLocaleString()}
+                </p>
+                {entry.reason && <p className="mt-1 whitespace-pre-wrap">{entry.reason}</p>}
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
+    </div>
+  )
+}
 
 const getScoreStyles = (score: number): {
   text: string
@@ -101,6 +252,23 @@ export const ReviewDetails = ({ review }: { review: ReviewDetail }): JSX.Element
 
       {review.status === 'completed' && (
         <section className="rounded-xl border border-slate-800 bg-[#1e293b]/40 p-8 backdrop-blur-md">
+          <div className="mb-6 rounded-lg border border-slate-700/70 bg-slate-950/30 p-4">
+            <h3 className="font-semibold text-white">Finding lifecycle</h3>
+            <p className="mt-1 text-xs text-slate-400">
+              {review.findingLifecycleAnalytics.developerMarkedFixed} developer-marked fixed ·{' '}
+              {review.findingLifecycleAnalytics.independentlyVerifiedFixed} independently verified
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {findingStatuses.map((status) => (
+                <span
+                  key={status}
+                  className="rounded-full border border-slate-700 px-2 py-1 text-xs text-slate-400"
+                >
+                  {statusLabels[status]}: {review.findingLifecycleAnalytics.statusCounts[status]}
+                </span>
+              ))}
+            </div>
+          </div>
           {review.reviewLimitations && review.reviewLimitations.length > 0 && (
             <div className="mb-6 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
               <h4 className="font-semibold">Partial review</h4>
@@ -121,8 +289,8 @@ export const ReviewDetails = ({ review }: { review: ReviewDetail }): JSX.Element
             </p>
           ) : (
             <ul className="space-y-4 divide-y divide-slate-800/80">
-              {review.findings.map((f, i) => (
-                <li key={`${f.file}-${f.line}-${i}`} className="pt-4 first:pt-0">
+              {review.findings.map((f) => (
+                <li key={f.id} className="pt-4 first:pt-0">
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
                       <div className="text-sm font-semibold text-indigo-300">
@@ -160,6 +328,7 @@ export const ReviewDetails = ({ review }: { review: ReviewDetail }): JSX.Element
                       {f.suggestions.join('; ')}
                     </div>
                   )}
+                  <FindingLifecyclePanel reviewId={review.id} finding={f} />
                 </li>
               ))}
             </ul>

@@ -1,8 +1,11 @@
 import { Request, Response } from 'express'
 import { ZodError, z } from 'zod'
 import { ReviewNotFoundError, ReviewService } from './review.service'
+import { updateFindingStatusSchema } from './finding-lifecycle.domain'
+import { FindingLifecycleService } from './finding-lifecycle.service'
 
 const reviewService = new ReviewService()
+const findingLifecycleService = new FindingLifecycleService()
 const startReviewSchema = z.object({
   repository: z.string().min(3).max(300),
   branch: z.string().min(1).max(255).optional(),
@@ -23,6 +26,32 @@ function getErrorStatus(error: unknown): number {
 }
 
 export class ReviewController {
+	async updateFindingStatus(req: Request, res: Response): Promise<void> {
+		if (!req.user?.userId) {
+			res.status(401).json({ error: 'Unauthorized' })
+			return
+		}
+
+		const parsed = updateFindingStatusSchema.safeParse(req.body)
+		if (!parsed.success) {
+			res.status(400).json({ error: 'Invalid finding status update.' })
+			return
+		}
+
+		try {
+			const feedback = await findingLifecycleService.updateStatus(
+				req.user.userId,
+				req.params.findingId,
+				parsed.data.status,
+				parsed.data.reason
+			)
+			res.json({ feedback })
+		} catch (error) {
+			const message = error instanceof Error ? error.message : 'Unable to update finding status'
+			res.status(getErrorStatus(error)).json({ error: message })
+		}
+	}
+
 	async listReviews(req: Request, res: Response): Promise<void> {
 		try {
 			if (!req.user?.userId) {

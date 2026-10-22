@@ -10,6 +10,7 @@ import {
   type UseMutationResult,
   type UseQueryResult,
 } from '@tanstack/react-query'
+import { isAxiosError } from 'axios'
 
 import { useAppStore } from '@/app/store/useAppStore'
 
@@ -20,6 +21,24 @@ import {
   type RegisterPayload,
   type UserResponse,
 } from '../api/authApi'
+
+function getAuthErrorMessage(error: unknown, fallback: string): string {
+  if (isAxiosError<{ error?: unknown }>(error)) {
+    const apiMessage = error.response?.data?.error
+    if (typeof apiMessage === 'string') {
+      if (error.response?.status === 409 && apiMessage === 'Email already registered') {
+        return 'An account with this email already exists. Please sign in or use a different email.'
+      }
+      return apiMessage
+    }
+
+    if (error.response) {
+      return fallback
+    }
+  }
+
+  return error instanceof Error ? error.message : fallback
+}
 
 /**
  * Hook for user registration
@@ -45,7 +64,7 @@ export const useRegister = (): UseMutationResult<AuthResponse, Error, RegisterPa
       setError(null)
     },
     onError: (error: Error) => {
-      setError(error.message || 'Registration failed')
+      setError(getAuthErrorMessage(error, 'Registration failed. Please try again.'))
     },
   })
 }
@@ -74,7 +93,7 @@ export const useLogin = (): UseMutationResult<AuthResponse, Error, LoginPayload>
       setError(null)
     },
     onError: (error: Error) => {
-      setError(error.message || 'Login failed')
+      setError(getAuthErrorMessage(error, 'Login failed. Please try again.'))
     },
   })
 }

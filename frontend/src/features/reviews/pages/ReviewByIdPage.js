@@ -1,6 +1,6 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { useParams, Link } from 'react-router-dom';
-import { ReviewDetails } from '../components/ReviewDetails';
+import { ReviewDetails } from '../components/ReviewDetails.tsx';
 import { useGetReview } from '../hooks/useReviews';
 export const ReviewByIdPage = () => {
     const { id } = useParams();

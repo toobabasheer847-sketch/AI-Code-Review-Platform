@@ -1,5 +1,25 @@
 import { axiosInstance } from '@/lib/axios'
 
+export const findingStatuses = [
+  'UNREVIEWED',
+  'CONFIRMED',
+  'FALSE_POSITIVE',
+  'DUPLICATE',
+  'FIXED',
+  'WONT_FIX',
+] as const
+
+export type FindingStatus = (typeof findingStatuses)[number]
+
+export interface FindingFeedback {
+  id: string
+  previousStatus: FindingStatus
+  status: FindingStatus
+  reason: string | null
+  createdAt: string
+  user: { fullName: string }
+}
+
 export interface ReviewSummary {
   id: string
   repository: string
@@ -31,6 +51,7 @@ export interface ReviewDetail {
   description?: string
   fileContent?: string
   findings: Array<{
+    id: string
     file: string
     line: number
     endLine?: number | null
@@ -40,7 +61,16 @@ export interface ReviewDetail {
     severity: string
     category?: string
     suggestions: string[]
+    status: FindingStatus
+    independentlyVerifiedAt: string | null
+    feedback: FindingFeedback[]
   }>
+  findingLifecycleAnalytics: {
+    total: number
+    statusCounts: Record<FindingStatus, number>
+    developerMarkedFixed: number
+    independentlyVerifiedFixed: number
+  }
   analytics?: { totalIssues?: number; qualityScore?: number }
   chat?: ReviewChat | null
   status: 'pending' | 'running' | 'completed' | 'failed' | string
@@ -66,6 +96,17 @@ export const reviewApi = {
   },
   start: async (repository: string, branch = 'main'): Promise<{ reviewId: string }> => {
     const res = await axiosInstance.post<{ reviewId: string }>('/reviews/start', { repository, branch })
+    return res.data
+  },
+
+  updateFindingStatus: async (
+    findingId: string,
+    input: { status: FindingStatus; reason?: string }
+  ): Promise<{ feedback: FindingFeedback }> => {
+    const res = await axiosInstance.patch<{ feedback: FindingFeedback }>(
+      `/reviews/findings/${findingId}/status`,
+      input
+    )
     return res.data
   },
 }

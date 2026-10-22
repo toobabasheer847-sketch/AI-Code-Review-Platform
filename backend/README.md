@@ -102,6 +102,20 @@ files, the completed review displays that limitation instead of implying full
 coverage. Findings retain optional title, evidence, and end-line fields so older
 stored reviews remain compatible.
 
+### Finding lifecycle and developer feedback
+
+Apply the `20261021230000_finding_lifecycle_feedback` migration before
+deploying the status controls. Findings default to `UNREVIEWED`; review owners
+can transition them to `CONFIRMED`, `FALSE_POSITIVE`, `DUPLICATE`, `FIXED`, or
+`WONT_FIX`, with optional feedback text. The review API returns the current
+status and feedback history, including actor and timestamp, and
+`PATCH /api/reviews/findings/:findingId/status` validates ownership and
+transitions server-side. Per-review analytics count persisted statuses and
+separate developer-marked fixes from records with an independent-verification
+timestamp. There is no independent fix-verification process in this release,
+so that metric remains zero; developers cannot set the verification timestamp.
+Feedback is not used to suppress future findings or retrain the analyzer.
+
 ### GitHub pull request webhooks
 
 Apply the database migration and configure a GitHub repository webhook pointing

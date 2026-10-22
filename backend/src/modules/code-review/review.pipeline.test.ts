@@ -383,7 +383,14 @@ test('returns persisted findings for an owned review', async () => {
   type ReviewWithRelations = Prisma.CodeReviewGetPayload<{
     include: {
       repository: true
-      findings: true
+      findings: {
+        include: {
+          feedback: {
+            include: { user: { select: { fullName: true } } }
+            orderBy: { createdAt: 'asc' }
+          }
+        }
+      }
       analytics: true
       chatConversation: {
         include: { messages: { orderBy: { createdAt: 'asc' } } }
@@ -434,7 +441,21 @@ test('returns persisted findings for an owned review', async () => {
         message: analysis.findings[0].message,
         evidence: analysis.findings[0].evidence,
         suggestions: analysis.findings[0].suggestions,
+        status: 'FIXED',
+        independentlyVerifiedAt: new Date('2026-10-20T10:00:00.000Z'),
         createdAt,
+        feedback: [
+          {
+            id: 'feedback-1',
+            findingId: 'finding-1',
+            userId: review.userId,
+            previousStatus: 'CONFIRMED',
+            status: 'FIXED',
+            reason: 'Patched the issue.',
+            createdAt,
+            user: { fullName: 'Code Reviewer' },
+          },
+        ],
       },
     ],
     analytics: null,
@@ -461,6 +482,20 @@ test('returns persisted findings for an owned review', async () => {
   const result = await service.getReview(review.userId, review.id)
 
   assert.deepEqual(result.findings, persistedReview.findings)
+  assert.equal(result.findings[0]?.feedback[0]?.reason, 'Patched the issue.')
+  assert.deepEqual(result.findingLifecycleAnalytics, {
+    total: 1,
+    statusCounts: {
+      UNREVIEWED: 0,
+      CONFIRMED: 0,
+      FALSE_POSITIVE: 0,
+      DUPLICATE: 0,
+      FIXED: 1,
+      WONT_FIX: 0,
+    },
+    developerMarkedFixed: 1,
+    independentlyVerifiedFixed: 1,
+  })
   assert.equal(result.status, 'completed')
 })
 

@@ -149,6 +149,7 @@ been independently verified in a production deployment.
 - `GET /api/reviews` - List reviews
 - `POST /api/reviews` - Create new review
 - `GET /api/reviews/:id` - Get review details
+- `PATCH /api/reviews/findings/:findingId/status` - Update an owned finding's status and record optional feedback
 - `PUT /api/reviews/:id` - Update review
 - `DELETE /api/reviews/:id` - Delete review
 

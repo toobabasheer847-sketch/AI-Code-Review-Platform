@@ -34,6 +34,7 @@ model User {
   socialPosts         SocialPost[]
   socialPostEvents    SocialPostEvent[]
   workMemories        WorkMemory[]
+  findingFeedback     FindingFeedback[]
   automationSchedules AutomationSchedule[]
   automationNotificationPreference AutomationNotificationPreference?
   automationNotifications AutomationNotification[]
@@ -522,6 +523,15 @@ enum ReviewSource {
   PULL_REQUEST
 }
 
+enum FindingStatus {
+  UNREVIEWED
+  CONFIRMED
+  FALSE_POSITIVE
+  DUPLICATE
+  FIXED
+  WONT_FIX
+}
+
 model CodeReview {
   id                String                  @id @default(cuid())
   userId            String
@@ -573,21 +583,40 @@ model GitHubWebhookDelivery {
 }
 
 model Finding {
-  id          String     @id @default(cuid())
-  reviewId    String
-  review      CodeReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
-  file        String
-  line        Int
-  endLine     Int?
-  title       String?
-  message     String
-  evidence    String?
-  severity    String
-  category    String     @default("quality")
-  suggestions String[]
-  createdAt   DateTime   @default(now())
+  id                       String             @id @default(cuid())
+  reviewId                 String
+  review                   CodeReview         @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  file                     String
+  line                     Int
+  endLine                  Int?
+  title                    String?
+  message                  String
+  evidence                 String?
+  severity                 String
+  category                 String             @default("quality")
+  suggestions              String[]
+  status                   FindingStatus      @default(UNREVIEWED)
+  independentlyVerifiedAt  DateTime?
+  feedback                 FindingFeedback[]
+  createdAt                DateTime           @default(now())
 
   @@index([reviewId])
+  @@index([reviewId, status])
+}
+
+model FindingFeedback {
+  id             String        @id @default(cuid())
+  findingId      String
+  finding        Finding       @relation(fields: [findingId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  previousStatus FindingStatus
+  status         FindingStatus
+  reason         String?
+  createdAt      DateTime      @default(now())
+
+  @@index([findingId, createdAt])
+  @@index([userId, createdAt])
 }
 
 model ChatConversation {
