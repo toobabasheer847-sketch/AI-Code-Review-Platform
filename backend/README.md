@@ -116,6 +116,13 @@ timestamp. There is no independent fix-verification process in this release,
 so that metric remains zero; developers cannot set the verification timestamp.
 Feedback is not used to suppress future findings or retrain the analyzer.
 
+To exercise database persistence and API authorization, point both
+`DATABASE_URL` and `FINDING_LIFECYCLE_TEST_DATABASE_URL` at the same blank,
+disposable PostgreSQL database on localhost whose database name contains
+`test` or `lifecycle`. Apply migrations with `npm run prisma:deploy`, then run
+`npm run test:finding-lifecycle:integration`. The test refuses remote or
+non-test-named databases and removes only the fixture users it creates.
+
 ### GitHub pull request webhooks
 
 Apply the database migration and configure a GitHub repository webhook pointing
