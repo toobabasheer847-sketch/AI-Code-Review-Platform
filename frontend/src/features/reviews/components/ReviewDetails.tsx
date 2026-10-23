@@ -323,7 +323,10 @@ export const ReviewDetails = ({ review }: { review: ReviewDetail }): JSX.Element
                 )}
                 {review.pullRequestStatus && (
                   <p className="text-xs capitalize text-slate-400">
-                    GitHub comments: {review.pullRequestStatus.replace(/-/g, ' ')}
+                    GitHub comments:{' '}
+                    {review.pullRequestStatus === 'completed-not-published'
+                      ? 'not posted automatically'
+                      : review.pullRequestStatus.replace(/-/g, ' ')}
                   </p>
                 )}
               </div>

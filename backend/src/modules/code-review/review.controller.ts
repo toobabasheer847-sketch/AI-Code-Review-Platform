@@ -4,6 +4,7 @@ import { ReviewNotFoundError, ReviewService } from './review.service'
 import { updateFindingStatusSchema } from './finding-lifecycle.domain'
 import { FindingLifecycleService } from './finding-lifecycle.service'
 import { FixProposalService } from './fix-verification.service'
+import logger from '@/utils/logger'
 
 const reviewService = new ReviewService()
 const findingLifecycleService = new FindingLifecycleService()
@@ -20,11 +21,31 @@ function getErrorStatus(error: unknown): number {
     typeof error === 'object' &&
     error !== null &&
     'statusCode' in error &&
-    typeof error.statusCode === 'number'
+    typeof error.statusCode === 'number' &&
+    Number.isInteger(error.statusCode) &&
+    error.statusCode >= 400 &&
+    error.statusCode < 600
   ) {
     return error.statusCode
   }
   return 500
+}
+
+function respondWithError(error: unknown, res: Response, fallback: string): void {
+  const status = getErrorStatus(error)
+  if (status >= 500) {
+    logger.error(
+      { errorType: error instanceof Error ? error.name : 'UnknownError' },
+      'Review request failed'
+    )
+  }
+  const message =
+    status >= 500 || error instanceof ZodError
+      ? fallback
+      : error instanceof Error
+        ? error.message
+        : fallback
+  res.status(status).json({ error: message })
 }
 
 export class ReviewController {
@@ -49,8 +70,7 @@ export class ReviewController {
 			)
 			res.json({ feedback })
 		} catch (error) {
-			const message = error instanceof Error ? error.message : 'Unable to update finding status'
-			res.status(getErrorStatus(error)).json({ error: message })
+			respondWithError(error, res, 'Unable to update finding status.')
 		}
 	}
 
@@ -68,8 +88,7 @@ export class ReviewController {
 			)
 			res.status(201).json({ proposal })
 		} catch (error) {
-			const message = error instanceof Error ? error.message : 'Unable to save fix proposal'
-			res.status(getErrorStatus(error)).json({ error: message })
+			respondWithError(error, res, 'Unable to save fix proposal.')
 		}
 	}
 
@@ -83,8 +102,7 @@ export class ReviewController {
 			const reviews = await reviewService.listReviews(req.user.userId)
 			res.json(reviews)
 		} catch (error) {
-			const message = error instanceof Error ? error.message : 'Failed to list reviews'
-			res.status(getErrorStatus(error)).json({ error: message })
+			respondWithError(error, res, 'Unable to list reviews.')
 		}
 	}
 
@@ -99,8 +117,7 @@ export class ReviewController {
 			const review = await reviewService.getReview(req.user.userId, reviewId)
 			res.json(review)
 		} catch (error) {
-			const message = error instanceof Error ? error.message : 'Failed to fetch review'
-			res.status(getErrorStatus(error)).json({ error: message })
+			respondWithError(error, res, 'Unable to load this review.')
 		}
 	}
 
@@ -115,8 +132,7 @@ export class ReviewController {
 			await reviewService.deleteReview(req.user.userId, reviewId)
 			res.json({ message: 'Review deleted' })
 		} catch (error) {
-			const message = error instanceof Error ? error.message : 'Failed to delete review'
-			res.status(getErrorStatus(error)).json({ error: message })
+			respondWithError(error, res, 'Unable to delete this review.')
 		}
 	}
 
@@ -135,8 +151,7 @@ export class ReviewController {
 			)
 			res.json({ reviewId: review.id })
 		} catch (error) {
-			const message = error instanceof Error ? error.message : 'Failed to start review'
-			res.status(getErrorStatus(error)).json({ error: message })
+			respondWithError(error, res, 'Unable to start this review.')
 		}
 	}
 }

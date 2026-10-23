@@ -170,11 +170,13 @@ The webhook does not trust the event's sender as an application user. It only
 queues a review when the repository is already linked to an application account
 and that account's connected GitHub OAuth token can access the pull request.
 OAuth permissions must allow reading repository contents and pull-request
-metadata and creating pull-request reviews. Reviews are queued through Redis;
-findings are posted as inline review comments only for valid added lines and
-only when the pull request remains open at the reviewed commit. GitHub App
-installation authorization and live webhook delivery are not configured by
-this project.
+metadata. The OAuth app currently requests the broad classic `repo` scope;
+least-privilege GitHub App installation authorization is not configured.
+Reviews are queued through Redis and results are stored in CodeGuard. GitHub
+pull-request comments are not posted automatically because there is no
+per-review approval step. GitHub issue and comment actions in automation
+require approval of the exact plan before execution. Live webhook delivery is
+not configured by this project.
 
 ### Authentication and account lifecycle
 
@@ -222,6 +224,11 @@ server refuses to start in production if either value is missing, a sample
 placeholder, or if the two values are identical. Generate each value separately
 with a cryptographically secure random generator and store them in your
 deployment's secret manager; never reuse the development values.
+
+Production startup also requires TLS-protected Redis (`rediss://`), an HTTPS
+`FRONTEND_URL`, and a public HTTPS `GITHUB_CALLBACK_URL`. The backend image
+defaults to production mode and runs as the unprivileged Node.js user; local
+Compose explicitly overrides the mode for development.
 
 When rotating `GITHUB_TOKEN_ENCRYPTION_KEY`, temporarily set
 `GITHUB_TOKEN_ENCRYPTION_KEY_PREVIOUS` to the old key and deploy both values.

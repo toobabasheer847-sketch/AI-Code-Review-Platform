@@ -462,7 +462,7 @@ function parsePullRequestResponse(
 
 export class GitHubService {
   constructor(
-    private readonly api: AxiosInstance = axios,
+    private readonly api: AxiosInstance = axios.create({ timeout: 15_000 }),
     private readonly accessTokenProvider?: (userId: string) => Promise<string>,
     private readonly accountLifecycleStore: GitHubAccountLifecycleStore =
       prismaGitHubAccountLifecycleStore,
@@ -1343,7 +1343,7 @@ export class GitHubService {
     const [owner, name] = parseReviewRepositoryName(repo)
     const pathSegments = path.split('/')
     if (!path || pathSegments.some((segment) => !segment || segment === '.' || segment === '..')) {
-      throw new Error('Invalid repository or file path')
+      throw new InvalidReviewTargetError('File path is invalid')
     }
 
     const encodedRepository = `${encodeURIComponent(owner)}/${encodeURIComponent(name)}`

@@ -22,20 +22,6 @@ const connection = new IORedis(env.REDIS_URL, {
 })
 const githubService = new GitHubService()
 
-function parseChangedLines(value: unknown): Record<string, number[]> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return {}
-  const result: Record<string, number[]> = {}
-  for (const [path, lines] of Object.entries(value)) {
-    if (
-      Array.isArray(lines) &&
-      lines.every((line): line is number => Number.isSafeInteger(line) && line > 0)
-    ) {
-      result[path] = lines
-    }
-  }
-  return result
-}
-
 const store: ReviewJobStore = {
   async findForProcessing(reviewId): Promise<ReviewJobRecord | null> {
     const review = await prisma.codeReview.findUnique({
@@ -149,43 +135,11 @@ const worker = new Worker<ReviewJobData>(
           : githubService.fetchReviewFiles(userId, repository, branch),
       analyze: analyzeCode,
       async notify(review, analysis): Promise<void> {
-        if (
-          review.source === 'PULL_REQUEST' &&
-          review.pullRequestNumber &&
-          review.headSha
-        ) {
-          try {
-            const publication = await githubService.publishPullRequestFindings(
-              review.userId,
-              review.repository.name,
-              review.pullRequestNumber,
-              review.headSha,
-              review.id,
-              analysis?.findings ?? review.findings ?? [],
-              parseChangedLines(review.changedLines)
-            )
-            await prisma.gitHubWebhookDelivery.updateMany({
-              where: { reviewId: review.id },
-              data: {
-                status:
-                  publication === 'stale'
-                    ? 'stale'
-                    : publication === 'no-inline-findings'
-                      ? 'completed-no-inline-findings'
-                      : 'completed',
-                errorMessage: null,
-              },
-            })
-          } catch (error) {
-            await prisma.gitHubWebhookDelivery.updateMany({
-              where: { reviewId: review.id },
-              data: {
-                status: 'publishing-failed',
-                errorMessage: 'GitHub review comments could not be published',
-              },
-            })
-            throw error
-          }
+        if (review.source === 'PULL_REQUEST') {
+          await prisma.gitHubWebhookDelivery.updateMany({
+            where: { reviewId: review.id },
+            data: { status: 'completed-not-published', errorMessage: null },
+          })
         }
 
         await emailQueue.add(

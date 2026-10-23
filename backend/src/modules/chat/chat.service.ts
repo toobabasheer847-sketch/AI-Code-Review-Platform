@@ -3,6 +3,15 @@ import { AIChatService } from './ai.chat.service'
 import { buildChatContext } from './context.builder'
 import { ChatMessageRole } from './chat.types'
 
+export class ChatReviewNotFoundError extends Error {
+  readonly statusCode = 404
+
+  constructor() {
+    super('Review not found')
+    this.name = 'ChatReviewNotFoundError'
+  }
+}
+
 export class ChatService {
   private readonly aiService = new AIChatService()
 
@@ -12,7 +21,7 @@ export class ChatService {
 
   public async sendMessage(userId: string, reviewId: string, message: string): Promise<{ answer: string; conversationId: string }> {
     const review = await prisma.codeReview.findUnique({
-      where: { id: reviewId },
+      where: { id: reviewId, userId },
       include: {
         repository: { select: { name: true } },
         findings: true,
@@ -24,13 +33,7 @@ export class ChatService {
       },
     })
 
-    if (!review) {
-      throw new Error('Review not found')
-    }
-
-    if (review.userId !== userId) {
-      throw new Error('Unauthorized to access this review')
-    }
+    if (!review) throw new ChatReviewNotFoundError()
 
     const existingConversation = review.chatConversation
     const previousMessages = existingConversation?.messages ?? []

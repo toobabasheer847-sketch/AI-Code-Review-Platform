@@ -56,7 +56,7 @@ export function validateEnvironment(configuration: typeof env): void {
   const configurationErrors: string[] = []
   const isLocalAddress = (value: string): boolean => {
     try {
-      const hostname = new URL(value).hostname.toLowerCase()
+      const hostname = new URL(value).hostname.toLowerCase().replace(/^\[|\]$/g, '')
       return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1'
     } catch {
       return false
@@ -90,8 +90,8 @@ export function validateEnvironment(configuration: typeof env): void {
   } else if (isLocalAddress(configuration.DATABASE_URL)) {
     configurationErrors.push('DATABASE_URL must not point to a local host in production')
   }
-  if (!configuration.REDIS_URL || !/^rediss?:\/\//i.test(configuration.REDIS_URL)) {
-    configurationErrors.push('REDIS_URL must be a Redis connection URL')
+  if (!configuration.REDIS_URL || !/^rediss:\/\//i.test(configuration.REDIS_URL)) {
+    configurationErrors.push('REDIS_URL must use a TLS-protected rediss:// connection URL')
   } else if (isLocalAddress(configuration.REDIS_URL)) {
     configurationErrors.push('REDIS_URL must not point to a local host in production')
   }
@@ -103,13 +103,28 @@ export function validateEnvironment(configuration: typeof env): void {
   }
   if (
     !frontendUrl ||
-    !/^https?:$/.test(frontendUrl.protocol) ||
+    frontendUrl.protocol !== 'https:' ||
+    Boolean(frontendUrl.username || frontendUrl.password) ||
     frontendUrl.pathname !== '/' ||
     frontendUrl.search !== '' ||
     frontendUrl.hash !== '' ||
     isLocalAddress(configuration.FRONTEND_URL)
   ) {
-    configurationErrors.push('FRONTEND_URL must be a public HTTP(S) origin in production')
+    configurationErrors.push('FRONTEND_URL must be a public HTTPS origin in production')
+  }
+  let githubCallbackUrl: URL | null = null
+  try {
+    githubCallbackUrl = new URL(configuration.GITHUB_CALLBACK_URL)
+  } catch {
+    githubCallbackUrl = null
+  }
+  if (
+    !githubCallbackUrl ||
+    githubCallbackUrl.protocol !== 'https:' ||
+    Boolean(githubCallbackUrl.username || githubCallbackUrl.password) ||
+    isLocalAddress(configuration.GITHUB_CALLBACK_URL)
+  ) {
+    configurationErrors.push('GITHUB_CALLBACK_URL must be a public HTTPS URL in production')
   }
   if (!configuration.OPENAI_API_KEY) configurationErrors.push('OPENAI_API_KEY is required')
   if (!configuration.GITHUB_CLIENT_ID) configurationErrors.push('GITHUB_CLIENT_ID is required')

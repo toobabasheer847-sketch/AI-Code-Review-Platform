@@ -3,7 +3,11 @@ import { env } from '@/config/env'
 import { ChatMessageRole, type ChatMessage } from './chat.types'
 
 export class AIChatService {
-  private readonly client = new OpenAI({ apiKey: env.OPENAI_API_KEY })
+  private readonly client = new OpenAI({
+    apiKey: env.OPENAI_API_KEY,
+    timeout: 60_000,
+    maxRetries: 2,
+  })
 
   private buildHistory(messages: ChatMessage[]): string {
     return messages

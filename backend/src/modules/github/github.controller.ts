@@ -1,11 +1,34 @@
 import crypto from 'crypto'
 import { Request, Response } from 'express'
 import { env } from '@/config/env'
-import { GitHubService } from './github.service'
+import logger from '@/utils/logger'
+import { GitHubIntegrationError, GitHubService, InvalidReviewTargetError } from './github.service'
 import { decrypt, encrypt } from '@/utils/crypto'
 import { isValidOAuthState } from '@/modules/integrations/oauth-state'
 
 const githubService = new GitHubService()
+
+function respondWithGitHubError(error: unknown, res: Response, fallback: string): void {
+  if (error instanceof GitHubIntegrationError || error instanceof InvalidReviewTargetError) {
+    const status =
+      Number.isInteger(error.statusCode) && error.statusCode >= 400 && error.statusCode < 600
+        ? error.statusCode
+        : 502
+    res.status(status).json({ error: error.message })
+    return
+  }
+
+  if (error instanceof URIError) {
+    res.status(400).json({ error: 'Invalid repository or file path.' })
+    return
+  }
+
+  logger.error(
+    { errorType: error instanceof Error ? error.name : 'UnknownError' },
+    'GitHub request failed'
+  )
+  res.status(502).json({ error: fallback })
+}
 
 function parseCookieValue(cookieHeader: string | undefined, key: string): string | null {
   if (!cookieHeader) {
@@ -115,8 +138,7 @@ export class GitHubController {
       const repos = await githubService.getRepos(userId)
       res.json(repos)
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to fetch GitHub repositories'
-      res.status(400).json({ error: message })
+      respondWithGitHubError(error, res, 'Unable to fetch GitHub repositories.')
     }
   }
 
@@ -140,8 +162,7 @@ export class GitHubController {
       const files = await githubService.getRepoFiles(userId, decodeURIComponent(repoName))
       res.json(files)
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to fetch repository files'
-      res.status(400).json({ error: message })
+      respondWithGitHubError(error, res, 'Unable to fetch repository files.')
     }
   }
 
@@ -164,8 +185,7 @@ export class GitHubController {
       const content = await githubService.getFileContent(userId, decodeURIComponent(repo), decodeURIComponent(path))
       res.json(content)
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to fetch file content'
-      res.status(400).json({ error: message })
+      respondWithGitHubError(error, res, 'Unable to fetch file content.')
     }
   }
 }

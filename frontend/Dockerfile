@@ -26,6 +26,8 @@ WORKDIR /app
 RUN npm install --global serve
 COPY --from=builder /app/frontend/dist ./dist
 
+USER node
+
 EXPOSE 3000
 
 CMD ["serve", "-s", "dist", "-l", "3000"]

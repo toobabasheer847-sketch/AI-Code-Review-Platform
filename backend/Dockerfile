@@ -15,6 +15,9 @@ WORKDIR /app/backend
 RUN npm run prisma:generate
 RUN npm run build
 
+ENV NODE_ENV=production
+USER node
+
 EXPOSE 3001
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=5 \

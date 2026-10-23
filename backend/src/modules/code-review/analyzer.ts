@@ -173,7 +173,11 @@ async function completeWithOpenAI(messages: ReviewChatMessage[]): Promise<string
   if (!env.OPENAI_API_KEY) {
     throw new Error('OPENAI_API_KEY is required to process code reviews')
   }
-  const client = new OpenAI({ apiKey: env.OPENAI_API_KEY })
+  const client = new OpenAI({
+    apiKey: env.OPENAI_API_KEY,
+    timeout: 60_000,
+    maxRetries: 2,
+  })
   const completion = await client.chat.completions.create({
     model: 'gpt-4o-mini',
     temperature: 0.1,
