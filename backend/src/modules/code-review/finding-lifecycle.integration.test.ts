@@ -23,13 +23,19 @@ test(
   'finding lifecycle persists owner-scoped feedback atomically and serves it through the API',
   { skip: !testDatabaseUrl },
   async (context) => {
-    const [{ prisma }, { FindingLifecycleService }, { ReviewService }, { default: reviewRoutes }] =
-      await Promise.all([
-        import('@/config/database'),
-        import('./finding-lifecycle.service'),
-        import('./review.service'),
-        import('./review.routes'),
-      ]);
+    const [
+      { prisma },
+      { FindingLifecycleService },
+      { FixVerificationLimitError, FixVerificationService },
+      { ReviewService },
+      { default: reviewRoutes },
+    ] = await Promise.all([
+      import('@/config/database'),
+      import('./finding-lifecycle.service'),
+      import('./fix-verification.service'),
+      import('./review.service'),
+      import('./review.routes'),
+    ])
     const { generateToken } = await import('@/utils/jwt');
     const ownerId = randomUUID();
     const otherUserId = randomUUID();
@@ -154,7 +160,161 @@ test(
       });
       assert.equal(invalidInput.status, 400);
 
-      const updatedAtStart = Date.now();
+      const proposalPatch = [
+        'diff --git a/src/index.ts b/src/index.ts',
+        '--- a/src/index.ts',
+        '+++ b/src/index.ts',
+        '@@ -1 +1 @@',
+        '-old()',
+        '+new()',
+      ].join('\n')
+      const otherProposal = await fetch(`${baseUrl}/findings/${findingId}/fix-proposals`, {
+        method: 'POST',
+        headers: authHeaders(otherUserToken),
+        body: JSON.stringify({ patch: proposalPatch }),
+      })
+      assert.equal(otherProposal.status, 404)
+
+      const invalidProposal = await fetch(`${baseUrl}/findings/${findingId}/fix-proposals`, {
+        method: 'POST',
+        headers: authHeaders(ownerToken),
+        body: JSON.stringify({ patch: 'not a unified diff' }),
+      })
+      assert.equal(invalidProposal.status, 400)
+
+      const createdProposal = await fetch(`${baseUrl}/findings/${findingId}/fix-proposals`, {
+        method: 'POST',
+        headers: authHeaders(ownerToken),
+        body: JSON.stringify({ patch: proposalPatch }),
+      })
+      assert.equal(createdProposal.status, 201)
+      const proposalBody = (await createdProposal.json()) as {
+        proposal: { id: string; patch: string; patchSha256: string }
+      }
+      assert.equal(proposalBody.proposal.patch, proposalPatch)
+      assert.match(proposalBody.proposal.patchSha256, /^[a-f0-9]{64}$/)
+
+      const retriedProposal = await fetch(`${baseUrl}/findings/${findingId}/fix-proposals`, {
+        method: 'POST',
+        headers: authHeaders(ownerToken),
+        body: JSON.stringify({ patch: proposalPatch }),
+      })
+      assert.equal(retriedProposal.status, 201)
+      const retriedProposalBody = (await retriedProposal.json()) as {
+        proposal: { id: string }
+      }
+      assert.equal(retriedProposalBody.proposal.id, proposalBody.proposal.id)
+      for (let index = 1; index < 10; index += 1) {
+        const distinctPatch = proposalPatch.replace('old()', `old${index}()`)
+        const additionalProposal = await fetch(
+          `${baseUrl}/findings/${findingId}/fix-proposals`,
+          {
+            method: 'POST',
+            headers: authHeaders(ownerToken),
+            body: JSON.stringify({ patch: distinctPatch }),
+          }
+        )
+        assert.equal(additionalProposal.status, 201)
+      }
+      const overLimitProposal = await fetch(`${baseUrl}/findings/${findingId}/fix-proposals`, {
+        method: 'POST',
+        headers: authHeaders(ownerToken),
+        body: JSON.stringify({ patch: proposalPatch.replace('old()', 'old10()') }),
+      })
+      assert.equal(overLimitProposal.status, 409)
+      const persistedProposal = await prisma.fixProposal.findUniqueOrThrow({
+        where: { id: proposalBody.proposal.id },
+      })
+      assert.equal(persistedProposal.userId, ownerId)
+      assert.equal(persistedProposal.patchSha256, proposalBody.proposal.patchSha256)
+
+      const verificationService = new FixVerificationService(undefined, {
+        async execute({ patchSha256 }) {
+          return {
+            patchSha256,
+            executionStatus: 'SUCCEEDED',
+            testCommands: ['test-only synthetic runner result'],
+            testsPassed: true,
+            originalIssueReproducedBefore: true,
+            originalIssueReproducedAfter: false,
+            sanitizedLogs: 'synthetic result; no repository command executed',
+          }
+        },
+      })
+      await assert.rejects(
+        verificationService.verifyProposal(
+          otherUserId,
+          proposalBody.proposal.id,
+          'unauthorized-verification'
+        ),
+        /Finding not found/
+      )
+      const simulatedVerification = await verificationService.verifyProposal(
+        ownerId,
+        proposalBody.proposal.id,
+        'integration-verification-result'
+      )
+      assert.equal(simulatedVerification.status, 'VERIFIED')
+      assert.equal(simulatedVerification.patchSha256, proposalBody.proposal.patchSha256)
+      assert.ok(simulatedVerification.startedAt instanceof Date)
+      assert.ok(simulatedVerification.completedAt instanceof Date)
+      assert.deepEqual(simulatedVerification.testCommands, ['test-only synthetic runner result'])
+      assert.match(simulatedVerification.sanitizedLogs ?? '', /no repository command executed/)
+      const persistedAttempt = await prisma.fixVerificationAttempt.findUniqueOrThrow({
+        where: { id: simulatedVerification.id },
+      })
+      assert.equal(persistedAttempt.requestedById, ownerId)
+      assert.equal(persistedAttempt.status, 'VERIFIED')
+      assert.equal(persistedAttempt.patchSha256, proposalBody.proposal.patchSha256)
+      assert.ok(persistedAttempt.completedAt instanceof Date)
+      assert.deepEqual(persistedAttempt.testCommands, ['test-only synthetic runner result'])
+      assert.equal(
+        (await prisma.finding.findUniqueOrThrow({ where: { id: findingId } }))
+          .independentlyVerifiedAt,
+        null
+      )
+      const duplicateVerification = await verificationService.verifyProposal(
+        ownerId,
+        proposalBody.proposal.id,
+        'integration-verification-result'
+      )
+      assert.equal(duplicateVerification.id, simulatedVerification.id)
+      assert.equal(
+        await prisma.fixVerificationAttempt.count({
+          where: { proposalId: proposalBody.proposal.id },
+        }),
+        1
+      )
+      for (let index = 1; index < 5; index += 1) {
+        await verificationService.verifyProposal(
+          ownerId,
+          proposalBody.proposal.id,
+          `integration-verification-${index}`
+        )
+      }
+      await assert.rejects(
+        verificationService.verifyProposal(
+          ownerId,
+          proposalBody.proposal.id,
+          'verification-over-limit'
+        ),
+        FixVerificationLimitError
+      )
+
+      const attemptedVerificationEvidence = await fetch(
+        `${baseUrl}/findings/${findingId}/status`,
+        {
+          method: 'PATCH',
+          headers: authHeaders(ownerToken),
+          body: JSON.stringify({
+            status: 'FIXED',
+            independentlyVerifiedAt: new Date().toISOString(),
+          }),
+        }
+      )
+      assert.equal(attemptedVerificationEvidence.status, 400)
+
+      const updatedAtStart = Date.now()
       const firstUpdate = await fetch(`${baseUrl}/findings/${findingId}/status`, {
         method: 'PATCH',
         headers: authHeaders(ownerToken),
@@ -199,6 +359,11 @@ test(
 
       const ownedDetail = await reviewService.getReview(ownerId, reviewId);
       assert.equal(ownedDetail.findings[0]?.feedback.length, 2);
+      const savedPatchProposal = ownedDetail.findings[0]?.fixProposals.find(
+        (proposal) => proposal.patch === proposalPatch
+      )
+      assert.ok(savedPatchProposal)
+      assert.equal(savedPatchProposal.attempts.length, 5)
       assert.deepEqual(ownedDetail.findingLifecycleAnalytics, {
         total: 1,
         statusCounts: {

@@ -116,6 +116,40 @@ timestamp. There is no independent fix-verification process in this release,
 so that metric remains zero; developers cannot set the verification timestamp.
 Feedback is not used to suppress future findings or retrain the analyzer.
 
+### Fix proposals and verification safety
+
+Apply the `20261022200000_fix_verification_proposals` migration before deploying
+the patch-proposal UI. Review owners may save a unified-diff proposal against
+their finding; proposals are size-limited, path-checked, content-addressed by
+SHA-256, deduplicated, and shown for review. Each finding is limited to 10
+proposals and each proposal to 5 verification attempts. Saving a proposal does not apply,
+push, merge, or execute it.
+
+Verification attempts have idempotency keys and persist the tested patch digest,
+server-supplied test commands, execution state, timestamps, outcome, and
+sanitized output. The trusted verification service classifies a result as
+`VERIFIED` only when tests pass, the exact patch digest matches, and a
+finding-specific reproduction is observed before but not after the patch.
+Passing a general test suite by itself is insufficient. Verification of a
+proposal is not evidence that the proposal has been applied to the repository;
+therefore proposal outcomes do not set `Finding.independentlyVerifiedAt` or
+increment independently verified-fix analytics.
+
+This repository does not currently provide a sandboxed runner, isolated worker
+queue, or controls for CPU, memory, process count, filesystem access, and
+network egress. The application intentionally does not execute repository
+scripts, dependencies, or proposed patches. Without a configured trusted
+isolated runner, internal verification requests persist `INCONCLUSIVE` with
+`BLOCKED` execution status and an explicit no-execution log. Runner behavior in
+unit tests uses fakes only. The current proposal API and UI only save and
+display patches; they do not request execution. Do not enable execution until a
+separate sandbox deployment has enforceable resource/time limits, restricted
+network access, ephemeral credentials, command allowlisting, and output
+sanitization. Log redaction is best-effort and is not a substitute for keeping
+secrets out of the runner environment. A process crash can leave an attempt in
+`RUNNING`; retry keys prevent duplicate execution, but automated stale-attempt
+recovery is not implemented and would need to be added with the isolated worker.
+
 To exercise database persistence and API authorization, point both
 `DATABASE_URL` and `FINDING_LIFECYCLE_TEST_DATABASE_URL` at the same blank,
 disposable PostgreSQL database on localhost whose database name contains

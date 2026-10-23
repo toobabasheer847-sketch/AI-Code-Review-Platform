@@ -26,4 +26,8 @@ export const reviewApi = {
         const res = await axiosInstance.patch(`/reviews/findings/${findingId}/status`, input);
         return res.data;
     },
+    createFixProposal: async (findingId, patch) => {
+        const res = await axiosInstance.post(`/reviews/findings/${findingId}/fix-proposals`, { patch });
+        return res.data;
+    },
 };

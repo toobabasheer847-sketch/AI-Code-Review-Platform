@@ -36,6 +36,7 @@ function FindingLifecyclePanel({
   const queryClient = useQueryClient()
   const [nextStatus, setNextStatus] = useState<FindingStatus>(finding.status)
   const [reason, setReason] = useState('')
+  const [patch, setPatch] = useState('')
   const updateStatus = useMutation({
     mutationFn: () =>
       reviewApi.updateFindingStatus(finding.id, {
@@ -48,6 +49,13 @@ function FindingLifecyclePanel({
         queryClient.invalidateQueries({ queryKey: ['reviews', reviewId] }),
         queryClient.invalidateQueries({ queryKey: ['reviews'] }),
       ])
+    },
+  })
+  const createProposal = useMutation({
+    mutationFn: () => reviewApi.createFixProposal(finding.id, patch),
+    onSuccess: async () => {
+      setPatch('')
+      await queryClient.invalidateQueries({ queryKey: ['reviews', reviewId] })
     },
   })
 
@@ -142,6 +150,97 @@ function FindingLifecyclePanel({
                   {new Date(entry.createdAt).toLocaleString()}
                 </p>
                 {entry.reason && <p className="mt-1 whitespace-pre-wrap">{entry.reason}</p>}
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
+
+      <div className="mt-5 border-t border-slate-800 pt-4">
+        <h5 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+          Reviewable fix proposals
+        </h5>
+        <p className="mt-1 text-xs text-amber-200">
+          Saving a proposal never applies it. This deployment does not execute proposals.
+        </p>
+        <form
+          className="mt-3 grid gap-2"
+          onSubmit={(event) => {
+            event.preventDefault()
+            if (patch.trim()) createProposal.mutate()
+          }}
+        >
+          <label className="sr-only" htmlFor={`finding-patch-${finding.id}`}>
+            Unified diff patch proposal
+          </label>
+          <textarea
+            id={`finding-patch-${finding.id}`}
+            value={patch}
+            onChange={(event) => setPatch(event.target.value)}
+            maxLength={100_000}
+            disabled={createProposal.isPending}
+            placeholder="Paste a unified diff to propose a fix"
+            rows={6}
+            className="min-h-32 rounded-lg border border-slate-700 bg-slate-900 p-3 font-mono text-xs text-slate-200 placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
+          />
+          <button
+            type="submit"
+            disabled={createProposal.isPending || !patch.trim()}
+            className="min-h-10 justify-self-start rounded-lg bg-indigo-500/20 px-4 text-sm font-medium text-indigo-200 hover:bg-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {createProposal.isPending ? 'Saving proposal…' : 'Save patch proposal'}
+          </button>
+        </form>
+        {createProposal.isError && (
+          <p role="alert" className="mt-2 text-sm text-red-300">
+            {createProposal.error instanceof Error
+              ? createProposal.error.message
+              : 'Fix proposal could not be saved.'}
+          </p>
+        )}
+        {finding.fixProposals.length === 0 ? (
+          <p className="mt-3 text-xs text-slate-500">No fix proposals yet.</p>
+        ) : (
+          <ol className="mt-3 space-y-3">
+            {finding.fixProposals.map((proposal) => (
+              <li key={proposal.id} className="rounded-lg border border-slate-700 p-3">
+                <p className="text-xs text-slate-400">
+                  Proposed {new Date(proposal.createdAt).toLocaleString()} · SHA-256{' '}
+                  <code>{proposal.patchSha256}</code>
+                </p>
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-xs text-indigo-300">View patch</summary>
+                  <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap rounded bg-slate-950 p-3 text-xs text-slate-300">
+                    {proposal.patch}
+                  </pre>
+                </details>
+                {proposal.attempts.map((attempt) => (
+                  <div key={attempt.id} className="mt-3 border-t border-slate-800 pt-2 text-xs">
+                    <p className="text-slate-300">
+                      Proposal verification (does not mean applied): {attempt.status} ·{' '}
+                      {attempt.executionStatus}
+                    </p>
+                    <p className="mt-1 text-slate-500">
+                      Started {new Date(attempt.startedAt).toLocaleString()}
+                      {attempt.completedAt &&
+                        ` · Finished ${new Date(attempt.completedAt).toLocaleString()}`}
+                    </p>
+                    {attempt.testCommands.length > 0 && (
+                      <ol className="mt-1 list-decimal pl-5 text-slate-400">
+                        {attempt.testCommands.map((command, index) => (
+                          <li key={`${attempt.id}-command-${index}`}>
+                            <code>{command}</code>
+                          </li>
+                        ))}
+                      </ol>
+                    )}
+                    {attempt.sanitizedLogs && (
+                      <pre className="mt-1 whitespace-pre-wrap text-slate-500">
+                        {attempt.sanitizedLogs}
+                      </pre>
+                    )}
+                  </div>
+                ))}
               </li>
             ))}
           </ol>

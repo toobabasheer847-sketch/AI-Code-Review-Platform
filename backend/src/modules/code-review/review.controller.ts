@@ -3,9 +3,11 @@ import { ZodError, z } from 'zod'
 import { ReviewNotFoundError, ReviewService } from './review.service'
 import { updateFindingStatusSchema } from './finding-lifecycle.domain'
 import { FindingLifecycleService } from './finding-lifecycle.service'
+import { FixProposalService } from './fix-verification.service'
 
 const reviewService = new ReviewService()
 const findingLifecycleService = new FindingLifecycleService()
+const fixProposalService = new FixProposalService()
 const startReviewSchema = z.object({
   repository: z.string().min(3).max(300),
   branch: z.string().min(1).max(255).optional(),
@@ -48,6 +50,25 @@ export class ReviewController {
 			res.json({ feedback })
 		} catch (error) {
 			const message = error instanceof Error ? error.message : 'Unable to update finding status'
+			res.status(getErrorStatus(error)).json({ error: message })
+		}
+	}
+
+	async createFixProposal(req: Request, res: Response): Promise<void> {
+		if (!req.user?.userId) {
+			res.status(401).json({ error: 'Unauthorized' })
+			return
+		}
+
+		try {
+			const proposal = await fixProposalService.createProposal(
+				req.user.userId,
+				req.params.findingId,
+				req.body
+			)
+			res.status(201).json({ proposal })
+		} catch (error) {
+			const message = error instanceof Error ? error.message : 'Unable to save fix proposal'
 			res.status(getErrorStatus(error)).json({ error: message })
 		}
 	}

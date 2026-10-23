@@ -35,6 +35,8 @@ model User {
   socialPostEvents    SocialPostEvent[]
   workMemories        WorkMemory[]
   findingFeedback     FindingFeedback[]
+  fixProposals        FixProposal[]
+  fixVerificationAttempts FixVerificationAttempt[]
   automationSchedules AutomationSchedule[]
   automationNotificationPreference AutomationNotificationPreference?
   automationNotifications AutomationNotification[]
@@ -532,6 +534,21 @@ enum FindingStatus {
   WONT_FIX
 }
 
+enum FixVerificationStatus {
+  RUNNING
+  VERIFIED
+  FAILED
+  INCONCLUSIVE
+}
+
+enum FixVerificationExecutionStatus {
+  NOT_RUN
+  SUCCEEDED
+  FAILED
+  TIMED_OUT
+  BLOCKED
+}
+
 model CodeReview {
   id                String                  @id @default(cuid())
   userId            String
@@ -598,6 +615,7 @@ model Finding {
   status                   FindingStatus      @default(UNREVIEWED)
   independentlyVerifiedAt  DateTime?
   feedback                 FindingFeedback[]
+  fixProposals             FixProposal[]
   createdAt                DateTime           @default(now())
 
   @@index([reviewId])
@@ -617,6 +635,44 @@ model FindingFeedback {
 
   @@index([findingId, createdAt])
   @@index([userId, createdAt])
+}
+
+model FixProposal {
+  id             String                   @id @default(cuid())
+  findingId      String
+  finding        Finding                  @relation(fields: [findingId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  patch          String                   @db.Text
+  patchSha256    String
+  createdAt      DateTime                 @default(now())
+  attempts       FixVerificationAttempt[]
+
+  @@unique([findingId, patchSha256])
+  @@index([userId, createdAt])
+}
+
+model FixVerificationAttempt {
+  id                            String                          @id @default(cuid())
+  proposalId                    String
+  proposal                      FixProposal                     @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  requestedById                 String
+  requestedBy                   User                            @relation(fields: [requestedById], references: [id], onDelete: Cascade)
+  requestKey                    String
+  patchSha256                   String
+  status                        FixVerificationStatus
+  executionStatus               FixVerificationExecutionStatus
+  testCommands                  Json
+  testsPassed                   Boolean?
+  originalIssueReproducedBefore Boolean?
+  originalIssueReproducedAfter  Boolean?
+  startedAt                     DateTime
+  completedAt                   DateTime?
+  sanitizedLogs                 String?                         @db.Text
+  createdAt                     DateTime                        @default(now())
+
+  @@unique([proposalId, requestKey])
+  @@index([requestedById, createdAt])
 }
 
 model ChatConversation {

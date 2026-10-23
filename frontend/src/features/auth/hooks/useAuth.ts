@@ -23,21 +23,31 @@ import {
 } from '../api/authApi'
 
 function getAuthErrorMessage(error: unknown, fallback: string): string {
-  if (isAxiosError<{ error?: unknown }>(error)) {
-    const apiMessage = error.response?.data?.error
-    if (typeof apiMessage === 'string') {
-      if (error.response?.status === 409 && apiMessage === 'Email already registered') {
+  if (isAxiosError<Record<string, unknown>>(error)) {
+    const responseData = error.response?.data
+    const rawMessage =
+      typeof responseData === 'string'
+        ? responseData
+        : responseData && typeof responseData === 'object'
+          ? 'error' in responseData && typeof responseData.error === 'string'
+            ? responseData.error
+            : 'message' in responseData && typeof responseData.message === 'string'
+              ? responseData.message
+              : undefined
+          : undefined
+
+    if (typeof rawMessage === 'string') {
+      const apiMessage = rawMessage.trim()
+
+      if (error.response?.status === 409 && apiMessage.toLowerCase() === 'email already registered') {
         return 'An account with this email already exists. Please sign in or use a different email.'
       }
-      return apiMessage
-    }
 
-    if (error.response) {
-      return fallback
+      return apiMessage || fallback
     }
   }
 
-  return error instanceof Error ? error.message : fallback
+  return error instanceof Error ? error.message || fallback : fallback
 }
 
 /**

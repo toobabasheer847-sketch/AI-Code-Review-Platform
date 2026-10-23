@@ -22,6 +22,10 @@ const reviewRelations = {
 				include: { user: { select: { fullName: true } } },
 				orderBy: { createdAt: 'asc' as const },
 			},
+			fixProposals: {
+				include: { attempts: { orderBy: { createdAt: 'desc' as const } } },
+				orderBy: { createdAt: 'desc' as const },
+			},
 		},
 	},
 	analytics: true,

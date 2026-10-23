@@ -20,6 +20,28 @@ export interface FindingFeedback {
   user: { fullName: string }
 }
 
+export interface FixVerificationAttempt {
+  id: string
+  patchSha256: string
+  status: 'RUNNING' | 'VERIFIED' | 'FAILED' | 'INCONCLUSIVE'
+  executionStatus: 'NOT_RUN' | 'SUCCEEDED' | 'FAILED' | 'TIMED_OUT' | 'BLOCKED'
+  testCommands: string[]
+  testsPassed: boolean | null
+  originalIssueReproducedBefore: boolean | null
+  originalIssueReproducedAfter: boolean | null
+  startedAt: string
+  completedAt: string | null
+  sanitizedLogs: string | null
+}
+
+export interface FixProposal {
+  id: string
+  patch: string
+  patchSha256: string
+  createdAt: string
+  attempts: FixVerificationAttempt[]
+}
+
 export interface ReviewSummary {
   id: string
   repository: string
@@ -64,6 +86,7 @@ export interface ReviewDetail {
     status: FindingStatus
     independentlyVerifiedAt: string | null
     feedback: FindingFeedback[]
+    fixProposals: FixProposal[]
   }>
   findingLifecycleAnalytics: {
     total: number
@@ -106,6 +129,17 @@ export const reviewApi = {
     const res = await axiosInstance.patch<{ feedback: FindingFeedback }>(
       `/reviews/findings/${findingId}/status`,
       input
+    )
+    return res.data
+  },
+
+  createFixProposal: async (
+    findingId: string,
+    patch: string
+  ): Promise<{ proposal: FixProposal }> => {
+    const res = await axiosInstance.post<{ proposal: FixProposal }>(
+      `/reviews/findings/${findingId}/fix-proposals`,
+      { patch }
     )
     return res.data
   },

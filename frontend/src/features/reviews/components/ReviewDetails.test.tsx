@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   reviewApi,
   type FindingFeedback,
+  type FixProposal,
   type FindingStatus,
   type ReviewDetail,
 } from '@/features/reviews/api/reviewApi'
@@ -54,6 +55,7 @@ const baseFinding: ReviewDetail['findings'][number] = {
   status: 'UNREVIEWED',
   independentlyVerifiedAt: null,
   feedback: [],
+  fixProposals: [],
 }
 
 let persistedReview: ReviewDetail
@@ -125,6 +127,23 @@ async function submitStatus(
       valueSetter?.call(reasonInput, reason)
       reasonInput!.dispatchEvent(new Event('input', { bubbles: true }))
     }
+    form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  })
+}
+
+async function submitPatch(container: HTMLElement, patch: string): Promise<void> {
+  const input = container.querySelector<HTMLTextAreaElement>('#finding-patch-finding-1')
+  const form = input?.closest('form')
+  expect(input).not.toBeNull()
+  expect(form).not.toBeNull()
+
+  await act(async () => {
+    const valueSetter = Object.getOwnPropertyDescriptor(
+      window.HTMLTextAreaElement.prototype,
+      'value'
+    )?.set
+    valueSetter?.call(input, patch)
+    input!.dispatchEvent(new Event('input', { bubbles: true }))
     form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
   })
 }
@@ -228,5 +247,39 @@ describe('finding lifecycle UI', () => {
 
     expect(container.textContent).toContain('1 developer-marked fixed · 0 independently verified')
     expect(container.textContent).toContain('Not independently verified')
+  })
+
+  it('saves and displays an exact reviewable patch proposal without executing it', async () => {
+    const patch = [
+      'diff --git a/src/index.ts b/src/index.ts',
+      '--- a/src/index.ts',
+      '+++ b/src/index.ts',
+      '@@ -1 +1 @@',
+      '-old()',
+      '+new()',
+    ].join('\n')
+    const proposal: FixProposal = {
+      id: 'proposal-1',
+      patch,
+      patchSha256: 'a'.repeat(64),
+      createdAt: '2026-10-22T12:00:00.000Z',
+      attempts: [],
+    }
+    vi.spyOn(reviewApi, 'createFixProposal').mockImplementation(async () => {
+      persistedReview = {
+        ...persistedReview,
+        findings: [{ ...persistedReview.findings[0]!, fixProposals: [proposal] }],
+      }
+      return { proposal }
+    })
+    const container = await mountReview()
+
+    expect(container.textContent).toContain(
+      'Saving a proposal never applies it. This deployment does not execute proposals.'
+    )
+    await submitPatch(container, patch)
+    await waitForText(container, proposal.patchSha256)
+    expect(container.textContent).toContain('View patch')
+    expect(container.textContent).toContain(patch)
   })
 })

@@ -10,6 +10,9 @@ router.post('/start', authMiddleware, (req, res) => controller.startReview(req, 
 router.patch('/findings/:findingId/status', authMiddleware, (req, res) =>
   controller.updateFindingStatus(req, res)
 )
+router.post('/findings/:findingId/fix-proposals', authMiddleware, (req, res) =>
+  controller.createFixProposal(req, res)
+)
 router.get('/:id', authMiddleware, (req, res) => controller.getReview(req, res))
 router.delete('/:id', authMiddleware, (req, res) => controller.deleteReview(req, res))
 
