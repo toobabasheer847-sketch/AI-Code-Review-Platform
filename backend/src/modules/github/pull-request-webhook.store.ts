@@ -103,6 +103,7 @@ export const pullRequestWebhookStore: PullRequestWebhookStore = {
             pullRequestNumber: target.number,
             pullRequestUrl: target.htmlUrl,
             headSha: target.headSha,
+            sourceRevision: target.headSha,
             status: 'pending',
           },
           select: { id: true, status: true },

@@ -309,6 +309,7 @@ test(
           body: JSON.stringify({
             status: 'FIXED',
             independentlyVerifiedAt: new Date().toISOString(),
+            verificationStatus: 'VERIFIED',
           }),
         }
       )

@@ -104,7 +104,9 @@ export function sanitizeVerificationLogs(logs: string): string {
     // eslint-disable-next-line no-control-regex
     .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '')
     .replace(/\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/g, '[REDACTED]')
+    .replace(/\b(?:sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{20,})\b/g, '[REDACTED]')
     .replace(/(authorization:\s*bearer\s+)[^\s]+/gi, '$1[REDACTED]')
+    .replace(/((?:api[_-]?key|access[_-]?token|secret|password)\s*[:=]\s*)[^\s,;]+/gi, '$1[REDACTED]')
     // Strip control bytes from untrusted runner output.
     // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')

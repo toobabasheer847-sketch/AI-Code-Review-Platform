@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import {
   findingStatuses,
   reviewApi,
+  type FindingVerificationRecord,
   type FindingStatus,
   type ReviewDetail,
 } from '@/features/reviews/api/reviewApi'
@@ -26,11 +27,20 @@ const allowedNextStatuses: Record<FindingStatus, FindingStatus[]> = {
   WONT_FIX: ['UNREVIEWED', 'CONFIRMED'],
 }
 
+const verificationStatusLabels: Record<FindingVerificationRecord['status'], string> = {
+  AI_REPORTED: 'AI reported · unverified',
+  VERIFIED: 'Independently verified',
+  VERIFICATION_FAILED: 'Verification failed',
+  INCONCLUSIVE: 'Inconclusive',
+}
+
 function FindingLifecyclePanel({
   reviewId,
+  sourceRevision,
   finding,
 }: {
   reviewId: string
+  sourceRevision?: string | null
   finding: ReviewDetail['findings'][number]
 }): JSX.Element {
   const queryClient = useQueryClient()
@@ -65,6 +75,8 @@ function FindingLifecyclePanel({
     event.preventDefault()
     if (nextStatus !== finding.status) updateStatus.mutate()
   }
+  const verificationRecords = finding.verificationRecords ?? []
+  const latestVerification = verificationRecords[verificationRecords.length - 1]
 
   return (
     <div className="mt-4 rounded-lg border border-slate-700/70 bg-slate-950/40 p-4">
@@ -79,6 +91,52 @@ function FindingLifecyclePanel({
               ? `Independently verified ${new Date(finding.independentlyVerifiedAt).toLocaleString()}`
               : 'Not independently verified'}
           </span>
+        )}
+      </div>
+
+      <div className="mt-3 rounded-md border border-slate-800 bg-slate-950/50 p-3">
+        <h5 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+          Independent verification
+        </h5>
+        {!latestVerification || latestVerification.method === 'AI_REVIEW' ? (
+          <div className="mt-2 space-y-1 text-xs text-slate-400">
+            <p>{verificationStatusLabels.AI_REPORTED}</p>
+            <p>No independent test or static-analysis check ran for this finding.</p>
+            {latestVerification && <p>{latestVerification.resultSummary}</p>}
+          </div>
+        ) : (
+          <ol className="mt-2 space-y-3">
+            {verificationRecords.map((record) => (
+              <li key={record.id} className="border-l border-slate-700 pl-3 text-xs">
+                <p className="font-medium text-slate-200">
+                  {verificationStatusLabels[record.status]} · {record.method.replace(/_/g, ' ')}
+                </p>
+                <p className="mt-1 text-slate-400">{record.resultSummary}</p>
+                <p className="mt-1 text-slate-500">
+                  {record.method === 'AI_REVIEW'
+                    ? 'No independent check ran'
+                    : record.method === 'TARGETED_TEST'
+                      ? 'Targeted test execution recorded'
+                      : 'Static-analysis execution recorded'}
+                  {' · '}
+                  {new Date(record.completedAt).toLocaleString()}
+                </p>
+                {record.sourceRevision && (
+                  <p className="mt-1 font-mono text-slate-500">
+                    Source revision {record.sourceRevision.slice(0, 12)}
+                    {sourceRevision && record.sourceRevision !== sourceRevision
+                      ? ' · stale result'
+                      : ''}
+                  </p>
+                )}
+                {record.diagnosticSummary && (
+                  <p className="mt-1 whitespace-pre-wrap text-slate-500">
+                    {record.diagnosticSummary}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ol>
         )}
       </div>
 
@@ -334,6 +392,11 @@ export const ReviewDetails = ({ review }: { review: ReviewDetail }): JSX.Element
             <p className="mt-1 text-sm text-slate-400">
               {new Date(review.createdAt).toLocaleString()}
             </p>
+            {review.sourceRevision && (
+              <p className="mt-1 font-mono text-xs text-slate-500">
+                Source revision {review.sourceRevision.slice(0, 12)}
+              </p>
+            )}
           </div>
 
           {qualityScore !== undefined && scoreStyles && review.status === 'completed' && (
@@ -430,7 +493,11 @@ export const ReviewDetails = ({ review }: { review: ReviewDetail }): JSX.Element
                       {f.suggestions.join('; ')}
                     </div>
                   )}
-                  <FindingLifecyclePanel reviewId={review.id} finding={f} />
+                  <FindingLifecyclePanel
+                    reviewId={review.id}
+                    sourceRevision={review.sourceRevision}
+                    finding={f}
+                  />
                 </li>
               ))}
             </ul>

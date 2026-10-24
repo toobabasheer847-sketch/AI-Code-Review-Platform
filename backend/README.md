@@ -190,9 +190,35 @@ status and feedback history, including actor and timestamp, and
 `PATCH /api/reviews/findings/:findingId/status` validates ownership and
 transitions server-side. Per-review analytics count persisted statuses and
 separate developer-marked fixes from records with an independent-verification
-timestamp. There is no independent fix-verification process in this release,
+timestamp. No independent process currently sets this legacy fixed timestamp,
 so that metric remains zero; developers cannot set the verification timestamp.
 Feedback is not used to suppress future findings or retrain the analyzer.
+
+### Evidence-backed verification
+
+Apply the `20261024133000_evidence_backed_verification` migration before
+deploying this version. Reviews persist a source commit revision: pull requests
+use the validated head SHA, while branch reviews first resolve the branch to a
+commit and fetch both its tree and file contents by that immutable SHA. Findings
+retain their cited source evidence and receive an `AI_REPORTED` verification
+record tied to that revision. The record explicitly states that source citation
+validation does not independently verify the issue.
+
+The available statuses are `AI_REPORTED`, `VERIFIED`,
+`VERIFICATION_FAILED`, and `INCONCLUSIVE`. Only server-side
+`FindingVerificationService` code can append independent verification records;
+the user-facing review API rejects verification fields and has no route for
+creating those records. Results are idempotent by finding and request key,
+retain method, timestamps, source revision, and sanitized summary, and become
+`INCONCLUSIVE` if the review has moved to a different source revision.
+`VERIFICATION_FAILED` must describe a targeted criterion that supports the
+finding or fix assessment; a generic failing test suite is not sufficient.
+
+There is currently no production static-analysis or isolated test runner
+connected to findings. Consequently, production findings remain
+`AI_REPORTED`; the UI states that no independent test or static check ran.
+Proposal verification is a separate workflow and does not verify the AI
+finding. No repository code is executed.
 
 ### Fix proposals and verification safety
 

@@ -38,6 +38,7 @@ function createReview(
     },
     status: 'completed',
     branch: 'main',
+    sourceRevision: 'a'.repeat(40),
     createdAt: '2026-10-22T00:00:00.000Z',
     analytics: { totalIssues: 1, qualityScore: 80 },
   }
@@ -49,11 +50,26 @@ const baseFinding: ReviewDetail['findings'][number] = {
   line: 10,
   title: 'Example finding',
   message: 'A potential issue.',
+  evidence: 'throw error',
   severity: 'warning',
   category: 'bug',
   suggestions: [],
   status: 'UNREVIEWED',
   independentlyVerifiedAt: null,
+  verificationRecords: [
+    {
+      id: 'verification-1',
+      status: 'AI_REPORTED',
+      method: 'AI_REVIEW',
+      resultSummary:
+        'AI-reported finding. Its cited evidence matched the retrieved source; the issue itself was not independently verified.',
+      sourceRevision: 'a'.repeat(40),
+      diagnosticSummary: null,
+      startedAt: '2026-10-22T00:00:00.000Z',
+      completedAt: '2026-10-22T00:00:00.000Z',
+      createdAt: '2026-10-22T00:00:00.000Z',
+    },
+  ],
   feedback: [],
   fixProposals: [],
 }
@@ -165,6 +181,17 @@ afterEach(async () => {
 })
 
 describe('finding lifecycle UI', () => {
+  it('labels AI findings unverified and makes clear that no independent check ran', async () => {
+    const container = await mountReview()
+
+    expect(container.textContent).toContain('AI reported · unverified')
+    expect(container.textContent).toContain(
+      'No independent test or static-analysis check ran for this finding.'
+    )
+    expect(container.textContent).toContain(`Source revision ${'a'.repeat(12)}`)
+    expect(container.querySelector('pre code')?.textContent).toBe('throw error')
+  })
+
   it('does not substitute a missing heuristic score or claim clean code when no findings exist', async () => {
     persistedReview = {
       ...createReview(),

@@ -48,6 +48,18 @@ test('validates lifecycle update input and treats blank optional reasons as omit
     updateFindingStatusSchema.safeParse({ status: 'FIXED', extra: true }).success,
     false
   );
+  assert.equal(
+    updateFindingStatusSchema.safeParse({ status: 'FIXED', verificationStatus: 'VERIFIED' })
+      .success,
+    false
+  );
+  assert.equal(
+    updateFindingStatusSchema.safeParse({
+      status: 'FIXED',
+      independentlyVerifiedAt: new Date().toISOString(),
+    }).success,
+    false
+  );
 });
 
 test('persists status change, optional reason, timestamp, and acting user in feedback history', async () => {

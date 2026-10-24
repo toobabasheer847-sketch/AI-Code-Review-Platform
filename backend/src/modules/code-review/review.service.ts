@@ -18,6 +18,9 @@ const reviewRelations = {
 	repository: true,
 	findings: {
 		include: {
+			verificationRecords: {
+				orderBy: [{ startedAt: 'asc' as const }, { id: 'asc' as const }],
+			},
 			feedback: {
 				include: { user: { select: { fullName: true } } },
 				orderBy: { createdAt: 'asc' as const },
@@ -178,6 +181,7 @@ export class ReviewService {
 			chat: review.chatConversation,
 			status: review.status,
 			branch: review.branch,
+			sourceRevision: review.sourceRevision,
 			errorMessage: review.errorMessage,
 			source: review.source,
 			reviewLimitations: review.reviewLimitations,

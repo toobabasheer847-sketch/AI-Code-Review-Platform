@@ -549,6 +549,13 @@ enum FixVerificationExecutionStatus {
   BLOCKED
 }
 
+enum FindingVerificationStatus {
+  AI_REPORTED
+  VERIFIED
+  VERIFICATION_FAILED
+  INCONCLUSIVE
+}
+
 model CodeReview {
   id                String                  @id @default(cuid())
   userId            String
@@ -563,6 +570,7 @@ model CodeReview {
   pullRequestNumber Int?
   pullRequestUrl    String?
   headSha           String?
+  sourceRevision    String?
   changedLines      Json?
   reviewLimitations String[]                @default([])
   errorMessage      String?
@@ -616,10 +624,29 @@ model Finding {
   independentlyVerifiedAt  DateTime?
   feedback                 FindingFeedback[]
   fixProposals             FixProposal[]
+  verificationRecords      FindingVerificationRecord[]
   createdAt                DateTime           @default(now())
 
   @@index([reviewId])
   @@index([reviewId, status])
+}
+
+model FindingVerificationRecord {
+  id                String                    @id @default(cuid())
+  findingId         String
+  finding           Finding                   @relation(fields: [findingId], references: [id], onDelete: Cascade)
+  requestKey        String
+  status            FindingVerificationStatus
+  method            String
+  resultSummary     String                    @db.VarChar(500)
+  sourceRevision    String?
+  diagnosticSummary String?                   @db.VarChar(2000)
+  startedAt         DateTime
+  completedAt       DateTime
+  createdAt         DateTime                  @default(now())
+
+  @@unique([findingId, requestKey])
+  @@index([findingId, createdAt])
 }
 
 model FindingFeedback {

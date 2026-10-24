@@ -130,6 +130,7 @@ export interface ReviewRepositoryTarget {
 export interface ReviewSourceFile {
   path: string
   content: string
+  sourceRevision?: string
   changedLines?: number[]
   reviewLimitations?: string[]
 }
@@ -185,6 +186,10 @@ interface PullRequestReviewResponse {
 interface GitHubTreeResponse {
   truncated: boolean
   tree: GitHubTreeItem[]
+}
+
+interface GitHubCommitResponse {
+  sha: string
 }
 
 interface GitHubRepositoryResponse {
@@ -1021,8 +1026,16 @@ export class GitHubService {
     const encodedRepository = `${encodeURIComponent(owner)}/${encodeURIComponent(name)}`
     const branchPath = branch.split('/').map(encodeURIComponent).join('/')
     const headers = buildGitHubHeaders(token)
+    const commitResponse = await this.api.get<GitHubCommitResponse>(
+      `${GITHUB_API_BASE}/repos/${encodedRepository}/commits/${branchPath}`,
+      { headers, timeout: 15_000 }
+    )
+    const sourceRevision = commitResponse.data.sha
+    if (!/^[\da-f]{40,64}$/i.test(sourceRevision)) {
+      throw new Error('GitHub returned an invalid source revision')
+    }
     const treeResponse = await this.api.get<GitHubTreeResponse>(
-      `${GITHUB_API_BASE}/repos/${encodedRepository}/git/trees/${branchPath}`,
+      `${GITHUB_API_BASE}/repos/${encodedRepository}/git/trees/${sourceRevision}`,
       { headers, params: { recursive: '1' }, timeout: 15_000 }
     )
 
@@ -1047,14 +1060,14 @@ export class GitHubService {
                 Accept: 'application/vnd.github.v3.raw',
               },
               responseType: 'text',
-              params: { ref: branch },
+              params: { ref: sourceRevision },
               timeout: 15_000,
             }
           )
           if (Buffer.byteLength(response.data, 'utf8') > MAX_REVIEW_FILE_BYTES) {
             throw new Error(`Source file exceeded the review size limit: ${file.path}`)
           }
-          return { path: file.path, content: response.data }
+          return { path: file.path, content: response.data, sourceRevision }
         })
       )
       const batchBytes = fetched.reduce(
@@ -1180,6 +1193,7 @@ export class GitHubService {
       files.push({
         path: changedFile.filename,
         content: response.data,
+        sourceRevision: expectedHeadSha,
         changedLines: getAddedPullRequestLines(changedFile.patch),
       })
     }

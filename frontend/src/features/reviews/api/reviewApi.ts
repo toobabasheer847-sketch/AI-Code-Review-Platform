@@ -42,6 +42,24 @@ export interface FixProposal {
   attempts: FixVerificationAttempt[]
 }
 
+export type FindingVerificationStatus =
+  | 'AI_REPORTED'
+  | 'VERIFIED'
+  | 'VERIFICATION_FAILED'
+  | 'INCONCLUSIVE'
+
+export interface FindingVerificationRecord {
+  id: string
+  status: FindingVerificationStatus
+  method: string
+  resultSummary: string
+  sourceRevision: string | null
+  diagnosticSummary: string | null
+  startedAt: string
+  completedAt: string
+  createdAt: string
+}
+
 export interface ReviewSummary {
   id: string
   repository: string
@@ -85,6 +103,7 @@ export interface ReviewDetail {
     suggestions: string[]
     status: FindingStatus
     independentlyVerifiedAt: string | null
+    verificationRecords: FindingVerificationRecord[]
     feedback: FindingFeedback[]
     fixProposals: FixProposal[]
   }>
@@ -102,6 +121,7 @@ export interface ReviewDetail {
   source?: 'MANUAL' | 'PULL_REQUEST'
   pullRequestNumber?: number | null
   pullRequestUrl?: string | null
+  sourceRevision?: string | null
   pullRequestStatus?: string | null
   reviewLimitations?: string[]
   createdAt: string

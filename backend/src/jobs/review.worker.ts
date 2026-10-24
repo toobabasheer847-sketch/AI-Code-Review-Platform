@@ -67,7 +67,9 @@ const store: ReviewJobStore = {
             await transaction.finding.deleteMany({ where: { reviewId } })
           },
           async createFindings(findings) {
-            await transaction.finding.createMany({ data: findings })
+            for (const finding of findings) {
+              await transaction.finding.create({ data: finding })
+            }
           },
           async upsertAnalytics(userId, reviewId, analytics) {
             await transaction.reviewAnalytics.upsert({
@@ -80,6 +82,7 @@ const store: ReviewJobStore = {
             reviewId,
             summary,
             fileContent,
+            sourceRevision,
             changedLines,
             reviewLimitations
           ) {
@@ -90,6 +93,7 @@ const store: ReviewJobStore = {
                 errorMessage: null,
                 description: summary,
                 fileContent,
+                sourceRevision,
                 changedLines: changedLines ?? Prisma.JsonNull,
                 reviewLimitations,
               },

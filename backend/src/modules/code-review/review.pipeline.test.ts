@@ -16,6 +16,7 @@ import type { ReviewAccessStore } from './review.service'
 import { authMiddleware } from '@/middleware/auth.middleware'
 import {
   persistReviewAnalysis,
+  resolveReviewSourceRevision,
   type ReviewPersistenceOperations,
 } from './review.persistence'
 import {
@@ -27,8 +28,8 @@ import {
 } from '@/modules/github/github.service'
 
 const sourceFiles = [
-  { path: 'src/app.ts', content: 'const value = 1\nreturn value' },
-  { path: 'src/lib.ts', content: 'export const ready = true' },
+  { path: 'src/app.ts', content: 'const value = 1\nreturn value', sourceRevision: 'a'.repeat(40) },
+  { path: 'src/lib.ts', content: 'export const ready = true', sourceRevision: 'a'.repeat(40) },
 ]
 
 const review: ReviewJobRecord = {
@@ -119,6 +120,22 @@ test('validates AI findings against selected files and computes analytics', () =
   )
 })
 
+test('requires one immutable commit revision for every retrieved source file', () => {
+  assert.equal(resolveReviewSourceRevision(sourceFiles), 'a'.repeat(40))
+  assert.throws(
+    () => resolveReviewSourceRevision([{ path: 'src/file.ts', content: 'source' }]),
+    /do not share a valid source revision/
+  )
+  assert.throws(
+    () =>
+      resolveReviewSourceRevision([
+        sourceFiles[0],
+        { ...sourceFiles[1], sourceRevision: 'b'.repeat(40) },
+      ]),
+    /do not share a valid source revision/
+  )
+})
+
 test('selects supported review files within file-count and byte limits', () => {
   const tree: GitHubTreeItem[] = [
     { path: 'src/too-large.ts', type: 'blob', size: 20_001, sha: 'large' },
@@ -165,8 +182,9 @@ test('persists findings, analytics, review content, and completion in one transa
     async deleteFindings(reviewId) {
       calls.push(`delete:${reviewId}`)
     },
-    async createFindings(findings) {
+    async createFindings(findings, sourceRevision) {
       savedFindings = findings
+      assert.equal(sourceRevision, 'a'.repeat(40))
       calls.push('findings')
     },
     async upsertAnalytics(userId, reviewId, analytics) {
@@ -177,7 +195,14 @@ test('persists findings, analytics, review content, and completion in one transa
       }
       calls.push('analytics')
     },
-    async completeReview(reviewId, summary, fileContent, _changedLines, limitations) {
+    async completeReview(
+      reviewId,
+      summary,
+      fileContent,
+      sourceRevision,
+      _changedLines,
+      limitations
+    ) {
       savedReview = {
         where: { id: reviewId },
         data: {
@@ -185,6 +210,7 @@ test('persists findings, analytics, review content, and completion in one transa
           errorMessage: null,
           description: summary,
           fileContent,
+          sourceRevision,
           reviewLimitations: limitations,
         },
       }
@@ -205,6 +231,28 @@ test('persists findings, analytics, review content, and completion in one transa
     (savedFindings as Array<{ evidence: string }>)[0].evidence,
     analysis.findings[0].evidence
   )
+  const initialVerification = (
+    savedFindings as Array<{
+      verificationRecords: {
+        create: {
+          requestKey: string
+          status: string
+          method: string
+          resultSummary: string
+          sourceRevision: string
+          startedAt: Date
+          completedAt: Date
+        }
+      }
+    }>
+  )[0].verificationRecords.create
+  assert.equal(initialVerification.requestKey, 'ai-review:review-1')
+  assert.equal(initialVerification.status, 'AI_REPORTED')
+  assert.equal(initialVerification.method, 'AI_REVIEW')
+  assert.equal(initialVerification.sourceRevision, 'a'.repeat(40))
+  assert.match(initialVerification.resultSummary, /not independently verified/)
+  assert.ok(initialVerification.startedAt instanceof Date)
+  assert.equal(initialVerification.completedAt, initialVerification.startedAt)
   assert.deepEqual(savedAnalytics, {
     where: { reviewId: review.id },
     create: { userId: review.userId, reviewId: review.id, ...analysis.analytics },
@@ -219,6 +267,7 @@ test('persists findings, analytics, review content, and completion in one transa
       fileContent: sourceFiles
         .map((file) => `--- ${file.path} ---\n${file.content}`)
         .join('\n\n'),
+      sourceRevision: 'a'.repeat(40),
       reviewLimitations: [],
     },
   })
@@ -258,6 +307,37 @@ test('processes a review through running, analysis, persistence, and notificatio
     'completed',
     'notify',
   ])
+})
+
+test('does not analyze a pull request when retrieved source is from a stale revision', async () => {
+  const events: string[] = []
+  let analysisCalls = 0
+  const store: ReviewJobStore = {
+    ...createStore(events),
+    async findForProcessing() {
+      return { ...review, source: 'PULL_REQUEST', headSha: 'b'.repeat(40) }
+    },
+  }
+
+  await assert.rejects(
+    processReview(review.id, {
+      store,
+      async fetchFiles() {
+        return sourceFiles
+      },
+      async analyze() {
+        analysisCalls += 1
+        return analysis
+      },
+      async notify() {
+        assert.fail('Stale source must not notify')
+      },
+    }),
+    /Review processing failed/
+  )
+
+  assert.equal(analysisCalls, 0)
+  assert.ok(events.some((event) => event.startsWith('failed:')))
 })
 
 test('does not rerun analysis when retrying a completed review notification', async () => {
@@ -414,6 +494,9 @@ test('returns persisted findings for an owned review', async () => {
       repository: true
       findings: {
         include: {
+          verificationRecords: {
+            orderBy: [{ startedAt: 'asc' }, { id: 'asc' }]
+          }
           feedback: {
             include: { user: { select: { fullName: true } } }
             orderBy: { createdAt: 'asc' }
@@ -441,6 +524,7 @@ test('returns persisted findings for an owned review', async () => {
     pullRequestNumber: null,
     pullRequestUrl: null,
     headSha: null,
+    sourceRevision: 'a'.repeat(40),
     changedLines: null,
     reviewLimitations: [],
     status: 'completed',
@@ -472,6 +556,22 @@ test('returns persisted findings for an owned review', async () => {
         suggestions: analysis.findings[0].suggestions,
         status: 'FIXED',
         independentlyVerifiedAt: new Date('2026-10-20T10:00:00.000Z'),
+        verificationRecords: [
+          {
+            id: 'verification-1',
+            findingId: 'finding-1',
+            requestKey: 'ai-review:review-1',
+            status: 'AI_REPORTED',
+            method: 'AI_REVIEW',
+            resultSummary:
+              'AI-reported finding. Its cited evidence matched the retrieved source; the issue itself was not independently verified.',
+            sourceRevision: 'a'.repeat(40),
+            diagnosticSummary: null,
+            startedAt: createdAt,
+            completedAt: createdAt,
+            createdAt,
+          },
+        ],
         createdAt,
         feedback: [
           {
@@ -490,12 +590,6 @@ test('returns persisted findings for an owned review', async () => {
     analytics: null,
     chatConversation: null,
     webhookDeliveries: [],
-    pullRequestNumber: null,
-    pullRequestUrl: null,
-    headSha: null,
-    changedLines: null,
-    source: 'MANUAL',
-    reviewLimitations: [],
   }
   const service = new ReviewService({
     reviewAccess: {
@@ -512,6 +606,8 @@ test('returns persisted findings for an owned review', async () => {
 
   assert.deepEqual(result.findings, persistedReview.findings)
   assert.equal(result.findings[0]?.feedback[0]?.reason, 'Patched the issue.')
+  assert.equal(result.findings[0]?.verificationRecords[0]?.status, 'AI_REPORTED')
+  assert.equal(result.sourceRevision, 'a'.repeat(40))
   assert.deepEqual(result.findingLifecycleAnalytics, {
     total: 1,
     statusCounts: {

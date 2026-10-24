@@ -1,5 +1,6 @@
 import { ReviewProviderError, type ReviewAnalysis } from './analyzer'
 import type { ReviewSourceFile } from '@/modules/github/github.service'
+import { resolveReviewSourceRevision } from './review.persistence'
 
 export interface ReviewJobRecord {
   id: string
@@ -75,6 +76,13 @@ export async function processReview(
       review.branch,
       review
     )
+    const sourceRevision = resolveReviewSourceRevision(files)
+    if (
+      review.source === 'PULL_REQUEST' &&
+      (!review.headSha || sourceRevision !== review.headSha)
+    ) {
+      throw new Error('Pull request source revision changed before analysis')
+    }
     analysis = await dependencies.analyze(files)
     await dependencies.store.complete(review, analysis, files)
   } catch (error) {
