@@ -19,6 +19,10 @@ Server runs on http://localhost:3001
 
 ### Setup Prisma
 
+This project connects directly to PostgreSQL. Set `DATABASE_URL` to a
+`postgres://` or `postgresql://` connection URL; `prisma://` Accelerate URLs are
+not supported by this backend.
+
 ```bash
 # Generate Prisma client
 npm run prisma:generate
@@ -205,20 +209,27 @@ record tied to that revision. The record explicitly states that source citation
 validation does not independently verify the issue.
 
 The available statuses are `AI_REPORTED`, `VERIFIED`,
-`VERIFICATION_FAILED`, and `INCONCLUSIVE`. Only server-side
-`FindingVerificationService` code can append independent verification records;
-the user-facing review API rejects verification fields and has no route for
-creating those records. Results are idempotent by finding and request key,
-retain method, timestamps, source revision, and sanitized summary, and become
-`INCONCLUSIVE` if the review has moved to a different source revision.
-`VERIFICATION_FAILED` must describe a targeted criterion that supports the
-finding or fix assessment; a generic failing test suite is not sufficient.
+`VERIFICATION_FAILED`, and `INCONCLUSIVE`. Authenticated owners can request one
+of two allowlisted profiles through
+`POST /api/reviews/findings/:findingId/verification-requests` and inspect its
+record through the corresponding `GET` route. Requests are idempotent per
+finding/request key and limited to five per finding. The request schema rejects
+client-supplied status, exit code, source revision, and execution evidence.
+Developer feedback/status APIs cannot set verification data.
 
 There is currently no production static-analysis or isolated test runner
-connected to findings. Consequently, production findings remain
-`AI_REPORTED`; the UI states that no independent test or static check ran.
-Proposal verification is a separate workflow and does not verify the AI
-finding. No repository code is executed.
+connected to findings. The orchestration endpoint therefore records
+`INCONCLUSIVE`, `executionOccurred=false`, no tool or exit code, and an explicit
+diagnostic that no check ran. It does not enqueue a BullMQ job or execute code
+and never returns `VERIFIED` or `VERIFICATION_FAILED`. The schema retains
+execution metadata for a future trusted runner; a request result becomes
+inconclusive if the source revision is missing or stale. Proposal verification
+is a separate workflow and does not verify the AI finding.
+
+Do not add a runner until a separately deployed isolation boundary is
+implemented and validated. Unit tests use an in-memory store test double for
+request and stale-revision behavior; they are not evidence of a real check
+execution or sandbox.
 
 ### Fix proposals and verification safety
 

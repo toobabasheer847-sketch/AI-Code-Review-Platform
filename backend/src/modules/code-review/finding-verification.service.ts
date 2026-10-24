@@ -1,27 +1,21 @@
 import { Prisma } from '@prisma/client'
 import { z } from 'zod'
 import { prisma } from '@/config/database'
-import { sanitizeVerificationLogs } from './fix-verification.domain'
 
-const independentVerificationMethods = ['STATIC_ANALYSIS', 'TARGETED_TEST'] as const
-const independentVerificationStatuses = [
-  'VERIFIED',
-  'VERIFICATION_FAILED',
-  'INCONCLUSIVE',
-] as const
+export const findingVerificationMethods = ['STATIC_ANALYSIS', 'TARGETED_TEST'] as const
+export const MAX_FINDING_VERIFICATION_REQUESTS = 5
 
-export const recordFindingVerificationSchema = z
+export const requestFindingVerificationSchema = z
   .object({
-    requestKey: z.string().min(1).max(128).regex(/^[A-Za-z0-9._:-]+$/),
-    status: z.enum(independentVerificationStatuses),
-    method: z.enum(independentVerificationMethods),
-    resultSummary: z.string().trim().min(1).max(500),
-    diagnosticSummary: z.string().max(8_000).optional(),
-    sourceRevision: z.string().regex(/^[\da-f]{40,64}$/i),
+    requestKey: z
+      .string()
+      .min(1)
+      .max(128)
+      .regex(/^[A-Za-z0-9._:-]+$/)
+      .refine((key) => !key.startsWith('ai-review:'), 'Reserved verification request key'),
+    method: z.enum(findingVerificationMethods),
   })
   .strict()
-
-export type FindingVerificationInput = z.infer<typeof recordFindingVerificationSchema>
 
 export interface FindingVerificationRecord {
   id: string
@@ -32,59 +26,126 @@ export interface FindingVerificationRecord {
   resultSummary: string
   sourceRevision: string | null
   diagnosticSummary: string | null
+  executionOccurred: boolean
+  toolIdentity: string | null
+  exitCode: number | null
+  durationMs: number
   startedAt: Date
   completedAt: Date
   createdAt: Date
 }
 
 export interface FindingVerificationStore {
-  findRecord(findingId: string, requestKey: string): Promise<FindingVerificationRecord | null>
-  createRecord(
-    input: Omit<FindingVerificationInput, 'diagnosticSummary'> & {
-      findingId: string
-      diagnosticSummary: string | null
-      startedAt: Date
-      completedAt: Date
-    }
-  ): Promise<FindingVerificationRecord>
+  findOwnedFinding(
+    userId: string,
+    findingId: string
+  ): Promise<{ id: string; sourceRevision: string | null } | null>
+  findOwnedRecord(
+    userId: string,
+    findingId: string,
+    requestKey: string
+  ): Promise<FindingVerificationRecord | null>
+  createUnavailableRecord(input: {
+    userId: string
+    findingId: string
+    requestKey: string
+    method: (typeof findingVerificationMethods)[number]
+    sourceRevision: string | null
+    startedAt: Date
+    completedAt: Date
+  }): Promise<FindingVerificationRecord>
 }
 
 export class FindingVerificationNotFoundError extends Error {
+  readonly statusCode = 404
+
   constructor() {
     super('Finding not found')
     this.name = 'FindingVerificationNotFoundError'
   }
 }
 
+export class FindingVerificationLimitError extends Error {
+  readonly statusCode = 409
+
+  constructor() {
+    super('This finding has reached the verification request limit.')
+    this.name = 'FindingVerificationLimitError'
+  }
+}
+
 const prismaFindingVerificationStore: FindingVerificationStore = {
-  async findRecord(findingId, requestKey) {
-    return prisma.findingVerificationRecord.findUnique({
-      where: { findingId_requestKey: { findingId, requestKey } },
+  async findOwnedFinding(userId, findingId) {
+    return prisma.finding.findFirst({
+      where: { id: findingId, review: { is: { userId } } },
+      select: {
+        id: true,
+        review: { select: { sourceRevision: true } },
+      },
+    }).then((finding) =>
+      finding
+        ? { id: finding.id, sourceRevision: finding.review.sourceRevision }
+        : null
+    )
+  },
+
+  async findOwnedRecord(userId, findingId, requestKey) {
+    return prisma.findingVerificationRecord.findFirst({
+      where: {
+        findingId,
+        requestKey,
+        finding: { review: { is: { userId } } },
+      },
     })
   },
 
-  async createRecord(input) {
+  async createUnavailableRecord(input) {
     return prisma.$transaction(async (transaction) => {
-      const finding = await transaction.finding.findUnique({
-        where: { id: input.findingId },
+      const finding = await transaction.finding.findFirst({
+        where: {
+          id: input.findingId,
+          review: { is: { userId: input.userId } },
+        },
         select: { review: { select: { sourceRevision: true } } },
       })
       if (!finding) throw new FindingVerificationNotFoundError()
 
-      const sourceIsCurrent = finding.review.sourceRevision === input.sourceRevision
+      const requestCount = await transaction.findingVerificationRecord.count({
+        where: {
+          findingId: input.findingId,
+          method: { not: 'AI_REVIEW' },
+        },
+      })
+      if (requestCount >= MAX_FINDING_VERIFICATION_REQUESTS) {
+        throw new FindingVerificationLimitError()
+      }
+
+      const sourceIsCurrent =
+        input.sourceRevision !== null &&
+        finding.review.sourceRevision === input.sourceRevision
+      const missingRevision = input.sourceRevision === null
+      const resultSummary = !sourceIsCurrent
+        ? missingRevision
+          ? 'Verification is inconclusive because this review has no pinned source revision.'
+          : 'Verification is inconclusive because the review source revision has changed.'
+        : 'No isolated verification runner is configured. The requested check was not executed.'
+      const diagnosticSummary = !sourceIsCurrent
+        ? 'No verification command was executed; the source revision is missing or stale.'
+        : 'No sandbox runner or approved static-analysis tool is configured; no repository code was executed.'
+
       return transaction.findingVerificationRecord.create({
         data: {
           findingId: input.findingId,
           requestKey: input.requestKey,
-          status: sourceIsCurrent ? input.status : 'INCONCLUSIVE',
+          status: 'INCONCLUSIVE',
           method: input.method,
-          resultSummary: sourceIsCurrent
-            ? input.resultSummary
-            : 'Verification result was discarded because the review source revision has changed.',
+          resultSummary,
           sourceRevision: input.sourceRevision,
-          diagnosticSummary: sourceIsCurrent
-            ? input.diagnosticSummary
-            : 'The result applies to a stale source revision and was not used.',
+          diagnosticSummary,
+          executionOccurred: false,
+          toolIdentity: null,
+          exitCode: null,
+          durationMs: 0,
           startedAt: input.startedAt,
           completedAt: input.completedAt,
         },
@@ -97,48 +158,62 @@ function isUniqueConstraintError(error: unknown): boolean {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002'
 }
 
-function sanitizedText(value: string | undefined, limit: number): string | null {
-  if (!value) return null
-  return Array.from(sanitizeVerificationLogs(value)).slice(0, limit).join('')
-}
-
 export class FindingVerificationService {
   constructor(
     private readonly store: FindingVerificationStore = prismaFindingVerificationStore,
     private readonly now: () => Date = () => new Date()
   ) {}
 
-  async record(
+  async request(
+    userId: string,
     findingId: string,
     input: unknown
   ): Promise<FindingVerificationRecord> {
-    const parsed = recordFindingVerificationSchema.safeParse(input)
-    if (!parsed.success) throw new Error('Invalid trusted verification result')
+    const parsed = requestFindingVerificationSchema.safeParse(input)
+    if (!parsed.success) throw new Error('Invalid verification request')
 
-    const previous = await this.store.findRecord(findingId, parsed.data.requestKey)
+    const finding = await this.store.findOwnedFinding(userId, findingId)
+    if (!finding) throw new FindingVerificationNotFoundError()
+
+    const previous = await this.store.findOwnedRecord(
+      userId,
+      findingId,
+      parsed.data.requestKey
+    )
     if (previous) return previous
 
     const timestamp = this.now()
-    const normalizedInput = {
-      ...parsed.data,
-      resultSummary:
-        sanitizedText(parsed.data.resultSummary, 500) ??
-        'Verification result was empty after sanitization.',
-      diagnosticSummary: sanitizedText(parsed.data.diagnosticSummary, 2_000),
-      startedAt: timestamp,
-      completedAt: timestamp,
-    }
-
     try {
-      return await this.store.createRecord({
+      return await this.store.createUnavailableRecord({
+        userId,
         findingId,
-        ...normalizedInput,
+        requestKey: parsed.data.requestKey,
+        method: parsed.data.method,
+        sourceRevision: finding.sourceRevision,
+        startedAt: timestamp,
+        completedAt: timestamp,
       })
     } catch (error) {
       if (!isUniqueConstraintError(error)) throw error
-      const duplicate = await this.store.findRecord(findingId, parsed.data.requestKey)
+      const duplicate = await this.store.findOwnedRecord(
+        userId,
+        findingId,
+        parsed.data.requestKey
+      )
       if (duplicate) return duplicate
       throw error
     }
+  }
+
+  async get(
+    userId: string,
+    findingId: string,
+    requestKey: string
+  ): Promise<FindingVerificationRecord> {
+    const finding = await this.store.findOwnedFinding(userId, findingId)
+    if (!finding) throw new FindingVerificationNotFoundError()
+    const record = await this.store.findOwnedRecord(userId, findingId, requestKey)
+    if (!record) throw new FindingVerificationNotFoundError()
+    return record
   }
 }

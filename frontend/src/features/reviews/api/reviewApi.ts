@@ -50,11 +50,16 @@ export type FindingVerificationStatus =
 
 export interface FindingVerificationRecord {
   id: string
+  requestKey: string
   status: FindingVerificationStatus
   method: string
   resultSummary: string
   sourceRevision: string | null
   diagnosticSummary: string | null
+  executionOccurred: boolean
+  toolIdentity: string | null
+  exitCode: number | null
+  durationMs: number
   startedAt: string
   completedAt: string
   createdAt: string
@@ -160,6 +165,27 @@ export const reviewApi = {
     const res = await axiosInstance.post<{ proposal: FixProposal }>(
       `/reviews/findings/${findingId}/fix-proposals`,
       { patch }
+    )
+    return res.data
+  },
+
+  requestFindingVerification: async (
+    findingId: string,
+    input: { requestKey: string; method: 'STATIC_ANALYSIS' | 'TARGETED_TEST' }
+  ): Promise<{ verification: FindingVerificationRecord }> => {
+    const res = await axiosInstance.post<{ verification: FindingVerificationRecord }>(
+      `/reviews/findings/${findingId}/verification-requests`,
+      input
+    )
+    return res.data
+  },
+
+  getFindingVerification: async (
+    findingId: string,
+    requestKey: string
+  ): Promise<{ verification: FindingVerificationRecord }> => {
+    const res = await axiosInstance.get<{ verification: FindingVerificationRecord }>(
+      `/reviews/findings/${findingId}/verification-requests/${encodeURIComponent(requestKey)}`
     )
     return res.data
   },

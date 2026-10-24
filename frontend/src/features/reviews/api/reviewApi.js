@@ -30,4 +30,12 @@ export const reviewApi = {
         const res = await axiosInstance.post(`/reviews/findings/${findingId}/fix-proposals`, { patch });
         return res.data;
     },
+    requestFindingVerification: async (findingId, input) => {
+        const res = await axiosInstance.post(`/reviews/findings/${findingId}/verification-requests`, input);
+        return res.data;
+    },
+    getFindingVerification: async (findingId, requestKey) => {
+        const res = await axiosInstance.get(`/reviews/findings/${findingId}/verification-requests/${encodeURIComponent(requestKey)}`);
+        return res.data;
+    },
 };

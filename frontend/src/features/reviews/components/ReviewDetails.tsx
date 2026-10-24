@@ -47,6 +47,8 @@ function FindingLifecyclePanel({
   const [nextStatus, setNextStatus] = useState<FindingStatus>(finding.status)
   const [reason, setReason] = useState('')
   const [patch, setPatch] = useState('')
+  const [verificationMethod, setVerificationMethod] =
+    useState<'STATIC_ANALYSIS' | 'TARGETED_TEST'>('STATIC_ANALYSIS')
   const updateStatus = useMutation({
     mutationFn: () =>
       reviewApi.updateFindingStatus(finding.id, {
@@ -68,6 +70,16 @@ function FindingLifecyclePanel({
       await queryClient.invalidateQueries({ queryKey: ['reviews', reviewId] })
     },
   })
+  const requestVerification = useMutation({
+    mutationFn: () =>
+      reviewApi.requestFindingVerification(finding.id, {
+        requestKey: crypto.randomUUID(),
+        method: verificationMethod,
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['reviews', reviewId] })
+    },
+  })
 
   useEffect(() => setNextStatus(finding.status), [finding.status])
 
@@ -76,7 +88,6 @@ function FindingLifecyclePanel({
     if (nextStatus !== finding.status) updateStatus.mutate()
   }
   const verificationRecords = finding.verificationRecords ?? []
-  const latestVerification = verificationRecords[verificationRecords.length - 1]
 
   return (
     <div className="mt-4 rounded-lg border border-slate-700/70 bg-slate-950/40 p-4">
@@ -98,11 +109,10 @@ function FindingLifecyclePanel({
         <h5 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
           Independent verification
         </h5>
-        {!latestVerification || latestVerification.method === 'AI_REVIEW' ? (
+        {verificationRecords.length === 0 ? (
           <div className="mt-2 space-y-1 text-xs text-slate-400">
             <p>{verificationStatusLabels.AI_REPORTED}</p>
             <p>No independent test or static-analysis check ran for this finding.</p>
-            {latestVerification && <p>{latestVerification.resultSummary}</p>}
           </div>
         ) : (
           <ol className="mt-2 space-y-3">
@@ -114,13 +124,20 @@ function FindingLifecyclePanel({
                 <p className="mt-1 text-slate-400">{record.resultSummary}</p>
                 <p className="mt-1 text-slate-500">
                   {record.method === 'AI_REVIEW'
-                    ? 'No independent check ran'
-                    : record.method === 'TARGETED_TEST'
-                      ? 'Targeted test execution recorded'
-                      : 'Static-analysis execution recorded'}
+                    ? 'AI evidence matched source; no independent check ran'
+                    : record.executionOccurred
+                      ? `${record.method === 'TARGETED_TEST' ? 'Targeted test' : 'Static analysis'} executed`
+                      : 'Not executed'}
                   {' · '}
                   {new Date(record.completedAt).toLocaleString()}
                 </p>
+                {record.toolIdentity && (
+                  <p className="mt-1 text-slate-500">
+                    Tool: {record.toolIdentity}
+                    {record.exitCode === null ? '' : ` · exit ${record.exitCode}`}
+                    {` · ${record.durationMs} ms`}
+                  </p>
+                )}
                 {record.sourceRevision && (
                   <p className="mt-1 font-mono text-slate-500">
                     Source revision {record.sourceRevision.slice(0, 12)}
@@ -138,6 +155,47 @@ function FindingLifecyclePanel({
             ))}
           </ol>
         )}
+        <form
+          className="mt-3 flex flex-wrap items-center gap-2"
+          onSubmit={(event) => {
+            event.preventDefault()
+            requestVerification.mutate()
+          }}
+        >
+          <label className="sr-only" htmlFor={`verification-method-${finding.id}`}>
+            Independent check profile
+          </label>
+          <select
+            id={`verification-method-${finding.id}`}
+            value={verificationMethod}
+            onChange={(event) =>
+              setVerificationMethod(event.target.value as 'STATIC_ANALYSIS' | 'TARGETED_TEST')
+            }
+            disabled={requestVerification.isPending}
+            className="min-h-9 rounded-lg border border-slate-700 bg-slate-900 px-3 text-xs text-slate-300"
+          >
+            <option value="STATIC_ANALYSIS">Static analysis</option>
+            <option value="TARGETED_TEST">Targeted test</option>
+          </select>
+          <button
+            type="submit"
+            disabled={requestVerification.isPending}
+            className="min-h-9 rounded-lg bg-indigo-500/20 px-3 text-xs font-medium text-indigo-200 hover:bg-indigo-500/30 disabled:opacity-50"
+          >
+            {requestVerification.isPending ? 'Requesting…' : 'Request independent check'}
+          </button>
+        </form>
+        {requestVerification.isError && (
+          <p role="alert" className="mt-2 text-xs text-red-300">
+            {requestVerification.error instanceof Error
+              ? requestVerification.error.message
+              : 'Independent verification request failed.'}
+          </p>
+        )}
+        <p className="mt-2 text-xs text-amber-200">
+          Execution is currently unavailable: no isolated runner or approved tool is configured.
+          Requests are recorded as inconclusive and do not execute repository code.
+        </p>
       </div>
 
       <form onSubmit={submit} className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto]">

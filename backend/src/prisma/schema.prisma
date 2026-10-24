@@ -641,6 +641,10 @@ model FindingVerificationRecord {
   resultSummary     String                    @db.VarChar(500)
   sourceRevision    String?
   diagnosticSummary String?                   @db.VarChar(2000)
+  executionOccurred Boolean                   @default(false)
+  toolIdentity      String?
+  exitCode          Int?
+  durationMs        Int                       @default(0)
   startedAt         DateTime
   completedAt       DateTime
   createdAt         DateTime                  @default(now())

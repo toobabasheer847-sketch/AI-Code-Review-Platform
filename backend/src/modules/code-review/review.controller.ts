@@ -4,11 +4,16 @@ import { ReviewNotFoundError, ReviewService } from './review.service'
 import { updateFindingStatusSchema } from './finding-lifecycle.domain'
 import { FindingLifecycleService } from './finding-lifecycle.service'
 import { FixProposalService } from './fix-verification.service'
+import {
+	FindingVerificationService,
+	requestFindingVerificationSchema,
+} from './finding-verification.service'
 import logger from '@/utils/logger'
 
 const reviewService = new ReviewService()
 const findingLifecycleService = new FindingLifecycleService()
 const fixProposalService = new FixProposalService()
+const findingVerificationService = new FindingVerificationService()
 const startReviewSchema = z.object({
   repository: z.string().min(3).max(300),
   branch: z.string().min(1).max(255).optional(),
@@ -89,6 +94,51 @@ export class ReviewController {
 			res.status(201).json({ proposal })
 		} catch (error) {
 			respondWithError(error, res, 'Unable to save fix proposal.')
+		}
+	}
+
+	async requestFindingVerification(req: Request, res: Response): Promise<void> {
+		if (!req.user?.userId) {
+			res.status(401).json({ error: 'Unauthorized' })
+			return
+		}
+		const parsed = requestFindingVerificationSchema.safeParse(req.body)
+		if (!parsed.success) {
+			res.status(400).json({ error: 'Invalid verification request.' })
+			return
+		}
+
+		try {
+			const verification = await findingVerificationService.request(
+				req.user.userId,
+				req.params.findingId,
+				parsed.data
+			)
+			res.json({ verification })
+		} catch (error) {
+			respondWithError(error, res, 'Unable to request independent verification.')
+		}
+	}
+
+	async getFindingVerification(req: Request, res: Response): Promise<void> {
+		if (!req.user?.userId) {
+			res.status(401).json({ error: 'Unauthorized' })
+			return
+		}
+		if (!/^[A-Za-z0-9._:-]{1,128}$/.test(req.params.requestKey)) {
+			res.status(400).json({ error: 'Invalid verification request key.' })
+			return
+		}
+
+		try {
+			const verification = await findingVerificationService.get(
+				req.user.userId,
+				req.params.findingId,
+				req.params.requestKey
+			)
+			res.json({ verification })
+		} catch (error) {
+			respondWithError(error, res, 'Unable to load independent verification.')
 		}
 	}
 

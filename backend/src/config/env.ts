@@ -72,6 +72,10 @@ export function validateEnvironment(configuration: typeof env): void {
     configurationErrors.push('PORT must be an integer between 1 and 65535')
   }
 
+  if (!/^postgres(?:ql)?:\/\//i.test(configuration.DATABASE_URL)) {
+    configurationErrors.push('DATABASE_URL must be a PostgreSQL connection URL')
+  }
+
   if (configuration.NODE_ENV !== 'production') {
     if (configurationErrors.length > 0) {
       throw new Error(`Invalid environment configuration: ${configurationErrors.join('; ')}`)
@@ -90,9 +94,7 @@ export function validateEnvironment(configuration: typeof env): void {
     )
   }
 
-  if (!configuration.DATABASE_URL || !/^postgres(?:ql)?:\/\//i.test(configuration.DATABASE_URL)) {
-    configurationErrors.push('DATABASE_URL must be a PostgreSQL connection URL')
-  } else if (isLocalAddress(configuration.DATABASE_URL)) {
+  if (isLocalAddress(configuration.DATABASE_URL)) {
     configurationErrors.push('DATABASE_URL must not point to a local host in production')
   }
   if (!configuration.REDIS_URL || !/^rediss:\/\//i.test(configuration.REDIS_URL)) {

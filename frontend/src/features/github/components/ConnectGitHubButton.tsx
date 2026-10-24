@@ -10,10 +10,12 @@ interface ConnectGitHubButtonProps {
 
 export const ConnectGitHubButton = ({ className = '' }: ConnectGitHubButtonProps): JSX.Element => {
   const { mutate: connectGitHub, isPending, error } = useConnectGitHub()
-  const verificationRequired =
-    isAxiosError<{ error?: unknown }>(error) &&
-    error.response?.status === 403 &&
-    error.response.data?.error === 'Email verification required'
+  const axiosError = isAxiosError<{ error?: unknown }>(error) ? error : null
+  const verificationRequired = axiosError?.response?.status === 403
+  const apiError =
+    typeof axiosError?.response?.data?.error === 'string'
+      ? axiosError.response.data.error
+      : null
 
   return (
     <div className={className}>
@@ -37,7 +39,7 @@ export const ConnectGitHubButton = ({ className = '' }: ConnectGitHubButtonProps
               to resend the verification email.
             </>
           ) : (
-            error.message || 'Unable to start GitHub connection'
+            apiError || error.message || 'Unable to start GitHub connection'
           )}
         </p>
       )}

@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  FindingVerificationLimitError,
+  FindingVerificationNotFoundError,
+  MAX_FINDING_VERIFICATION_REQUESTS,
   FindingVerificationService,
-  recordFindingVerificationSchema,
+  requestFindingVerificationSchema,
   type FindingVerificationRecord,
   type FindingVerificationStore,
 } from './finding-verification.service'
@@ -12,34 +15,53 @@ const sourceRevision = 'a'.repeat(40)
 function createStore(): {
   store: FindingVerificationStore
   records: Map<string, FindingVerificationRecord>
-  setSourceRevision(revision: string): void
+  setSourceRevision(revision: string | null): void
+  setOwner(userId: string | null): void
 } {
-  let currentRevision = sourceRevision
+  let currentRevision: string | null = sourceRevision
+  let ownerId: string | null = 'owner-1'
   const records = new Map<string, FindingVerificationRecord>()
   return {
     records,
     setSourceRevision(revision) {
       currentRevision = revision
     },
+    setOwner(userId) {
+      ownerId = userId
+    },
     store: {
-      async findRecord(findingId, requestKey) {
-        return records.get(`${findingId}:${requestKey}`) ?? null
+      async findOwnedFinding(userId, findingId) {
+        return userId === ownerId && findingId === 'finding-1'
+          ? { id: findingId, sourceRevision: currentRevision }
+          : null
       },
-      async createRecord(input) {
-        const isCurrent = currentRevision === input.sourceRevision
+      async findOwnedRecord(userId, findingId, requestKey) {
+        return userId === ownerId
+          ? records.get(`${findingId}:${requestKey}`) ?? null
+          : null
+      },
+      async createUnavailableRecord(input) {
+        const current =
+          input.sourceRevision !== null && input.sourceRevision === currentRevision
         const record: FindingVerificationRecord = {
           id: `verification-${records.size + 1}`,
           findingId: input.findingId,
           requestKey: input.requestKey,
-          status: isCurrent ? input.status : 'INCONCLUSIVE',
+          status: 'INCONCLUSIVE',
           method: input.method,
-          resultSummary: isCurrent
-            ? input.resultSummary
-            : 'Verification result was discarded because the review source revision has changed.',
+          resultSummary: current
+            ? 'No isolated verification runner is configured. The requested check was not executed.'
+            : input.sourceRevision === null
+              ? 'Verification is inconclusive because this review has no pinned source revision.'
+              : 'Verification is inconclusive because the review source revision has changed.',
           sourceRevision: input.sourceRevision,
-          diagnosticSummary: isCurrent
-            ? input.diagnosticSummary
-            : 'The result applies to a stale source revision and was not used.',
+          diagnosticSummary: current
+            ? 'No sandbox runner or approved static-analysis tool is configured; no repository code was executed.'
+            : 'No verification command was executed; the source revision is stale.',
+          executionOccurred: false,
+          toolIdentity: null,
+          exitCode: null,
+          durationMs: 0,
           startedAt: input.startedAt,
           completedAt: input.completedAt,
           createdAt: input.completedAt,
@@ -51,95 +73,144 @@ function createStore(): {
   }
 }
 
-test('records trusted verification outcomes, sanitizes diagnostics, and retries idempotently', async () => {
+test('owner-scoped check requests are idempotent and remain inconclusive without a runner', async () => {
   const { store, records } = createStore()
   const now = new Date('2026-10-24T10:00:00.000Z')
   const service = new FindingVerificationService(store, () => now)
-  const input = {
-    requestKey: 'static-check-1',
-    status: 'VERIFIED',
-    method: 'STATIC_ANALYSIS',
-    resultSummary: 'The targeted analyzer rule passed.',
-    diagnosticSummary: 'authorization: bearer secret-value',
-    sourceRevision,
-  }
+  const input = { requestKey: 'static-check-1', method: 'STATIC_ANALYSIS' }
 
-  const result = await service.record('finding-1', input)
-  assert.equal(result.status, 'VERIFIED')
+  const result = await service.request('owner-1', 'finding-1', input)
+  assert.equal(result.status, 'INCONCLUSIVE')
+  assert.equal(result.method, 'STATIC_ANALYSIS')
   assert.equal(result.sourceRevision, sourceRevision)
+  assert.equal(result.executionOccurred, false)
+  assert.equal(result.toolIdentity, null)
+  assert.equal(result.exitCode, null)
+  assert.equal(result.durationMs, 0)
+  assert.match(result.resultSummary, /was not executed/)
+  assert.match(result.diagnosticSummary ?? '', /no repository code was executed/)
   assert.equal(result.startedAt.toISOString(), now.toISOString())
   assert.equal(result.completedAt.toISOString(), now.toISOString())
-  assert.equal(result.diagnosticSummary, 'authorization: bearer [REDACTED]')
 
-  const duplicate = await service.record('finding-1', {
-    ...input,
-    status: 'VERIFICATION_FAILED',
-  })
+  const duplicate = await service.request('owner-1', 'finding-1', input)
   assert.equal(duplicate.id, result.id)
   assert.equal(records.size, 1)
 })
 
-test('stale source revisions become inconclusive and do not claim verification', async () => {
-  const { store, setSourceRevision } = createStore()
-  setSourceRevision('b'.repeat(40))
+test('rejects unauthorized finding requests and inspection', async () => {
+  const { store } = createStore()
   const service = new FindingVerificationService(store)
 
-  const result = await service.record('finding-1', {
-    requestKey: 'stale-test-result',
-    status: 'VERIFIED',
-    method: 'TARGETED_TEST',
-    resultSummary: 'The test passed.',
-    sourceRevision,
-  })
-
-  assert.equal(result.status, 'INCONCLUSIVE')
-  assert.equal(result.sourceRevision, sourceRevision)
-  assert.match(result.resultSummary, /source revision has changed/)
-  assert.match(result.diagnosticSummary ?? '', /stale source revision/)
-})
-
-test('persists failed targeted checks distinctly and permits a separate retry', async () => {
-  const { store, records } = createStore()
-  const service = new FindingVerificationService(store)
-
-  const failed = await service.record('finding-1', {
-    requestKey: 'targeted-test-attempt-1',
-    status: 'VERIFICATION_FAILED',
-    method: 'TARGETED_TEST',
-    resultSummary: 'The targeted regression test still reproduces the reported issue.',
-    sourceRevision,
-  })
-  const retry = await service.record('finding-1', {
-    requestKey: 'targeted-test-attempt-2',
-    status: 'INCONCLUSIVE',
-    method: 'TARGETED_TEST',
-    resultSummary: 'The retry timed out.',
-    sourceRevision,
-  })
-
-  assert.equal(failed.status, 'VERIFICATION_FAILED')
-  assert.equal(retry.status, 'INCONCLUSIVE')
-  assert.equal(records.size, 2)
-})
-
-test('does not accept AI-reported or client-controlled verification fields as trusted results', () => {
-  const valid = {
-    requestKey: 'verification',
-    status: 'VERIFIED',
-    method: 'STATIC_ANALYSIS',
-    resultSummary: 'A defined independent criterion passed.',
-    sourceRevision,
-  }
-  assert.equal(recordFindingVerificationSchema.safeParse(valid).success, true)
-  assert.equal(
-    recordFindingVerificationSchema.safeParse({ ...valid, status: 'AI_REPORTED' }).success,
-    false
+  await assert.rejects(
+    service.request('other-user', 'finding-1', {
+      requestKey: 'unauthorized',
+      method: 'TARGETED_TEST',
+    }),
+    FindingVerificationNotFoundError
   )
+  await assert.rejects(
+    service.get('other-user', 'finding-1', 'missing'),
+    FindingVerificationNotFoundError
+  )
+})
+
+test('records missing and stale source revisions as inconclusive', async () => {
+  const { store, setSourceRevision } = createStore()
+  const service = new FindingVerificationService(store)
+
+  setSourceRevision(null)
+  const missing = await service.request('owner-1', 'finding-1', {
+    requestKey: 'missing-revision',
+    method: 'STATIC_ANALYSIS',
+  })
+  assert.equal(missing.status, 'INCONCLUSIVE')
+  assert.equal(missing.sourceRevision, null)
+  assert.match(missing.resultSummary, /no pinned source revision/)
+
+  setSourceRevision(sourceRevision)
+  const createUnavailableRecord = store.createUnavailableRecord.bind(store)
+  store.createUnavailableRecord = async (input) => {
+    setSourceRevision('b'.repeat(40))
+    return createUnavailableRecord(input)
+  }
+  const stale = await service.request('owner-1', 'finding-1', {
+    requestKey: 'stale-revision',
+    method: 'TARGETED_TEST',
+  })
+  assert.equal(stale.status, 'INCONCLUSIVE')
+  assert.equal(stale.sourceRevision, sourceRevision)
+  assert.match(stale.resultSummary, /source revision has changed/)
+})
+
+test('request schema allows only known profiles and never accepts verification results', () => {
+  const valid = { requestKey: 'check-1', method: 'STATIC_ANALYSIS' }
+  assert.equal(requestFindingVerificationSchema.safeParse(valid).success, true)
   assert.equal(
-    recordFindingVerificationSchema.safeParse({
+    requestFindingVerificationSchema.safeParse({
       ...valid,
-      independentlyVerifiedAt: new Date().toISOString(),
+      method: 'arbitrary-command',
     }).success,
     false
   )
+  for (const field of ['status', 'executionOccurred', 'exitCode', 'sourceRevision']) {
+    assert.equal(
+      requestFindingVerificationSchema.safeParse({
+        ...valid,
+        [field]: field === 'status' ? 'VERIFIED' : true,
+      }).success,
+      false,
+      `client-supplied ${field} must be rejected`
+    )
+  }
+})
+
+test('limits request keys and rejects malformed identifiers', () => {
+  assert.equal(
+    requestFindingVerificationSchema.safeParse({
+      requestKey: 'x'.repeat(129),
+      method: 'STATIC_ANALYSIS',
+    }).success,
+    false
+  )
+  assert.equal(
+    requestFindingVerificationSchema.safeParse({
+      requestKey: 'test/../command',
+      method: 'TARGETED_TEST',
+    }).success,
+    false
+  )
+  assert.equal(
+    requestFindingVerificationSchema.safeParse({
+      requestKey: 'ai-review:review-1',
+      method: 'STATIC_ANALYSIS',
+    }).success,
+    false
+  )
+})
+
+test('bounds independent check requests per finding', async () => {
+  const { store, records } = createStore()
+  const createUnavailableRecord = store.createUnavailableRecord.bind(store)
+  store.createUnavailableRecord = async (input) => {
+    if (records.size >= MAX_FINDING_VERIFICATION_REQUESTS) {
+      throw new FindingVerificationLimitError()
+    }
+    return createUnavailableRecord(input)
+  }
+  const service = new FindingVerificationService(store)
+
+  for (let index = 0; index < MAX_FINDING_VERIFICATION_REQUESTS; index += 1) {
+    await service.request('owner-1', 'finding-1', {
+      requestKey: `bounded-${index}`,
+      method: 'STATIC_ANALYSIS',
+    })
+  }
+  await assert.rejects(
+    service.request('owner-1', 'finding-1', {
+      requestKey: 'over-limit',
+      method: 'STATIC_ANALYSIS',
+    }),
+    FindingVerificationLimitError
+  )
+  assert.equal(records.size, MAX_FINDING_VERIFICATION_REQUESTS)
 })

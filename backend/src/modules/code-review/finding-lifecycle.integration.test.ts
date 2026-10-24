@@ -273,6 +273,62 @@ test(
           .independentlyVerifiedAt,
         null
       )
+      const clientVerificationResult = await fetch(
+        `${baseUrl}/findings/${findingId}/verification-requests`,
+        {
+          method: 'POST',
+          headers: authHeaders(ownerToken),
+          body: JSON.stringify({
+            requestKey: 'client-forged-result',
+            method: 'STATIC_ANALYSIS',
+            status: 'VERIFIED',
+            executionOccurred: true,
+            exitCode: 0,
+            sourceRevision: 'a'.repeat(40),
+          }),
+        }
+      )
+      assert.equal(clientVerificationResult.status, 400)
+      const verificationRequest = () =>
+        fetch(`${baseUrl}/findings/${findingId}/verification-requests`, {
+          method: 'POST',
+          headers: authHeaders(ownerToken),
+          body: JSON.stringify({
+            requestKey: 'persisted-independent-check',
+            method: 'STATIC_ANALYSIS',
+          }),
+        })
+      const firstVerificationRequest = await verificationRequest()
+      assert.equal(firstVerificationRequest.status, 200)
+      const firstVerificationBody = await firstVerificationRequest.json()
+      assert.equal(firstVerificationBody.verification.status, 'INCONCLUSIVE')
+      assert.equal(firstVerificationBody.verification.executionOccurred, false)
+      assert.equal(firstVerificationBody.verification.toolIdentity, null)
+      assert.equal(firstVerificationBody.verification.sourceRevision, null)
+
+      const repeatedVerificationRequest = await verificationRequest()
+      assert.equal(repeatedVerificationRequest.status, 200)
+      const repeatedVerificationBody = await repeatedVerificationRequest.json()
+      assert.equal(
+        repeatedVerificationBody.verification.id,
+        firstVerificationBody.verification.id
+      )
+      const inspectedVerification = await fetch(
+        `${baseUrl}/findings/${findingId}/verification-requests/persisted-independent-check`,
+        { headers: authHeaders(ownerToken) }
+      )
+      assert.equal(inspectedVerification.status, 200)
+      const inspectedVerificationBody = await inspectedVerification.json()
+      assert.equal(
+        inspectedVerificationBody.verification.id,
+        firstVerificationBody.verification.id
+      )
+      const otherUserVerification = await fetch(
+        `${baseUrl}/findings/${findingId}/verification-requests/persisted-independent-check`,
+        { headers: authHeaders(otherUserToken) }
+      )
+      assert.equal(otherUserVerification.status, 404)
+
       const duplicateVerification = await verificationService.verifyProposal(
         ownerId,
         proposalBody.proposal.id,

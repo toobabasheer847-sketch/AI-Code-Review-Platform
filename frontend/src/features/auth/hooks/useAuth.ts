@@ -24,6 +24,10 @@ import {
 
 function getAuthErrorMessage(error: unknown, fallback: string): string {
   if (isAxiosError<Record<string, unknown>>(error)) {
+    if (error.response?.status === 409) {
+      return 'An account with this email already exists. Please sign in or use a different email.'
+    }
+
     const responseData = error.response?.data
     const rawMessage =
       typeof responseData === 'string'
@@ -38,10 +42,6 @@ function getAuthErrorMessage(error: unknown, fallback: string): string {
 
     if (typeof rawMessage === 'string') {
       const apiMessage = rawMessage.trim()
-
-      if (error.response?.status === 409 && apiMessage.toLowerCase() === 'email already registered') {
-        return 'An account with this email already exists. Please sign in or use a different email.'
-      }
 
       return apiMessage || fallback
     }

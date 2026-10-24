@@ -59,12 +59,17 @@ const baseFinding: ReviewDetail['findings'][number] = {
   verificationRecords: [
     {
       id: 'verification-1',
+      requestKey: 'ai-review:review-1',
       status: 'AI_REPORTED',
       method: 'AI_REVIEW',
       resultSummary:
         'AI-reported finding. Its cited evidence matched the retrieved source; the issue itself was not independently verified.',
       sourceRevision: 'a'.repeat(40),
       diagnosticSummary: null,
+      executionOccurred: false,
+      toolIdentity: null,
+      exitCode: null,
+      durationMs: 0,
       startedAt: '2026-10-22T00:00:00.000Z',
       completedAt: '2026-10-22T00:00:00.000Z',
       createdAt: '2026-10-22T00:00:00.000Z',
@@ -127,7 +132,7 @@ async function submitStatus(
 ): Promise<void> {
   const select = container.querySelector<HTMLSelectElement>('#finding-status-finding-1')
   const reasonInput = container.querySelector<HTMLInputElement>('#finding-reason-finding-1')
-  const form = container.querySelector('form')
+  const form = select?.closest('form')
   expect(select).not.toBeNull()
   expect(reasonInput).not.toBeNull()
   expect(form).not.toBeNull()
@@ -185,11 +190,94 @@ describe('finding lifecycle UI', () => {
     const container = await mountReview()
 
     expect(container.textContent).toContain('AI reported · unverified')
-    expect(container.textContent).toContain(
-      'No independent test or static-analysis check ran for this finding.'
-    )
+    expect(container.textContent).toContain('AI evidence matched source; no independent check ran')
     expect(container.textContent).toContain(`Source revision ${'a'.repeat(12)}`)
     expect(container.querySelector('pre code')?.textContent).toBe('throw error')
+  })
+
+  it('requests only an approved profile and displays the inconclusive no-runner result', async () => {
+    const verification = {
+      id: 'verification-2',
+      requestKey: 'check-request-2',
+      status: 'INCONCLUSIVE' as const,
+      method: 'STATIC_ANALYSIS',
+      resultSummary: 'No isolated verification runner is configured. The requested check was not executed.',
+      sourceRevision: 'a'.repeat(40),
+      diagnosticSummary:
+        'No sandbox runner or approved static-analysis tool is configured; no repository code was executed.',
+      executionOccurred: false,
+      toolIdentity: null,
+      exitCode: null,
+      durationMs: 0,
+      startedAt: '2026-10-22T00:00:00.000Z',
+      completedAt: '2026-10-22T00:00:00.000Z',
+      createdAt: '2026-10-22T00:00:00.000Z',
+    }
+    const requestSpy = vi
+      .spyOn(reviewApi, 'requestFindingVerification')
+      .mockImplementation(async () => {
+        persistedReview = createReview({
+          ...baseFinding,
+          verificationRecords: [...baseFinding.verificationRecords, verification],
+        })
+        return { verification }
+      })
+    persistedReview = createReview()
+    const container = await mountReview()
+
+    const button = Array.from(container.querySelectorAll('button')).find((item) =>
+      item.textContent?.includes('Request independent check')
+    )
+    expect(button).toBeDefined()
+    await act(async () => {
+      button?.click()
+    })
+
+    expect(requestSpy).toHaveBeenCalledWith(
+      'finding-1',
+      expect.objectContaining({ method: 'STATIC_ANALYSIS' })
+    )
+    expect(container.textContent).toContain('Inconclusive')
+    expect(container.textContent).toContain('Not executed')
+    expect(container.textContent).toContain('no repository code was executed')
+  })
+
+  it('renders executed verification outcomes and tool evidence distinctly', async () => {
+    const verificationStatuses = [
+      { status: 'VERIFIED' as const, label: 'Independently verified', exitCode: 0 },
+      { status: 'VERIFICATION_FAILED' as const, label: 'Verification failed', exitCode: 1 },
+    ]
+
+    for (const [index, outcome] of verificationStatuses.entries()) {
+      persistedReview = createReview({
+        ...baseFinding,
+        verificationRecords: [
+          {
+            id: `verification-${index}`,
+            requestKey: `executed-check-${index}`,
+            status: outcome.status,
+            method: 'TARGETED_TEST',
+            resultSummary: `Controlled UI fixture for ${outcome.status}.`,
+            sourceRevision: 'a'.repeat(40),
+            diagnosticSummary: 'Synthetic displayed diagnostic; no repository test executed.',
+            executionOccurred: true,
+            toolIdentity: 'approved-check-profile@1',
+            exitCode: outcome.exitCode,
+            durationMs: 125,
+            startedAt: '2026-10-22T00:00:00.000Z',
+            completedAt: '2026-10-22T00:00:00.125Z',
+            createdAt: '2026-10-22T00:00:00.125Z',
+          },
+        ],
+      })
+      const container = await mountReview()
+
+      expect(container.textContent).toContain(outcome.label)
+      expect(container.textContent).toContain('Targeted test executed')
+      expect(container.textContent).toContain('approved-check-profile@1')
+      expect(container.textContent).toContain(`exit ${outcome.exitCode}`)
+      expect(container.textContent).toContain('Synthetic displayed diagnostic')
+    }
   })
 
   it('does not substitute a missing heuristic score or claim clean code when no findings exist', async () => {

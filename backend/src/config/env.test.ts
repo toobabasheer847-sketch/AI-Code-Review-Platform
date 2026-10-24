@@ -36,6 +36,18 @@ test('accepts production configuration with HTTPS origins and TLS Redis', () => 
   assert.doesNotThrow(() => validateEnvironment(productionConfiguration()))
 })
 
+test('requires a direct PostgreSQL URL in every environment', () => {
+  assert.throws(
+    () =>
+      validateEnvironment({
+        ...env,
+        NODE_ENV: 'development',
+        DATABASE_URL: 'prisma://accelerate.example.test',
+      }),
+    /DATABASE_URL must be a PostgreSQL connection URL/
+  )
+})
+
 test('rejects placeholder and short OpenAI credentials for live review execution', () => {
   assert.equal(hasUsableOpenAIKey('sk-your-openai-api-key'), false)
   assert.equal(hasUsableOpenAIKey('short-test-key'), false)
