@@ -30,6 +30,7 @@ export const env = {
   GITHUB_TOKEN_ENCRYPTION_KEY: githubTokenEncryptionKey,
   GITHUB_TOKEN_ENCRYPTION_KEY_PREVIOUS: process.env.GITHUB_TOKEN_ENCRYPTION_KEY_PREVIOUS || '',
   OPENAI_API_KEY: process.env.OPENAI_API_KEY || '',
+  OPENAI_MODEL: process.env.OPENAI_MODEL?.trim() || 'gpt-4o-mini',
   GITHUB_CLIENT_ID: process.env.GITHUB_CLIENT_ID || '',
   GITHUB_CLIENT_SECRET: process.env.GITHUB_CLIENT_SECRET || '',
   GITHUB_WEBHOOK_SECRET: process.env.GITHUB_WEBHOOK_SECRET || '',
@@ -50,6 +51,10 @@ export const env = {
   MAIL_PASSWORD: process.env.MAIL_PASSWORD || '',
   MAIL_FROM: process.env.MAIL_FROM || 'noreply@ai-codeguard.com',
   FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:3000',
+}
+
+export function hasUsableOpenAIKey(apiKey = env.OPENAI_API_KEY): boolean {
+  return apiKey.trim().length >= 20 && !isPlaceholderSecret(apiKey)
 }
 
 export function validateEnvironment(configuration: typeof env): void {

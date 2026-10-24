@@ -31,12 +31,13 @@ export const ReviewsPage = () => {
                         return (_jsxs("div", { className: "rounded-xl border border-slate-800 bg-[#1e293b]/40 p-8 backdrop-blur-md", children: [_jsx("p", { className: "text-sm text-slate-400", children: "You have no reviews yet." }), _jsx("button", { type: "button", onClick: () => navigate('/github/repos'), className: "mt-4 text-sm text-indigo-400 transition hover:text-indigo-300", children: "Select a repository to start \u2192" })] }));
                     }
                     return (_jsx("div", { className: "space-y-4", children: reviews.map((r) => {
-                            const score = r.score ?? 0;
-                            const scoreColor = score >= 80
-                                ? 'text-emerald-400'
-                                : score >= 60
-                                    ? 'text-amber-400'
-                                    : 'text-violet-400';
+                            const scoreColor = r.score === null
+                                ? 'text-slate-500'
+                                : r.score >= 80
+                                    ? 'text-emerald-400'
+                                    : r.score >= 60
+                                        ? 'text-amber-400'
+                                        : 'text-violet-400';
                             return (_jsxs("div", { className: "rounded-xl border border-slate-800 bg-[#1e293b]/40 p-6 backdrop-blur-md transition hover:border-slate-700", children: [_jsxs("div", { className: "flex items-center justify-between gap-4", children: [_jsxs("div", { children: [_jsx("div", { className: "text-lg font-semibold text-white", children: r.repository }), r.source === 'PULL_REQUEST' && (_jsxs("div", { className: "mt-1 text-xs text-indigo-300", children: ["Pull request #", r.pullRequestNumber] })), _jsx("div", { className: "mt-1 text-sm text-slate-400", children: new Date(r.createdAt).toLocaleString() }), _jsx("div", { className: "mt-1 text-xs capitalize text-indigo-300", children: r.status })] }), _jsxs("div", { className: "text-right", children: [_jsx("div", { className: `text-3xl font-bold ${scoreColor}`, children: r.score ?? '—' }), _jsxs("div", { className: "mt-1 text-sm text-slate-400", children: ["Issues: ", r.issues] })] })] }), _jsx("div", { className: "mt-6 text-right", children: _jsx("button", { type: "button", onClick: () => navigate(`/reviews?repo=${encodeURIComponent(r.repository)}`), className: "rounded-xl bg-gradient-to-r from-indigo-500 to-blue-600 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-indigo-500/20 transition-all hover:from-indigo-600 hover:to-blue-700", children: "View Details" }) })] }, r.id));
                         }) }));
                 })()] }) }));

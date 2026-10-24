@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { Prisma } from '@prisma/client'
-import { validateAnalysis, type ReviewAnalysis } from './analyzer'
+import {
+  ReviewProviderError,
+  validateAnalysis,
+  type ReviewAnalysis,
+} from './analyzer'
 import {
   processReview,
   type ReviewJobRecord,
@@ -331,6 +335,31 @@ test('marks review failures without persisting provider or repository error deta
     'failed:Review processing failed. Provider and repository details were omitted.',
   ])
   assert.equal(events.join(' ').includes('private-provider-secret'), false)
+})
+
+test('stores a safe provider failure classification instead of reporting success', async () => {
+  const events: string[] = []
+  await assert.rejects(
+    processReview(review.id, {
+      store: createStore(events),
+      async fetchFiles() {
+        return sourceFiles
+      },
+      async analyze() {
+        throw new ReviewProviderError('rate_limited')
+      },
+      async notify() {
+        assert.fail('Failed review must not notify')
+      },
+    }),
+    /Review processing failed/
+  )
+
+  assert.ok(
+    events.includes(
+      'failed:The AI provider rate limit was reached. Retry the review later.'
+    )
+  )
 })
 
 test('rejects requests missing valid bearer tokens', () => {

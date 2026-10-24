@@ -201,7 +201,7 @@ export class ReviewService {
 		const payload = {
 			to,
 			repository: review.repository.name,
-			score: review.analytics?.qualityScore ?? 0,
+			score: review.analytics?.qualityScore ?? null,
 			issues: review.findings.length,
 			summary: review.description ?? '',
 			reviewId: review.id,

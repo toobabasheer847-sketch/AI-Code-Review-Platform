@@ -128,11 +128,12 @@ export const ReviewsPage = (): JSX.Element => {
           return (
             <div className="space-y-4">
               {reviews.map((r) => {
-                const score = r.score ?? 0
                 const scoreColor =
-                  score >= 80
+                  r.score === null
+                    ? 'text-slate-500'
+                    : r.score >= 80
                     ? 'text-emerald-400'
-                    : score >= 60
+                    : r.score >= 60
                       ? 'text-amber-400'
                       : 'text-violet-400'
 

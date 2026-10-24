@@ -43,7 +43,10 @@ export class MailService {
 		}
 
 		const htmlWithData = html.replace(/{{repository}}/g, escapeHtml(payload.repository))
-			.replace(/{{score}}/g, escapeHtml(String(payload.score)))
+			.replace(
+				/{{score}}/g,
+				escapeHtml(payload.score === null ? 'Not available' : `${payload.score} (heuristic)`)
+			)
 			.replace(/{{issues}}/g, escapeHtml(String(payload.issues)))
 			.replace(/{{summary}}/g, escapeHtml(payload.summary))
 			.replace(/{{reviewUrl}}/g, escapeHtml(payload.reviewUrl ?? '#'))

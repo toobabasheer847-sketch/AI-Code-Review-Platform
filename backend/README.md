@@ -102,6 +102,84 @@ files, the completed review displays that limitation instead of implying full
 coverage. Findings retain optional title, evidence, and end-line fields so older
 stored reviews remain compatible.
 
+The configured `OPENAI_API_KEY` authenticates review requests. `OPENAI_MODEL`
+selects the model and defaults to `gpt-4o-mini`. Missing credentials, rate
+limits, provider timeouts, and malformed or schema-invalid responses fail the
+review with safe, actionable status text; provider response bodies and
+credentials are not copied into review records or API errors. No fallback
+findings are generated. The persisted heuristic score is derived only from
+validated findings:
+`max(0, min(100, 100 - 12*bugs - 20*security - 8*performance - 3*quality))`.
+It is not an AI quality judgment or an objective measure of code quality; a
+missing score is shown as unavailable rather than zero.
+
+For pull requests, source content is fetched at the webhook's expected head
+revision. Findings must cite exact evidence from the retrieved file and their
+cited range must overlap changed lines. A range can include adjacent unchanged
+context to establish the cause; the review records that limitation, and such a
+location may not be eligible for an inline GitHub comment. Equivalent findings
+are deduplicated conservatively only when file, category, exact normalized
+evidence, an overlapping line range, and title or message agree. Different
+evidence or distinct issue wording is preserved.
+
+An opt-in real-provider integration test uses only a small synthetic source
+file and does not execute it. It is excluded from the regular test suite:
+
+```powershell
+$env:RUN_LIVE_AI_REVIEW_TEST = '1'
+npm run test:ai-review:live --workspace=backend
+Remove-Item Env:RUN_LIVE_AI_REVIEW_TEST
+```
+
+Set a valid `OPENAI_API_KEY` (at least 20 characters and not a sample
+placeholder) and optionally `OPENAI_MODEL` in the backend environment before
+running it. Without explicit opt-in or a usable credential, the test is
+reported as skipped. The invocation makes a real provider request and may
+incur usage charges.
+
+### Review quality benchmark
+
+Run `npm run benchmark --workspace=backend` from the repository root (or
+`npm run benchmark` from `backend`) to evaluate the versioned synthetic
+fixtures with deterministic mock provider responses. This offline mode is the
+default and does not make model/API calls. It reports expected/detected
+findings, false-positive and missed-finding locations, TP/FP/FN, precision,
+recall, exact-duplicate provider output rate, category/severity breakdowns,
+runtime, and sanitized failures. Undefined precision, recall, and duplicate
+rate are reported as `null` when their denominators are zero. No aggregate
+quality score is presented.
+
+Use `npm run benchmark --workspace=backend -- --live` only when an intentional
+paid model run is approved and `OPENAI_API_KEY` is configured. Live evaluation
+uses the same fixed fixture dataset, the configured OpenAI integration
+(`gpt-4o-mini`, temperature 0.1), and defaults to a 60-second per-fixture
+timeout. Optional `--timeout-ms <ms>` and `--output <path>` flags set a
+positive timeout and write a JSON report plus a `.summary.txt` companion.
+Reports contain fixture IDs and metric references, not source text, finding
+messages, or credentials. Include `--output` to persist machine-readable and
+human-readable reports; without it, the human-readable summary is printed.
+
+The versioned dataset is in
+`src/modules/code-review/benchmark/fixtures.ts`. Add synthetic source snippets,
+explicit category/file/line/evidence ground truth, and a valid deterministic
+mock JSON response when adding a fixture. Fixture validation verifies unique
+IDs/paths and that each expected evidence marker exists at its labelled line.
+Finding matches require category, case-insensitive file path, evidence
+containment, and any specified severity; line numbers may differ by up to two
+lines. That tolerance accommodates nearby citations but can conflate adjacent
+issues. Evidence containment is approximate, not semantic equivalence. The
+reported duplicate rate counts exact repeated file/category/line-range/evidence
+tuples in raw provider output; mock output is deterministic, while live
+duplicate rates reflect that particular model response. The analyzer removes
+exact duplicates before scoring.
+An empty dataset produces null precision/recall rather than implying a measured
+zero score. Severity metrics use only expected findings with an explicit
+expected severity.
+Live runs can vary across model versions and are not a measure of general
+real-world review quality beyond these small synthetic fixtures. The fixture
+responses exercise the measurement pipeline and are not evidence that the
+analyzer itself detected those issues.
+
 ### Finding lifecycle and developer feedback
 
 Apply the `20261021230000_finding_lifecycle_feedback` migration before

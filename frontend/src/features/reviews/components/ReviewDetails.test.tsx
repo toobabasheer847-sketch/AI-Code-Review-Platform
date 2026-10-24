@@ -70,7 +70,7 @@ function ReviewHarness(): JSX.Element | null {
   return review ? createElement(ReviewDetails, { review }) : null
 }
 
-async function mountReview(): Promise<HTMLDivElement> {
+async function mountReview(waitFor = 'Developer status'): Promise<HTMLDivElement> {
   const container = document.createElement('div')
   document.body.append(container)
   const root = createRoot(container)
@@ -89,7 +89,7 @@ async function mountReview(): Promise<HTMLDivElement> {
       )
     )
   })
-  await waitForText(container, 'Developer status')
+  await waitForText(container, waitFor)
   return container
 }
 
@@ -165,6 +165,35 @@ afterEach(async () => {
 })
 
 describe('finding lifecycle UI', () => {
+  it('does not substitute a missing heuristic score or claim clean code when no findings exist', async () => {
+    persistedReview = {
+      ...createReview(),
+      analytics: undefined,
+      findings: [],
+      findingLifecycleAnalytics: {
+        total: 0,
+        statusCounts: {
+          UNREVIEWED: 0,
+          CONFIRMED: 0,
+          FALSE_POSITIVE: 0,
+          DUPLICATE: 0,
+          FIXED: 0,
+          WONT_FIX: 0,
+        },
+        developerMarkedFixed: 0,
+        independentlyVerifiedFixed: 0,
+      },
+    }
+    const container = await mountReview('No findings were validated for the supplied source.')
+
+    expect(container.querySelector('.text-5xl')).toBeNull()
+    expect(container.textContent).not.toContain('Heuristic review score')
+    expect(container.textContent).toContain(
+      'No findings were validated for the supplied source. This does not guarantee the code is free of issues.'
+    )
+    expect(container.textContent).not.toContain('Great code')
+  })
+
   it('saves an optional reason and reloads persisted status and feedback history', async () => {
     const updateFindingStatus = vi
       .spyOn(reviewApi, 'updateFindingStatus')

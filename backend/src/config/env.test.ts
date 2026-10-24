@@ -3,7 +3,7 @@ import test from 'node:test'
 
 const previousNodeEnv = process.env.NODE_ENV
 process.env.NODE_ENV = 'test'
-const { env, validateEnvironment } = await import('./env')
+const { env, hasUsableOpenAIKey, validateEnvironment } = await import('./env')
 if (previousNodeEnv === undefined) {
   delete process.env.NODE_ENV
 } else {
@@ -34,6 +34,12 @@ function productionConfiguration(): typeof env {
 
 test('accepts production configuration with HTTPS origins and TLS Redis', () => {
   assert.doesNotThrow(() => validateEnvironment(productionConfiguration()))
+})
+
+test('rejects placeholder and short OpenAI credentials for live review execution', () => {
+  assert.equal(hasUsableOpenAIKey('sk-your-openai-api-key'), false)
+  assert.equal(hasUsableOpenAIKey('short-test-key'), false)
+  assert.equal(hasUsableOpenAIKey(`sk-${'x'.repeat(40)}`), true)
 })
 
 test('rejects insecure Redis and non-HTTPS production origins', () => {

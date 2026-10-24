@@ -1,7 +1,7 @@
 export interface ReviewCompletePayload {
   to: string
   repository: string
-  score: number
+  score: number | null
   issues: number
   summary: string
   reviewId: string

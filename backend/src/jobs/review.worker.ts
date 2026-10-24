@@ -152,7 +152,7 @@ const worker = new Worker<ReviewJobData>(
               score:
                 analysis?.analytics.qualityScore ??
                 review.analytics?.qualityScore ??
-                0,
+                null,
               issues:
                 analysis?.analytics.totalIssues ??
                 review.analytics?.totalIssues ??

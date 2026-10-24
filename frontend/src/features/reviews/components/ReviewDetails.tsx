@@ -285,8 +285,8 @@ const getScoreStyles = (score: number): {
 }
 
 export const ReviewDetails = ({ review }: { review: ReviewDetail }): JSX.Element => {
-  const qualityScore = review.analytics?.qualityScore ?? 0
-  const scoreStyles = getScoreStyles(qualityScore)
+  const qualityScore = review.analytics?.qualityScore
+  const scoreStyles = qualityScore === undefined ? null : getScoreStyles(qualityScore)
   const repoName = review.title ?? review.repository.name
   const isProcessing = review.status === 'pending' || review.status === 'running'
 
@@ -336,7 +336,7 @@ export const ReviewDetails = ({ review }: { review: ReviewDetail }): JSX.Element
             </p>
           </div>
 
-          {review.analytics && review.status === 'completed' && (
+          {qualityScore !== undefined && scoreStyles && review.status === 'completed' && (
             <div
               className={`flex h-36 w-36 flex-col items-center justify-center rounded-full border ${scoreStyles.border} ${scoreStyles.bg} ${scoreStyles.glow} ring-4 ${scoreStyles.ring}`}
             >

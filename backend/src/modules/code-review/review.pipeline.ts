@@ -1,4 +1,4 @@
-import type { ReviewAnalysis } from './analyzer'
+import { ReviewProviderError, type ReviewAnalysis } from './analyzer'
 import type { ReviewSourceFile } from '@/modules/github/github.service'
 
 export interface ReviewJobRecord {
@@ -77,12 +77,13 @@ export async function processReview(
     )
     analysis = await dependencies.analyze(files)
     await dependencies.store.complete(review, analysis, files)
-  } catch {
+  } catch (error) {
+    const failureMessage =
+      error instanceof ReviewProviderError
+        ? error.message
+        : 'Review processing failed. Provider and repository details were omitted.'
     try {
-      await dependencies.store.markFailed(
-        reviewId,
-        'Review processing failed. Provider and repository details were omitted.'
-      )
+      await dependencies.store.markFailed(reviewId, failureMessage)
     } catch {
       throw new Error('Review processing failed and its failure state could not be saved')
     }

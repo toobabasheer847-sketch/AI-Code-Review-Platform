@@ -4,6 +4,7 @@ import {
   analyzeCode,
   MAX_ANALYSIS_CONTEXT_CHARS,
   prepareReviewContext,
+  ReviewProviderError,
   validateAnalysis,
 } from './analyzer'
 import type { ReviewSourceFile } from '@/modules/github/github.service'
@@ -88,7 +89,7 @@ test('deduplicates repeated findings within a review', () => {
         finding,
         {
           ...finding,
-          title: 'A differently worded duplicate',
+          title: finding.title,
           suggestions: ['Use a validation helper.'],
         },
       ],
@@ -97,6 +98,27 @@ test('deduplicates repeated findings within a review', () => {
   )
   assert.equal(result.findings.length, 1)
   assert.equal(result.analytics.totalIssues, 1)
+})
+
+test('deduplicates same evidence and issue across overlapping nearby lines, not distinct issues', () => {
+  const duplicate = { ...finding, line: 1, endLine: 2, evidence: 'process(input)' }
+  const result = validateAnalysis(
+    {
+      summary: 'Review',
+      findings: [
+        finding,
+        { ...duplicate, message: finding.message },
+        {
+          ...duplicate,
+          title: 'A separate issue',
+          message: 'A different impact.',
+        },
+      ],
+    },
+    files
+  )
+
+  assert.equal(result.findings.length, 2)
 })
 
 test('requires pull request findings to identify changed lines when diff lines are available', () => {
@@ -109,16 +131,15 @@ test('requires pull request findings to identify changed lines when diff lines a
       ),
     /outside the changed lines/
   )
-  assert.equal(
-    validateAnalysis(
-      {
-        summary: 'Review',
-        findings: [{ ...finding, line: 1, endLine: 1, evidence: 'const input' }],
-      },
-      [{ ...files[0], changedLines: [1, 2] }]
-    ).findings.length,
-    1
+  const contextual = validateAnalysis(
+    {
+      summary: 'Review',
+      findings: [{ ...finding, line: 1, endLine: 2, evidence: 'process(input)' }],
+    },
+    [{ ...files[0], changedLines: [2] }]
   )
+  assert.equal(contextual.findings.length, 1)
+  assert.ok(contextual.limitations.some((limitation) => /unchanged context/.test(limitation)))
 })
 
 test('fails explicitly when no source context is available', async () => {
@@ -184,16 +205,34 @@ test('preserves source-selection limitations for the saved review summary', () =
 test('reports malformed and empty provider responses without parsing them as findings', async () => {
   await assert.rejects(
     analyzeCode(files, async () => '{invalid'),
-    /invalid JSON/
+    (error: unknown) =>
+      error instanceof ReviewProviderError && error.kind === 'malformed_response'
   )
-  await assert.rejects(analyzeCode(files, async () => null), /empty code review/)
+  await assert.rejects(
+    analyzeCode(files, async () => null),
+    (error: unknown) =>
+      error instanceof ReviewProviderError && error.kind === 'malformed_response'
+  )
 })
 
-test('does not hide a provider failure from pipeline retry handling', async () => {
+test('classifies provider failures without exposing provider response details', async () => {
   await assert.rejects(
     analyzeCode(files, async () => {
-      throw new Error('provider unavailable')
+      throw Object.assign(new Error('secret provider response'), { status: 429 })
     }),
-    /provider unavailable/
+    (error: unknown) =>
+      error instanceof ReviewProviderError &&
+      error.kind === 'rate_limited' &&
+      !error.message.includes('secret provider response')
+  )
+
+  await assert.rejects(
+    analyzeCode(files, async () => {
+      throw new Error('secret timeout')
+    }, AbortSignal.abort()),
+    (error: unknown) =>
+      error instanceof ReviewProviderError &&
+      error.kind === 'timeout' &&
+      !error.message.includes('secret timeout')
   )
 })
