@@ -24,7 +24,7 @@ services:
     image: redis:7-alpine
     container_name: ai-codeguard-redis
     ports:
-      - "6379:6379"
+      - "6380:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -40,6 +40,9 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     container_name: ai-codeguard-backend
+    env_file:
+      - path: ./backend/.env
+        required: false
     environment:
       NODE_ENV: development
       PORT: 3001
@@ -57,11 +60,6 @@ services:
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
       STRIPE_PRO_PRICE_ID: ${STRIPE_PRO_PRICE_ID:-}
       STRIPE_API_VERSION: ${STRIPE_API_VERSION:-2023-10-16}
-      MAIL_HOST: ${MAIL_HOST:-smtp.gmail.com}
-      MAIL_PORT: ${MAIL_PORT:-587}
-      MAIL_USER: ${MAIL_USER:-}
-      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
-      MAIL_FROM: ${MAIL_FROM:-noreply@ai-codeguard.com}
     ports:
       - "3001:3001"
     depends_on:

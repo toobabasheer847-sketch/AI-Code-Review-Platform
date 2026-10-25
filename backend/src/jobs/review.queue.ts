@@ -1,19 +1,16 @@
 import { Queue } from 'bullmq'
-import IORedis from 'ioredis'
-import { env } from '@/config/env'
+import { createBullMqRedisConnection } from '@/config/redis-connection'
 
 export interface ReviewJobData {
   reviewId: string
 }
 
-let connection: IORedis | null = null
+let connection: ReturnType<typeof createBullMqRedisConnection> | null = null
 let queueInstance: Queue<ReviewJobData> | null = null
 
-function getConnection(): IORedis {
+function getConnection(): ReturnType<typeof createBullMqRedisConnection> {
   if (!connection) {
-    connection = new IORedis(env.REDIS_URL, {
-      maxRetriesPerRequest: null,
-    })
+    connection = createBullMqRedisConnection()
   }
   return connection
 }

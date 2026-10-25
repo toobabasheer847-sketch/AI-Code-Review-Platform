@@ -17,6 +17,7 @@ import {
   stopAutomationScheduler,
 } from '@/modules/automation/automation.scheduler'
 import { closeSocialQueue } from '@/modules/social/social.queue'
+import { MailConfigurationError } from '@/modules/email/mail.service'
 import { startSocialWorker, stopSocialWorker } from '@/modules/social/social.worker'
 import type { Server } from 'node:http'
 
@@ -41,9 +42,32 @@ async function bootstrap(): Promise<void> {
     })
   } catch (error) {
     logger.error(
-      { errorType: error instanceof Error ? error.name : 'UnknownError' },
+      {
+        errorType: error instanceof Error ? error.name : 'UnknownError',
+        ...(error instanceof MailConfigurationError ? { diagnostic: error.message } : {}),
+        ...(error instanceof Error && error.message.startsWith('BullMQ email processing requires Redis')
+          ? { diagnostic: error.message }
+          : {}),
+      },
       'Failed to start server'
     )
+    for (const [resource, cleanup] of [
+      ['emailQueue', closeEmailQueue],
+      ['redis', disconnectRedis],
+      ['database', () => prisma.$disconnect()],
+    ] as const) {
+      try {
+        await cleanup()
+      } catch (cleanupError) {
+        logger.error(
+          {
+            resource,
+            errorType: cleanupError instanceof Error ? cleanupError.name : 'UnknownError',
+          },
+          'Startup failure cleanup failed'
+        )
+      }
+    }
     process.exitCode = 1
   }
 }

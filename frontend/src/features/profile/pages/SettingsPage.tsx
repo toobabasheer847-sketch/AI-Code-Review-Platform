@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 
 import { useAppStore } from '@/app/store/useAppStore'
 import { authApi } from '@/features/auth/api/authApi'
@@ -10,6 +10,7 @@ export const SettingsPage = (): JSX.Element => {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const user = useAppStore((state) => state.user)
+  const selectedPlan = useAppStore((state) => state.selectedPlan)
   const logout = useAppStore((state) => state.logout)
   const setUser = useAppStore((state) => state.setUser)
   const [password, setPassword] = useState('')
@@ -36,7 +37,8 @@ export const SettingsPage = (): JSX.Element => {
   }
 
   const resendVerification = (): void => {
-    void run(async () => (await authApi.resendVerificationEmail()).message)
+    if (!user?.email) return
+    void run(async () => (await authApi.requestEmailVerification(user.email)).message)
   }
 
   const disconnectGitHub = (): void => {
@@ -74,14 +76,24 @@ export const SettingsPage = (): JSX.Element => {
             : 'Your account is usable, but this email address has not been verified.'}
         </p>
         {!user?.isVerified && (
-          <button
-            type="button"
-            disabled={pending}
-            onClick={resendVerification}
-            className="rounded bg-indigo-600 px-4 py-2 text-sm disabled:opacity-50"
-          >
-            Resend verification email
-          </button>
+          <div className="flex flex-wrap items-center gap-4">
+            <button
+              type="button"
+              disabled={pending}
+              onClick={resendVerification}
+              className="rounded bg-indigo-600 px-4 py-2 text-sm disabled:opacity-50"
+            >
+              Request verification code
+            </button>
+            {user?.email && (
+              <Link
+                to={`/verify-email?email=${encodeURIComponent(user.email)}&plan=${selectedPlan === 'pro' ? 'pro' : 'free'}`}
+                className="text-sm text-indigo-300 underline underline-offset-4"
+              >
+                Enter verification code
+              </Link>
+            )}
+          </div>
         )}
       </section>
 

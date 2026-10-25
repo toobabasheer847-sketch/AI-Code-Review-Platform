@@ -12,11 +12,21 @@ export const accountActionLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 })
+export const verificationAttemptLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: 'Too many verification attempts. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+})
 
 // Public routes
 router.post('/register', (req, res) => authController.register(req, res))
 router.post('/login', (req, res) => authController.login(req, res))
-router.post('/verify-email', accountActionLimiter, (req, res) =>
+router.post('/verification-email/request', accountActionLimiter, (req, res) =>
+  authController.requestEmailVerification(req, res)
+)
+router.post('/verify-email', verificationAttemptLimiter, (req, res) =>
   authController.verifyEmail(req, res)
 )
 router.post('/password-reset/request', accountActionLimiter, (req, res) =>

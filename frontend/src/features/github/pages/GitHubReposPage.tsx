@@ -146,7 +146,7 @@ export const GitHubReposPage = (): JSX.Element => {
                   to="/settings"
                   className="mt-2 inline-block font-semibold text-amber-200 underline underline-offset-4 hover:text-white"
                 >
-                  Go to Account security to resend the verification email
+                  Go to Account security to request and enter a verification code
                 </Link>
               </div>
             )}

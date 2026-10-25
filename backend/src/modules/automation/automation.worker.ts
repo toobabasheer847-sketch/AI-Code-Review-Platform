@@ -5,8 +5,7 @@ import {
   Prisma,
 } from '@prisma/client';
 import { Worker, type Job } from 'bullmq';
-import IORedis from 'ioredis';
-import { env } from '@/config/env';
+import { createBullMqRedisConnection } from '@/config/redis-connection';
 import { prisma } from '@/config/database';
 import logger from '@/utils/logger';
 import { automationJobId, automationQueue } from './automation.queue';
@@ -531,7 +530,7 @@ async function processAutomation(job: Job<AutomationJobData>): Promise<void> {
 export async function startAutomationWorker(): Promise<void> {
   if (worker) return;
   worker = new Worker<AutomationJobData>('automation', async (job) => processAutomation(job), {
-    connection: new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null }),
+    connection: createBullMqRedisConnection(),
     concurrency: 5,
     lockDuration: AUTOMATION_TASK_LOCK_DURATION_MS,
   });

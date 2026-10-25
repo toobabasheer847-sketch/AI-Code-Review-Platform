@@ -36,7 +36,7 @@ export const ConnectGitHubButton = ({ className = '' }: ConnectGitHubButtonProps
               <Link to="/settings" className="font-semibold underline underline-offset-4">
                 Go to Account security
               </Link>{' '}
-              to resend the verification email.
+              to request and enter a verification code.
             </>
           ) : (
             apiError || error.message || 'Unable to start GitHub connection'

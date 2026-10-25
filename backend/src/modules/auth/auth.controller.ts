@@ -3,9 +3,11 @@ import { ZodError } from 'zod'
 import logger from '@/utils/logger'
 import {
   AccountDeletionError,
+  AccountEmailQueueError,
   ActiveSubscriptionError,
   AuthService,
   EmailAlreadyRegisteredError,
+  EmailVerificationRequiredError,
   InvalidCredentialsError,
   UserNotFoundError,
 } from './auth.service'
@@ -49,6 +51,8 @@ export class AuthController {
       res.status(status).json({
         error: error instanceof EmailAlreadyRegisteredError
           ? 'Email already registered'
+          : error instanceof AccountEmailQueueError
+            ? 'Your account was created, but the verification code could not be queued. Please request a new code from sign in.'
           : status === 400
             ? 'Invalid registration request'
             : 'Registration is temporarily unavailable',
@@ -64,13 +68,37 @@ export class AuthController {
       const status = statusFor(error)
       res.status(status).json({
         error:
-          status === 401
-            ? 'Invalid email or password'
-            : status === 400
-              ? 'Invalid login request'
-              : 'Login is temporarily unavailable',
+          error instanceof EmailVerificationRequiredError
+            ? error.message
+            : status === 401
+              ? 'Invalid email or password'
+              : status === 400
+                ? 'Invalid login request'
+                : 'Login is temporarily unavailable',
       })
     }
+  }
+
+  async requestEmailVerification(req: Request, res: Response): Promise<void> {
+    let email: string
+    try {
+      email = emailSchema.parse(req.body).email
+    } catch {
+      res.status(400).json({ error: 'Enter a valid email address.' })
+      return
+    }
+
+    try {
+      await this.authService.requestEmailVerification(email)
+    } catch (error) {
+      logger.error(
+        { errorType: error instanceof Error ? error.name : 'UnknownError' },
+        'Email verification request could not be queued'
+      )
+    }
+    res.json({
+      message: 'If this address is eligible for verification, follow the instructions provided by email. This response does not confirm account status or email delivery.',
+    })
   }
 
   async getCurrentUser(req: Request, res: Response): Promise<void> {
@@ -108,7 +136,7 @@ export class AuthController {
     }
     try {
       await this.authService.resendVerificationEmail(req.user.userId)
-      res.json({ message: 'If verification is needed, an email will be sent shortly.' })
+      res.json({ message: 'If verification is needed, a code will be queued for delivery.' })
     } catch {
       res.status(503).json({ error: 'Unable to process the verification request' })
     }
@@ -116,11 +144,25 @@ export class AuthController {
 
   async verifyEmail(req: Request, res: Response): Promise<void> {
     try {
-      const { token } = verifyEmailSchema.parse(req.body)
-      await this.authService.verifyEmail(token)
-      res.json({ message: 'If the verification link is valid, the email is verified.' })
+      const { email, otp } = verifyEmailSchema.parse(req.body)
+      const result = await this.authService.verifyEmail(email, otp)
+      if (result.status !== 'verified') {
+        const responses = {
+          invalid: { status: 400, error: 'The verification code is invalid or has already been used.' },
+          expired: { status: 410, error: 'The verification code has expired. Request a new code.' },
+          'attempts-exceeded': { status: 429, error: 'Too many incorrect codes. Request a new code.' },
+          'already-verified': { status: 409, error: 'This email address is already verified. Please sign in.' },
+        } as const
+        const response = responses[result.status]
+        res.status(response.status).json({ error: response.error })
+        return
+      }
+      res.json({ verified: true, message: 'Email verified successfully. Please sign in to continue.' })
     } catch (error) {
-      res.status(statusFor(error)).json({ error: 'Unable to process the verification request' })
+      const status = statusFor(error)
+      res.status(status).json({
+        error: status === 400 ? 'Enter a valid email address and six-digit code.' : 'Unable to process the verification request',
+      })
     }
   }
 

@@ -21,7 +21,10 @@ export const resetPasswordSchema = z.object({
   token: z.string().min(32).max(200),
   password: passwordSchema,
 })
-export const verifyEmailSchema = z.object({ token: z.string().min(32).max(200) })
+export const verifyEmailSchema = z.object({
+  email: z.string().trim().toLowerCase().email(),
+  otp: z.string().regex(/^\d{6}$/, 'Verification code must be six digits'),
+})
 export const deleteAccountSchema = z.object({
   password: z.string().min(8).max(72),
   confirmation: z.literal('DELETE'),

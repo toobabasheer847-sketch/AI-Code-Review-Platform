@@ -295,20 +295,27 @@ not configured by this project.
 
 ### Authentication and account lifecycle
 
-Generate the updated Prisma Client and apply the
-`20261013231700_auth_account_lifecycle` migration before deploying this version.
-The migration adds a session token version and single-use account-action tokens;
-it is not applied automatically by the application.
+Generate the updated Prisma Client and apply the account lifecycle migration and
+`20261025120000_email_verification_otp_attempts` migration before deploying.
+The OTP migration adds the failed-attempt counter; migrations are not applied
+automatically by the application.
 
 Configure `MAIL_HOST`, `MAIL_PORT`, `MAIL_USER`, `MAIL_PASSWORD`, and `MAIL_FROM`
 for verification and password-reset email delivery, and set `FRONTEND_URL` to
-the public frontend origin. Verification links expire after 24 hours and
-password-reset links after 30 minutes. Tokens are random, stored only as
-SHA-256 hashes, and consumed once. Reset requests return the same response for
-known and unknown email addresses. Authenticated account-security actions are
-rate-limited to five requests per IP per 15 minutes.
+the public frontend origin. Verification codes expire after 10 minutes and
+allow five failed attempts; password-reset links expire after 30 minutes.
+Verification OTPs are HMAC-hashed in the database and encrypted in Redis job
+payloads; password-reset tokens are stored as SHA-256 hashes. Reset requests
+return the same response for known and unknown email addresses. Authenticated
+account-security actions are limited to five requests per IP per 15 minutes;
+verification submissions are limited to ten per IP per 15 minutes.
+For Gmail SMTP, use port `465` with implicit TLS or port `587` with STARTTLS;
+the mailer selects implicit TLS automatically for port `465`. Docker Compose
+loads `backend/.env` for SMTP settings when that file exists.
 
-Email verification is available but is not currently required to sign in.
+Email verification is required to sign in. If the code does not arrive, use
+the sign-in page's resend option to queue a replacement code. Queue acceptance
+does not prove that SMTP delivered it.
 `POST /api/auth/logout` increments the user's token version, invalidating
 existing bearer tokens; middleware checks that version and account existence on
 each authenticated request. Password reset also invalidates existing tokens.
@@ -330,7 +337,7 @@ Create `.env` in the backend directory with database connection:
 
 ```
 DATABASE_URL=postgresql://user:password@localhost:5432/ai_codeguard
-REDIS_URL=redis://localhost:6379
+REDIS_URL=redis://127.0.0.1:6380
 ```
 
 Production must provide independent, randomly generated `JWT_SECRET` and
@@ -464,9 +471,32 @@ All endpoints prefixed with `/api`
 - `POST /auth/register` - Register new user
 - `POST /auth/logout` - Logout user
 
+New accounts must verify their email before login succeeds. Registration
+creates an unverified account and queues a six-digit email code; users verify
+it on `/verify-email` and then sign in. Registration/verification do not issue a
+session before the account is verified. The OTP expires in 10 minutes, is
+single-use, allows five failed attempts, and can be resent after a 60-second
+cooldown. The public resend response does not reveal whether an account exists
+or whether mail was delivered.
+
+Configure `MAIL_HOST`, `MAIL_PORT`, `MAIL_USER`, `MAIL_PASSWORD`, and
+`MAIL_FROM`; set `EMAIL_OTP_SECRET` to an independent random value of at least
+32 characters in production. The worker validates mail settings at startup.
+Configure Redis 6.2 or newer (Docker Compose uses Redis 7); BullMQ startup rejects older
+versions. A queued email is not proof of SMTP delivery or inbox placement.
+After verification, sign in; the selected Free plan continues to the dashboard,
+while Pro continues to pricing/checkout. Registration does not grant a paid
+subscription. GitHub connection also requires a verified account.
+
+Before deploying this change, apply
+`src/prisma/migrations/20261025120000_email_verification_otp_attempts/migration.sql`
+through the normal Prisma migration process. The migration is not applied by
+application startup.
+
 ### Account lifecycle
 
-- `POST /auth/verify-email` - Verify email using a one-time token
+- `POST /auth/verify-email` - Verify email using `{ email, otp }`
+- `POST /auth/verification-email/request` - Public, rate-limited verification resend request
 - `POST /auth/password-reset/request` - Request a password-reset email
 - `POST /auth/password-reset/confirm` - Set a new password using a one-time token
 - `POST /auth/verification-email` - Resend verification (authenticated)
@@ -491,6 +521,8 @@ docker-compose up -d
 
 - Ensure Redis is running
 - Check REDIS_URL in .env
+- BullMQ requires Redis 6.2 or newer; email worker startup reports an actionable diagnostic for older versions.
+- Inspect safe queue/worker error codes and SMTP response codes in backend logs. Never log OTPs or credentials.
 
 ### Port already in use
 

@@ -1,16 +1,27 @@
-import { createHash, randomBytes } from 'node:crypto'
+import { createHash, createHmac, randomBytes, randomInt } from 'node:crypto'
+import { Prisma } from '@prisma/client'
 import { env } from '@/config/env'
 import { emailQueue } from '@/jobs/email.queue'
 import { hashPassword, comparePassword } from '@/utils/bcrypt'
 import { generateToken as generateJWT } from '@/utils/jwt'
 import logger from '@/utils/logger'
 import type { AccountEmailJob } from '@/modules/email/account-email.types'
+import { encryptVerificationOtp } from '@/modules/email/verification-otp.crypto'
+import { getSafeMailErrorDetails } from '@/modules/email/mail.service'
 import { GitHubService } from '@/modules/github/github.service'
 import type { LoginInput, RegisterInput } from './auth.validation'
 import type { AuthResponse, UserResponse } from './auth.types'
-import { ActiveSubscriptionError, authStore, type AuthStore } from './auth.store'
+import {
+  ActiveSubscriptionError,
+  authStore,
+  type AuthStore,
+  type EmailVerificationConsumption,
+  type StoredAuthUser,
+} from './auth.store'
 
-const EMAIL_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000
+const EMAIL_VERIFICATION_TTL_MS = 10 * 60 * 1000
+const EMAIL_VERIFICATION_RESEND_COOLDOWN_MS = 60 * 1000
+const EMAIL_VERIFICATION_MAX_ATTEMPTS = 5
 const PASSWORD_RESET_TTL_MS = 30 * 60 * 1000
 
 interface AuthEmailQueue {
@@ -52,6 +63,24 @@ export class InvalidCredentialsError extends Error {
   constructor() {
     super('Invalid email or password')
     this.name = 'InvalidCredentialsError'
+  }
+}
+
+export class EmailVerificationRequiredError extends Error {
+  readonly statusCode = 403
+
+  constructor() {
+    super('Email verification required')
+    this.name = 'EmailVerificationRequiredError'
+  }
+}
+
+export class AccountEmailQueueError extends Error {
+  readonly statusCode = 503
+
+  constructor() {
+    super('Account email could not be queued')
+    this.name = 'AccountEmailQueueError'
   }
 }
 
@@ -121,7 +150,7 @@ export class AuthService {
   private async queueAccountEmail(
     userId: string,
     email: string,
-    type: AccountEmailJob['type'],
+    type: 'auth:password-reset',
     path: string,
     token: string
   ): Promise<void> {
@@ -135,23 +164,72 @@ export class AuthService {
           removeOnComplete: true,
         }
       )
-    } catch {
-      logger.error({ userId, emailType: type }, 'Account email could not be queued')
+    } catch (error) {
+      logger.error(
+        {
+          userId,
+          emailType: type,
+          errorType: error instanceof Error ? error.name : 'UnknownError',
+          errorCode:
+            typeof error === 'object' && error !== null && 'code' in error
+              ? error.code
+              : undefined,
+          command:
+            typeof error === 'object' && error !== null && 'command' in error
+              ? error.command
+              : undefined,
+          responseCode:
+            typeof error === 'object' && error !== null && 'responseCode' in error
+              ? error.responseCode
+              : undefined,
+        },
+        'Account email could not be queued'
+      )
+      throw new AccountEmailQueueError()
     }
   }
 
   private async issueEmailVerification(
     userId: string,
     email: string
-  ): Promise<void> {
-    const token = createToken()
-    await this.store.replaceToken(
+  ): Promise<boolean> {
+    const otp = randomInt(0, 1_000_000).toString().padStart(6, '0')
+    const tokenHash = createHmac('sha256', env.EMAIL_OTP_SECRET)
+      .update(`email-verification:${userId}:${otp}`)
+      .digest('hex')
+    const now = this.now()
+    const issued = await this.store.issueEmailVerificationOtp(
       userId,
-      'EMAIL_VERIFICATION',
-      hashToken(token),
-      new Date(this.now().getTime() + EMAIL_VERIFICATION_TTL_MS)
+      tokenHash,
+      new Date(now.getTime() + EMAIL_VERIFICATION_TTL_MS),
+      now,
+      EMAIL_VERIFICATION_RESEND_COOLDOWN_MS
     )
-    await this.queueAccountEmail(userId, email, 'auth:verify-email', '/verify-email', token)
+    if (!issued) return false
+
+    try {
+      await this.mailQueue.add(
+        'auth:verify-email',
+        { type: 'auth:verify-email', payload: { to: email, otp: encryptVerificationOtp(otp) } },
+        {
+          jobId: `auth-verify-email-${userId}-${tokenHash.slice(0, 16)}`,
+          attempts: 3,
+          removeOnComplete: true,
+        }
+      )
+      return true
+    } catch (error) {
+      await this.store.deleteEmailVerificationOtp(userId, tokenHash)
+      logger.error(
+        {
+          userId,
+          emailType: 'auth:verify-email',
+          ...getSafeMailErrorDetails(error),
+        },
+        'Verification OTP could not be queued'
+      )
+      throw new AccountEmailQueueError()
+    }
   }
 
   async login(input: LoginInput): Promise<AuthResponse> {
@@ -159,6 +237,8 @@ export class AuthService {
     if (!user || !(await comparePassword(input.password, user.passwordHash))) {
       throw new InvalidCredentialsError()
     }
+    if (!user.isVerified) throw new EmailVerificationRequiredError()
+
     return {
       token: generateJWT({
         userId: user.id,
@@ -169,20 +249,39 @@ export class AuthService {
     }
   }
 
-  async register(input: RegisterInput): Promise<AuthResponse> {
+  async register(input: RegisterInput): Promise<{
+    email: string
+    verificationRequired: true
+    verificationEmailQueued: true
+    message: string
+  }> {
     const existingUser = await this.store.findUserByEmail(input.email)
     if (existingUser) throw new EmailAlreadyRegisteredError()
 
-    const user = await this.store.createUser({
-      email: input.email,
-      fullName: input.fullName,
-      passwordHash: await hashPassword(input.password),
-    })
-    await this.issueEmailVerification(user.id, user.email)
+    let user: StoredAuthUser
+    try {
+      user = await this.store.createUser({
+        email: input.email,
+        fullName: input.fullName,
+        passwordHash: await hashPassword(input.password),
+      })
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new EmailAlreadyRegisteredError()
+      }
+      throw error
+    }
 
+    const queued = await this.issueEmailVerification(user.id, user.email)
+    if (!queued) throw new AccountEmailQueueError()
     return {
-      token: generateJWT({ userId: user.id, email: user.email, tokenVersion: user.tokenVersion }),
-      user: this.toUserResponse(user),
+      email: user.email,
+      verificationRequired: true,
+      verificationEmailQueued: true,
+      message: 'Your account was created. A verification code was queued for delivery.',
     }
   }
 
@@ -197,8 +296,26 @@ export class AuthService {
     if (user && !user.isVerified) await this.issueEmailVerification(user.id, user.email)
   }
 
-  async verifyEmail(token: string): Promise<boolean> {
-    return this.store.consumeEmailVerification(hashToken(token), this.now())
+  async requestEmailVerification(email: string): Promise<void> {
+    const user = await this.store.findUserByEmail(email)
+    if (user && !user.isVerified) await this.issueEmailVerification(user.id, user.email)
+  }
+
+  async verifyEmail(email: string, otp: string): Promise<EmailVerificationConsumption> {
+    const user = await this.store.findUserByEmail(email)
+    if (!user) return { status: 'invalid' }
+    if (user.isVerified) return { status: 'already-verified' }
+
+    const tokenHash = createHmac('sha256', env.EMAIL_OTP_SECRET)
+      .update(`email-verification:${user.id}:${otp}`)
+      .digest('hex')
+    const result = await this.store.consumeEmailVerificationOtp(
+      user.id,
+      tokenHash,
+      this.now(),
+      EMAIL_VERIFICATION_MAX_ATTEMPTS
+    )
+    return result
   }
 
   async requestPasswordReset(email: string): Promise<void> {

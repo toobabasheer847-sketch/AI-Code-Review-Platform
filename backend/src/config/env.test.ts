@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { parse, populate } from 'dotenv'
 
 const previousNodeEnv = process.env.NODE_ENV
 process.env.NODE_ENV = 'test'
-const { env, hasUsableOpenAIKey, validateEnvironment } = await import('./env')
+const { env, hasUsableOpenAIKey, resolveRedisUrl, validateEnvironment } = await import('./env')
 if (previousNodeEnv === undefined) {
   delete process.env.NODE_ENV
 } else {
@@ -19,6 +20,7 @@ function productionConfiguration(): typeof env {
     JWT_SECRET: 'j'.repeat(48),
     GITHUB_TOKEN_ENCRYPTION_KEY: 'k'.repeat(48),
     GITHUB_TOKEN_ENCRYPTION_KEY_PREVIOUS: '',
+    EMAIL_OTP_SECRET: 'm'.repeat(48),
     OPENAI_API_KEY: 'openai-test-key',
     GITHUB_CLIENT_ID: 'github-client-id',
     GITHUB_CLIENT_SECRET: 'github-client-secret',
@@ -34,6 +36,20 @@ function productionConfiguration(): typeof env {
 
 test('accepts production configuration with HTTPS origins and TLS Redis', () => {
   assert.doesNotThrow(() => validateEnvironment(productionConfiguration()))
+})
+
+test('prefers the process Redis URL over the local fallback', () => {
+  assert.equal(
+    resolveRedisUrl('redis://127.0.0.1:6380', 'redis://127.0.0.1:6379'),
+    'redis://127.0.0.1:6380'
+  )
+  assert.equal(resolveRedisUrl('', 'redis://127.0.0.1:6380'), 'redis://127.0.0.1:6380')
+})
+
+test('dotenv loading keeps an explicitly supplied process Redis URL', () => {
+  const target = { REDIS_URL: 'redis://127.0.0.1:6380' }
+  populate(target, parse('REDIS_URL=redis://127.0.0.1:6379'), { override: false })
+  assert.equal(target.REDIS_URL, 'redis://127.0.0.1:6380')
 })
 
 test('requires a direct PostgreSQL URL in every environment', () => {
@@ -76,4 +92,10 @@ test('rejects loopback IPv6 production dependencies', () => {
   const localRedis = productionConfiguration()
   localRedis.REDIS_URL = 'rediss://redis@[::1]:6380'
   assert.throws(() => validateEnvironment(localRedis), /REDIS_URL must not point to a local host/)
+})
+
+test('requires a dedicated production email OTP secret', () => {
+  const sharedSecret = productionConfiguration()
+  sharedSecret.EMAIL_OTP_SECRET = sharedSecret.JWT_SECRET
+  assert.throws(() => validateEnvironment(sharedSecret), /EMAIL_OTP_SECRET must be an independent/)
 })

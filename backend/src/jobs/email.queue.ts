@@ -1,10 +1,10 @@
 import { Queue, Worker } from 'bullmq'
-import IORedis from 'ioredis'
 
-import { MailService } from '@/modules/email/mail.service'
-import { env } from '@/config/env'
+import { getSafeMailErrorDetails, MailService } from '@/modules/email/mail.service'
+import { createBullMqRedisConnection, getRedisConnectionTarget } from '@/config/redis-connection'
 import logger from '@/utils/logger'
 import type { AccountEmailJob } from '@/modules/email/account-email.types'
+import { decryptVerificationOtp } from '@/modules/email/verification-otp.crypto'
 import type { AutomationNotificationPayload, ReviewCompletePayload } from '@/modules/email/email.types'
 import { prisma } from '@/config/database'
 
@@ -13,13 +13,13 @@ type EmailJobData =
   | { type: 'automation:notification'; payload: AutomationNotificationPayload }
   | AccountEmailJob
 
-let connection: IORedis | null = null
+let connection: ReturnType<typeof createBullMqRedisConnection> | null = null
 let queueInstance: Queue<EmailJobData, void> | null = null
 let emailWorker: Worker | null = null
 
-function getConnection(): IORedis {
+function getConnection(): ReturnType<typeof createBullMqRedisConnection> {
   if (!connection) {
-    connection = new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null })
+    connection = createBullMqRedisConnection()
   }
   return connection
 }
@@ -61,7 +61,10 @@ export async function startEmailWorker(): Promise<void> {
           await mailer.sendReviewComplete(payload)
           break
         case 'auth:verify-email':
-          await mailer.sendEmailVerification(payload)
+          await mailer.sendEmailVerification({
+            to: payload.to,
+            otp: decryptVerificationOtp(payload.otp),
+          })
           break
         case 'auth:password-reset':
           await mailer.sendPasswordReset(payload)
@@ -87,8 +90,15 @@ export async function startEmailWorker(): Promise<void> {
     logger.info({ jobId: job.id }, 'Email job completed')
   })
 
-  emailWorker.on('failed', (job) => {
-    logger.error({ jobId: job?.id }, 'Email job failed')
+  emailWorker.on('failed', (job, error) => {
+    logger.error(
+      {
+        jobId: job?.id,
+        jobType: job?.data.type,
+        ...getSafeMailErrorDetails(error),
+      },
+      'Email job failed'
+    )
     if (
       job?.data.type === 'automation:notification' &&
       job.attemptsMade >= (job.opts.attempts ?? 1)
@@ -127,9 +137,35 @@ export async function startEmailWorker(): Promise<void> {
     }
   })
 
-  emailWorker.on('error', () => {
-    logger.error('Email worker error')
+  emailWorker.on('error', (error) => {
+    logger.error(
+      {
+        workerStarted: emailWorker?.isRunning() ?? false,
+        ...getSafeMailErrorDetails(error),
+      },
+      'Email worker error'
+    )
   })
+
+  await emailWorker.waitUntilReady()
+  const serverInfo = await getConnection().info('server')
+  const version = serverInfo.match(/^redis_version:([0-9.]+)/m)?.[1]
+  const target = getRedisConnectionTarget()
+  logger.info({ ...target, version: version ?? 'unknown' }, 'BullMQ Redis server detected')
+  if (!version || !isRedisVersionSupported(version)) {
+    await emailWorker.close()
+    emailWorker = null
+    throw new Error(
+      `BullMQ email processing requires Redis 6.2 or newer; connected to ${target.host}:${target.port} (detected ${version ?? 'unknown'}).`
+    )
+  }
+  logger.info({ workerStarted: emailWorker.isRunning() }, 'Email worker ready')
+}
+
+export function isRedisVersionSupported(version: string): boolean {
+  const parts = version.split('.').map(Number)
+  if (parts.length < 2 || parts.some((part) => !Number.isInteger(part))) return false
+  return parts[0] > 6 || (parts[0] === 6 && parts[1] >= 2)
 }
 
 export async function closeEmailQueue(): Promise<void> {

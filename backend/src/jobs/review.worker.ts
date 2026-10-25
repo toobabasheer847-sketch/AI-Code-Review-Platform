@@ -1,7 +1,7 @@
 import { Worker } from 'bullmq'
 import { Prisma } from '@prisma/client'
-import IORedis from 'ioredis'
 import { env } from '@/config/env'
+import { createBullMqRedisConnection } from '@/config/redis-connection'
 import { prisma } from '@/config/database'
 import { emailQueue } from './email.queue'
 import { analyzeCode } from '@/modules/code-review/analyzer'
@@ -17,9 +17,7 @@ import { GitHubService } from '@/modules/github/github.service'
 import type { ReviewJobData } from './review.queue'
 import logger from '@/utils/logger'
 
-const connection = new IORedis(env.REDIS_URL, {
-  maxRetriesPerRequest: null,
-})
+const connection = createBullMqRedisConnection()
 const githubService = new GitHubService()
 
 const store: ReviewJobStore = {

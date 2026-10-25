@@ -1,25 +1,40 @@
+import { isAxiosError } from 'axios'
 import { Eye, EyeOff, ArrowLeft } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, Link, useLocation } from 'react-router-dom'
 
 import { useAppStore } from '@/app/store/useAppStore'
 
+import { authApi } from '../api/authApi'
 import { useLogin } from '../hooks/useAuth'
-
 
 export const LoginPage = (): JSX.Element => {
   const navigate = useNavigate()
   const location = useLocation()
-  const { mutate: login, isPending } = useLogin()
+  const searchParams = new URLSearchParams(location.search)
+  const { mutate: login, isPending, error: loginError } = useLogin()
   const error = useAppStore((state) => state.error)
+  const logout = useAppStore((state) => state.logout)
   const selectedPlan = useAppStore((state) => state.selectedPlan)
   const setSelectedPlan = useAppStore((state) => state.setSelectedPlan)
   const [formData, setFormData] = useState({
-    email: '',
+    email: searchParams.get('email') ?? '',
     password: '',
   })
   const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({})
   const [showPassword, setShowPassword] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [verificationMessage, setVerificationMessage] = useState('')
+  const [verificationPending, setVerificationPending] = useState(false)
+  const [verificationRequestError, setVerificationRequestError] = useState('')
+  const verificationRequiredFromRoute = searchParams.get('verificationRequired') === '1'
+  const verificationRequired =
+    (isAxiosError<{ error?: unknown }>(loginError) && loginError.response?.status === 403) ||
+    verificationRequiredFromRoute
+
+  useEffect(() => {
+    if (verificationRequiredFromRoute) logout()
+  }, [logout, verificationRequiredFromRoute])
 
   const validateForm = (): boolean => {
     const errors: { [key: string]: string } = {}
@@ -58,29 +73,49 @@ export const LoginPage = (): JSX.Element => {
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault()
 
-    if (!validateForm()) {
+    if (!validateForm() || isPending || isSubmitting) {
       return
     }
 
+    setIsSubmitting(true)
     login(formData, {
       onSuccess: () => {
         const params = new URLSearchParams(location.search)
         const returnUrl = params.get('returnUrl')
         const planParam = params.get('plan')
-
-        if (planParam === 'pro') {
-          setSelectedPlan('pro')
-        }
+        const requestedPlan =
+          planParam === 'free' || planParam === 'pro' ? planParam : selectedPlan
+        setSelectedPlan(null)
 
         if (returnUrl && returnUrl.startsWith('/')) {
           navigate(returnUrl)
-        } else if (selectedPlan === 'pro' || planParam === 'pro') {
+        } else if (requestedPlan === 'pro') {
           navigate('/pricing')
         } else {
           navigate('/dashboard')
         }
       },
+      onSettled: () => {
+        setIsSubmitting(false)
+      },
     })
+  }
+
+  const handleResendVerification = async (): Promise<void> => {
+    setVerificationPending(true)
+    setVerificationMessage('')
+    setVerificationRequestError('')
+    try {
+      const result = await authApi.requestEmailVerification(formData.email)
+      setVerificationMessage(result.message)
+      navigate(
+        `/verify-email?email=${encodeURIComponent(formData.email.trim().toLowerCase())}&plan=${searchParams.get('plan') === 'pro' ? 'pro' : 'free'}`
+      )
+    } catch {
+      setVerificationRequestError('Unable to request a verification code. Please try again.')
+    } finally {
+      setVerificationPending(false)
+    }
   }
 
   return (
@@ -97,9 +132,35 @@ export const LoginPage = (): JSX.Element => {
           <h1 className="text-2xl font-bold text-white mb-2">Welcome Back</h1>
           <p className="text-sm text-slate-400 mb-8">Sign in to your account</p>
 
+          {searchParams.get('registered') === '1' && (
+            <div className="mb-6 rounded-md border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm text-emerald-200">
+              Your account was created. Enter the six-digit verification code to continue.
+            </div>
+          )}
+          {searchParams.get('verified') === '1' && (
+            <div role="status" className="mb-6 rounded-md border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm text-emerald-200">
+              Email verified successfully. Sign in to continue to your selected plan.
+            </div>
+          )}
+
           {error && (
             <div className="mb-6 p-3 bg-destructive/10 border border-destructive/20 rounded-md text-sm text-destructive">
               {error}
+            </div>
+          )}
+          {verificationRequired && (
+            <div className="mb-6 space-y-3 rounded-md border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-100">
+              <p>Verify your email before signing in. Check your inbox and spam folder for the six-digit code.</p>
+              <button
+                type="button"
+                onClick={() => void handleResendVerification()}
+                disabled={verificationPending || !formData.email}
+                className="font-semibold underline underline-offset-4 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {verificationPending ? 'Requesting code…' : 'Request verification code'}
+              </button>
+              {verificationMessage && <p role="status">{verificationMessage}</p>}
+              {verificationRequestError && <p role="alert">{verificationRequestError}</p>}
             </div>
           )}
 
@@ -151,10 +212,10 @@ export const LoginPage = (): JSX.Element => {
 
             <button
               type="submit"
-              disabled={isPending}
+              disabled={isPending || isSubmitting}
               className="w-full py-3 px-4 mt-6 rounded-md bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-600 hover:to-blue-700 text-white font-medium shadow-lg shadow-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
-              {isPending ? 'Signing in...' : 'Sign in'}
+              {isPending || isSubmitting ? 'Signing in...' : 'Sign in'}
             </button>
           </form>
 

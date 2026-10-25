@@ -31,6 +31,13 @@ export interface AuthResponse {
   }
 }
 
+export interface RegisterResponse {
+  email: string
+  verificationRequired: true
+  verificationEmailQueued: true
+  message: string
+}
+
 export interface UserResponse {
   user: {
     id: string
@@ -45,9 +52,14 @@ export interface UserResponse {
   }
 }
 
+export interface VerifyEmailResponse {
+  message: string
+  verified: true
+}
+
 export const authApi = {
-  register: async (payload: RegisterPayload): Promise<AuthResponse> => {
-    const response = await axiosInstance.post<AuthResponse>('/auth/register', payload)
+  register: async (payload: RegisterPayload): Promise<RegisterResponse> => {
+    const response = await axiosInstance.post<RegisterResponse>('/auth/register', payload)
     return response.data
   },
 
@@ -65,13 +77,21 @@ export const authApi = {
     await axiosInstance.post('/auth/logout')
   },
 
-  verifyEmail: async (token: string): Promise<{ message: string }> => {
-    const response = await axiosInstance.post<{ message: string }>('/auth/verify-email', { token })
+  verifyEmail: async (email: string, otp: string): Promise<VerifyEmailResponse> => {
+    const response = await axiosInstance.post<VerifyEmailResponse>('/auth/verify-email', { email, otp })
     return response.data
   },
 
   resendVerificationEmail: async (): Promise<{ message: string }> => {
     const response = await axiosInstance.post<{ message: string }>('/auth/verification-email')
+    return response.data
+  },
+
+  requestEmailVerification: async (email: string): Promise<{ message: string }> => {
+    const response = await axiosInstance.post<{ message: string }>(
+      '/auth/verification-email/request',
+      { email }
+    )
     return response.data
   },
 

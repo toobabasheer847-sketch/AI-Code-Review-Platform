@@ -19,15 +19,12 @@ import {
   type AuthResponse,
   type LoginPayload,
   type RegisterPayload,
+  type RegisterResponse,
   type UserResponse,
 } from '../api/authApi'
 
 function getAuthErrorMessage(error: unknown, fallback: string): string {
   if (isAxiosError<Record<string, unknown>>(error)) {
-    if (error.response?.status === 409) {
-      return 'An account with this email already exists. Please sign in or use a different email.'
-    }
-
     const responseData = error.response?.data
     const rawMessage =
       typeof responseData === 'string'
@@ -42,8 +39,13 @@ function getAuthErrorMessage(error: unknown, fallback: string): string {
 
     if (typeof rawMessage === 'string') {
       const apiMessage = rawMessage.trim()
+      if (apiMessage) {
+        return apiMessage
+      }
+    }
 
-      return apiMessage || fallback
+    if (error.response?.status === 409) {
+      return 'An account with this email already exists. Please sign in or use a different email.'
     }
   }
 
@@ -53,7 +55,7 @@ function getAuthErrorMessage(error: unknown, fallback: string): string {
 /**
  * Hook for user registration
  */
-export const useRegister = (): UseMutationResult<AuthResponse, Error, RegisterPayload> => {
+export const useRegister = (): UseMutationResult<RegisterResponse, Error, RegisterPayload> => {
   const setUser = useAppStore((state) => state.setUser)
   const setToken = useAppStore((state) => state.setToken)
   const setIsLoading = useAppStore((state) => state.setIsLoading)
@@ -68,9 +70,9 @@ export const useRegister = (): UseMutationResult<AuthResponse, Error, RegisterPa
         setIsLoading(false)
       }
     },
-    onSuccess: (data: AuthResponse) => {
-      setToken(data.token)
-      setUser(data.user)
+    onSuccess: () => {
+      setToken(null)
+      setUser(null)
       setError(null)
     },
     onError: (error: Error) => {
@@ -83,6 +85,7 @@ export const useRegister = (): UseMutationResult<AuthResponse, Error, RegisterPa
  * Hook for user login
  */
 export const useLogin = (): UseMutationResult<AuthResponse, Error, LoginPayload> => {
+  const queryClient = useQueryClient()
   const setUser = useAppStore((state) => state.setUser)
   const setToken = useAppStore((state) => state.setToken)
   const setIsLoading = useAppStore((state) => state.setIsLoading)
@@ -100,6 +103,7 @@ export const useLogin = (): UseMutationResult<AuthResponse, Error, LoginPayload>
     onSuccess: (data: AuthResponse) => {
       setToken(data.token)
       setUser(data.user)
+      queryClient.setQueryData(['me'], data.user)
       setError(null)
     },
     onError: (error: Error) => {
@@ -124,7 +128,6 @@ export const useMe = (): UseQueryResult<UserResponse['user'], Error> => {
     },
     enabled: !!token,
     staleTime: 5 * 60 * 1000, // 5 minutes
-    retry: 1,
   })
 }
 

@@ -408,7 +408,8 @@ model AccountToken {
   tokenHash String           @unique
   type      AccountTokenType
   expiresAt DateTime
-  createdAt DateTime         @default(now())
+  attemptCount Int            @default(0)
+  createdAt DateTime          @default(now())
 
   @@index([userId, type])
   @@index([expiresAt])

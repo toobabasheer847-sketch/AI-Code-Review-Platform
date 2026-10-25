@@ -20,8 +20,9 @@ export const RegisterPage = (): JSX.Element => {
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const location = useLocation()
-  const [registeringPlan, setRegisteringPlan] = useState<'free' | 'pro' | null>(null)
+  const [registeringPlan, setRegisteringPlan] = useState<'free' | 'pro'>('free')
   const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({})
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   const validateForm = (): boolean => {
     const errors: { [key: string]: string } = {}
@@ -72,12 +73,13 @@ export const RegisterPage = (): JSX.Element => {
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault()
 
-    if (!validateForm()) {
+    if (!validateForm() || isPending || isSubmitting) {
       return
     }
 
-    // persist chosen plan in app store so backend or billing flow can pick it up later
+    const plan = registeringPlan
     setSelectedPlan(registeringPlan)
+    setIsSubmitting(true)
 
     register(
       {
@@ -86,14 +88,13 @@ export const RegisterPage = (): JSX.Element => {
         password: formData.password,
       },
       {
-        onSuccess: () => {
-          // If user selected Pro plan, redirect to pricing to complete checkout
-          if (registeringPlan === 'pro') {
-            navigate('/pricing')
-          } else {
-            // Free plan users go directly to dashboard
-            navigate('/dashboard')
-          }
+        onSuccess: (result) => {
+          navigate(
+            `/verify-email?plan=${plan}&email=${encodeURIComponent(result.email)}`
+          )
+        },
+        onSettled: () => {
+          setIsSubmitting(false)
         },
       }
     )
@@ -102,7 +103,7 @@ export const RegisterPage = (): JSX.Element => {
   useEffect(() => {
     const params = new URLSearchParams(location.search)
     const planRaw = params.get('plan')?.toLowerCase()
-    const plan = planRaw === 'pro' ? 'pro' : planRaw === 'free' ? 'free' : null
+    const plan = planRaw === 'pro' ? 'pro' : 'free'
     setRegisteringPlan(plan)
     setSelectedPlan(plan)
   }, [location.search, setSelectedPlan])
@@ -225,10 +226,10 @@ export const RegisterPage = (): JSX.Element => {
 
             <button
               type="submit"
-              disabled={isPending}
+              disabled={isPending || isSubmitting}
               className="w-full py-3 px-4 mt-6 rounded-md bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-600 hover:to-blue-700 text-white font-medium shadow-lg shadow-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
-              {isPending ? 'Creating account...' : 'Create account'}
+              {isPending || isSubmitting ? 'Creating account...' : 'Create account'}
             </button>
           </form>
 

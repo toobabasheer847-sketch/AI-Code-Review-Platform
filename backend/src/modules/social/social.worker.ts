@@ -1,6 +1,5 @@
 import { Worker } from 'bullmq';
-import IORedis from 'ioredis';
-import { env } from '@/config/env';
+import { createBullMqRedisConnection } from '@/config/redis-connection';
 import logger from '@/utils/logger';
 import { SocialService } from './social.service';
 import type { SocialPublishJob } from './social.queue';
@@ -15,7 +14,7 @@ export async function startSocialWorker(): Promise<void> {
     'social-publishing',
     async (job) => service.publishScheduledPost(job.data.postId, job.data.scheduleVersion),
     {
-      connection: new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null }),
+      connection: createBullMqRedisConnection(),
       concurrency: 2,
       lockDuration: 180_000,
     }

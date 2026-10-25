@@ -1,4 +1,9 @@
-import 'dotenv/config'
+import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { config as loadDotEnv } from 'dotenv'
+
+const backendRoot = resolve(fileURLToPath(new URL('../..', import.meta.url)))
+loadDotEnv({ path: resolve(backendRoot, '.env'), override: false })
 
 const nodeEnv = process.env.NODE_ENV || 'development'
 const jwtSecret =
@@ -7,6 +12,16 @@ const jwtSecret =
 const githubTokenEncryptionKey =
   process.env.GITHUB_TOKEN_ENCRYPTION_KEY ||
   (nodeEnv === 'production' ? '' : 'local-development-github-token-encryption-key')
+const emailOtpSecret =
+  process.env.EMAIL_OTP_SECRET ||
+  (nodeEnv === 'production' ? '' : 'local-development-email-otp-secret')
+
+export function resolveRedisUrl(
+  processEnvironmentUrl = process.env.REDIS_URL,
+  fallbackUrl = 'redis://127.0.0.1:6380'
+): string {
+  return processEnvironmentUrl?.trim() || fallbackUrl
+}
 
 function isPlaceholderSecret(secret: string): boolean {
   const normalized = secret.toLowerCase()
@@ -29,6 +44,7 @@ export const env = {
   JWT_EXPIRY: process.env.JWT_EXPIRY || '7d',
   GITHUB_TOKEN_ENCRYPTION_KEY: githubTokenEncryptionKey,
   GITHUB_TOKEN_ENCRYPTION_KEY_PREVIOUS: process.env.GITHUB_TOKEN_ENCRYPTION_KEY_PREVIOUS || '',
+  EMAIL_OTP_SECRET: emailOtpSecret,
   OPENAI_API_KEY: process.env.OPENAI_API_KEY || '',
   OPENAI_MODEL: process.env.OPENAI_MODEL?.trim() || 'gpt-4o-mini',
   GITHUB_CLIENT_ID: process.env.GITHUB_CLIENT_ID || '',
@@ -44,9 +60,9 @@ export const env = {
   STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET || '',
   STRIPE_PRO_PRICE_ID: process.env.STRIPE_PRO_PRICE_ID || '',
   STRIPE_API_VERSION: process.env.STRIPE_API_VERSION || '2023-10-16',
-  REDIS_URL: process.env.REDIS_URL || 'redis://localhost:6379',
+  REDIS_URL: resolveRedisUrl(),
   MAIL_HOST: process.env.MAIL_HOST || 'smtp.gmail.com',
-  MAIL_PORT: parseInt(process.env.MAIL_PORT || '587', 10),
+  MAIL_PORT: Number(process.env.MAIL_PORT || '587'),
   MAIL_USER: process.env.MAIL_USER || '',
   MAIL_PASSWORD: process.env.MAIL_PASSWORD || '',
   MAIL_FROM: process.env.MAIL_FROM || 'noreply@ai-codeguard.com',
@@ -165,6 +181,16 @@ export function validateEnvironment(configuration: typeof env): void {
     isPlaceholderSecret(configuration.GITHUB_TOKEN_ENCRYPTION_KEY)
   ) {
     configurationErrors.push('GITHUB_TOKEN_ENCRYPTION_KEY must be an independent, non-placeholder secret of at least 32 characters')
+  }
+
+  if (
+    configuration.EMAIL_OTP_SECRET.length < 32 ||
+    configuration.EMAIL_OTP_SECRET === 'local-development-email-otp-secret' ||
+    configuration.EMAIL_OTP_SECRET === configuration.JWT_SECRET ||
+    configuration.EMAIL_OTP_SECRET === configuration.GITHUB_TOKEN_ENCRYPTION_KEY ||
+    isPlaceholderSecret(configuration.EMAIL_OTP_SECRET)
+  ) {
+    configurationErrors.push('EMAIL_OTP_SECRET must be an independent, non-placeholder secret of at least 32 characters')
   }
 
   if (

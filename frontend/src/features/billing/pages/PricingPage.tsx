@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom'
+
 import { UpgradeButton } from '../components/UpgradeButton'
 
 export const PricingPage = (): JSX.Element => {
@@ -6,7 +8,9 @@ export const PricingPage = (): JSX.Element => {
       <div className="container mx-auto py-8 px-4 sm:px-6 lg:px-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-white">Pricing</h1>
-          <p className="mt-2 text-sm text-slate-400">Choose the plan that fits your workflow and level up your code review process.</p>
+          <p className="mt-2 text-sm text-slate-400">
+            New accounts start on Free. Choose a plan before continuing to your dashboard.
+          </p>
         </div>
 
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
@@ -16,7 +20,7 @@ export const PricingPage = (): JSX.Element => {
                 <h2 className="text-xl font-semibold text-white">Free</h2>
                 <p className="mt-2 text-sm text-slate-400">3 AI reviews / month</p>
               </div>
-              <span className="rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-300">Starter</span>
+              <span className="rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-300">No payment required</span>
             </div>
 
             <div className="mt-6 space-y-4 text-sm text-slate-300">
@@ -25,9 +29,12 @@ export const PricingPage = (): JSX.Element => {
               <p>Email support</p>
             </div>
 
-            <button className="mt-6 w-full rounded-xl border border-slate-800 bg-[#0f172a]/90 px-5 py-3 text-sm font-medium text-slate-200 transition hover:bg-slate-800">
-              Current plan
-            </button>
+            <Link
+              to="/dashboard"
+              className="mt-6 flex w-full items-center justify-center rounded-xl border border-slate-800 bg-[#0f172a]/90 px-5 py-3 text-sm font-medium text-slate-200 transition hover:bg-slate-800"
+            >
+              Continue with Free
+            </Link>
           </section>
 
           <section className="rounded-3xl border border-indigo-500/30 bg-[#1e293b]/50 backdrop-blur-md p-8 shadow-2xl shadow-indigo-500/15">
