@@ -14,6 +14,7 @@ import { persistReviewAnalysis } from '@/modules/code-review/review.persistence'
 import type { ReviewAnalysis } from '@/modules/code-review/analyzer'
 import type { ReviewSourceFile } from '@/modules/github/github.service'
 import { GitHubService } from '@/modules/github/github.service'
+import { publishCompletedPullRequestReview } from '@/modules/github/pull-request-review-publisher'
 import type { ReviewJobData } from './review.queue'
 import logger from '@/utils/logger'
 
@@ -37,6 +38,7 @@ const store: ReviewJobStore = {
             category: true,
             title: true,
             message: true,
+            impact: true,
             evidence: true,
             suggestions: true,
           },
@@ -136,12 +138,24 @@ const worker = new Worker<ReviewJobData>(
             )
           : githubService.fetchReviewFiles(userId, repository, branch),
       analyze: analyzeCode,
-      async notify(review, analysis): Promise<void> {
+      async notify(review, analysis, files): Promise<void> {
         if (review.source === 'PULL_REQUEST') {
-          await prisma.gitHubWebhookDelivery.updateMany({
-            where: { reviewId: review.id },
-            data: { status: 'completed-not-published', errorMessage: null },
-          })
+          await publishCompletedPullRequestReview(
+            {
+              ...review,
+              findings: analysis?.findings ?? review.findings,
+            },
+            {
+              github: githubService,
+              async setDeliveryStatus(reviewId, headSha, status, errorMessage) {
+                await prisma.gitHubWebhookDelivery.updateMany({
+                  where: { reviewId, headSha },
+                  data: { status, errorMessage: errorMessage ?? null },
+                })
+              },
+            },
+            files
+          )
         }
 
         await emailQueue.add(

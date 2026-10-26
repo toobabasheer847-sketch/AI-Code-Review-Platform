@@ -3,10 +3,12 @@ import axios from 'axios'
 import test from 'node:test'
 import { env } from '@/config/env'
 import { encrypt } from '@/utils/crypto'
+import type { PullRequestReviewPublisherDependencies } from './pull-request-review-publisher'
 import {
   GitHubService,
   type PullRequestFinding,
 } from './github.service'
+import { publishCompletedPullRequestReview } from './pull-request-review-publisher'
 
 const pullRequest = {
   number: 7,
@@ -108,6 +110,8 @@ test('publishes only findings on valid added lines and includes a retry marker',
       body: payload.comments[0].body,
     },
   ])
+  assert.match(payload.comments[0].body, /AI-generated suggestion/)
+  assert.match(payload.comments[0].body, /Not independently verified/)
   assert.match(payload.comments[0].body, /Unvalidated input/)
   assert.match(payload.comments[0].body, /Impact: Invalid input may reach a sensitive operation/)
   assert.match(payload.comments[0].body, /dangerousCall/)
@@ -174,6 +178,119 @@ test('propagates GitHub comment publishing failures for worker retry', async () 
     ),
     /GitHub API rate limit/
   )
+})
+
+test('publishes completed pull-request analysis and stores the delivery outcome', async () => {
+  const { github, calls } = createService()
+  const statuses: Array<{ reviewId: string; headSha: string; status: string }> = []
+  await publishCompletedPullRequestReview(
+    {
+      id: 'review-1',
+      userId: 'user-1',
+      repository: { name: 'owner/repository' },
+      source: 'PULL_REQUEST',
+      pullRequestNumber: 7,
+      headSha: pullRequest.head.sha,
+      findings,
+    },
+    {
+      github,
+      async setDeliveryStatus(reviewId, headSha, status) {
+        statuses.push({ reviewId, headSha, status })
+      },
+    },
+    [
+      {
+        path: 'src/app.ts',
+        content: 'dangerousCall(input)',
+        changedLines: [10, 11],
+      },
+    ]
+  )
+
+  assert.equal(calls.filter((call) => call.method === 'POST').length, 1)
+  assert.deepEqual(statuses, [
+    { reviewId: 'review-1', headSha: pullRequest.head.sha, status: 'completed' },
+  ])
+})
+
+test('records stale and no-inline outcomes and rejects malformed stored diff metadata', async () => {
+  const statuses: string[] = []
+  const baseReview = {
+    id: 'review-1',
+    userId: 'user-1',
+    repository: { name: 'owner/repository' },
+    source: 'PULL_REQUEST',
+    pullRequestNumber: 7,
+    headSha: pullRequest.head.sha,
+    findings,
+  }
+  const dependencies: PullRequestReviewPublisherDependencies = {
+    github: {
+      async publishPullRequestFindings() {
+        return 'stale' as const
+      },
+    },
+    async setDeliveryStatus(_reviewId: string, _headSha: string, status: string) {
+      statuses.push(status)
+    },
+  }
+  await publishCompletedPullRequestReview(
+    { ...baseReview, changedLines: { 'src/app.ts': [10, 11] } },
+    dependencies
+  )
+  assert.deepEqual(statuses, ['stale'])
+
+  dependencies.github.publishPullRequestFindings = async () => 'no-inline-findings'
+  await publishCompletedPullRequestReview(
+    { ...baseReview, changedLines: { 'src/app.ts': [] } },
+    dependencies
+  )
+  assert.deepEqual(statuses, ['stale', 'completed-no-inline-findings'])
+
+  await assert.rejects(
+    publishCompletedPullRequestReview(
+      { ...baseReview, changedLines: { 'src/app.ts': ['10'] } },
+      dependencies
+    ),
+    /changed-line metadata is invalid/
+  )
+})
+
+test('marks GitHub publishing failures retryable and does not mask the original error', async () => {
+  const failure = new Error('GitHub API unavailable')
+  const statuses: Array<{ status: string; message?: string }> = []
+  await assert.rejects(
+    publishCompletedPullRequestReview(
+      {
+        id: 'review-1',
+        userId: 'user-1',
+        repository: { name: 'owner/repository' },
+        source: 'PULL_REQUEST',
+        pullRequestNumber: 7,
+        headSha: pullRequest.head.sha,
+        findings,
+        changedLines: { 'src/app.ts': [10, 11] },
+      },
+      {
+        github: {
+          async publishPullRequestFindings() {
+            throw failure
+          },
+        },
+        async setDeliveryStatus(_reviewId, _headSha, status, errorMessage) {
+          statuses.push({ status, message: errorMessage })
+        },
+      }
+    ),
+    (error: unknown) => error === failure
+  )
+  assert.deepEqual(statuses, [
+    {
+      status: 'publish-failed',
+      message: 'GitHub pull request review publishing failed',
+    },
+  ])
 })
 
 test('disconnect revokes OAuth when configured and removes the local credential', async () => {

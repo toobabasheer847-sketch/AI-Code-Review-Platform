@@ -1261,7 +1261,9 @@ export class GitHubService {
           : {}),
         side: 'RIGHT' as const,
         body: [
-          `**${finding.severity.toUpperCase()} · ${finding.category}: ${finding.title ?? 'Review finding'}**`,
+          `**AI-generated suggestion · ${finding.severity.toUpperCase()} · ${finding.category}: ${finding.title ?? 'Review finding'}**`,
+          '',
+          'Not independently verified; review the evidence before acting.',
           '',
           finding.message,
           ...(finding.impact ? ['', `Impact: ${finding.impact}`] : []),
@@ -1298,7 +1300,7 @@ export class GitHubService {
       `${GITHUB_API_BASE}/repos/${encodedRepository}/pulls/${pullRequestNumber}/reviews`,
       {
         commit_id: expectedHeadSha,
-        body: `AI CodeGuard found ${comments.length} actionable issue(s).\n\n${marker}`,
+        body: `AI CodeGuard generated ${comments.length} review suggestion(s). They are not independently verified.\n\n${marker}`,
         event: 'COMMENT',
         comments,
       },

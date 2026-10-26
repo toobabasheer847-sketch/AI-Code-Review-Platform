@@ -21,6 +21,7 @@ export interface ReviewJobRecord {
     category: string
     title?: string | null
     message: string
+    impact?: string | null
     evidence?: string | null
     endLine?: number | null
     suggestions: string[]
@@ -49,7 +50,11 @@ export interface ReviewPipelineDependencies {
     review?: ReviewJobRecord
   ): Promise<ReviewSourceFile[]>
   analyze(files: ReviewSourceFile[]): Promise<ReviewAnalysis>
-  notify(review: ReviewJobRecord, analysis?: ReviewAnalysis): Promise<void>
+  notify(
+    review: ReviewJobRecord,
+    analysis?: ReviewAnalysis,
+    files?: ReviewSourceFile[]
+  ): Promise<void>
 }
 
 export async function processReview(
@@ -69,8 +74,9 @@ export async function processReview(
   await dependencies.store.markRunning(reviewId)
 
   let analysis: ReviewAnalysis
+  let files: ReviewSourceFile[]
   try {
-    const files = await dependencies.fetchFiles(
+    files = await dependencies.fetchFiles(
       review.userId,
       review.repository.name,
       review.branch,
@@ -98,5 +104,5 @@ export async function processReview(
     throw new Error('Review processing failed')
   }
 
-  await dependencies.notify(review, analysis)
+  await dependencies.notify(review, analysis, files)
 }
