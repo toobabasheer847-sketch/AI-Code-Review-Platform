@@ -3,7 +3,10 @@ import { ZodError, z } from 'zod'
 import { ReviewNotFoundError, ReviewService } from './review.service'
 import { updateFindingStatusSchema } from './finding-lifecycle.domain'
 import { FindingLifecycleService } from './finding-lifecycle.service'
-import { FixProposalService } from './fix-verification.service'
+import {
+	FixProposalService,
+	FixVerificationService,
+} from './fix-verification.service'
 import {
 	FindingVerificationService,
 	requestFindingVerificationSchema,
@@ -14,6 +17,11 @@ const reviewService = new ReviewService()
 const findingLifecycleService = new FindingLifecycleService()
 const fixProposalService = new FixProposalService()
 const findingVerificationService = new FindingVerificationService()
+const verifyFixProposalSchema = z
+	.object({
+		requestKey: z.string().min(1).max(128).regex(/^[A-Za-z0-9._:-]+$/),
+	})
+	.strict()
 const startReviewSchema = z.object({
   repository: z.string().min(3).max(300),
   branch: z.string().min(1).max(255).optional(),
@@ -54,6 +62,13 @@ function respondWithError(error: unknown, res: Response, fallback: string): void
 }
 
 export class ReviewController {
+	constructor(
+		private readonly fixVerificationService: Pick<
+			FixVerificationService,
+			'verifyProposal'
+		> = new FixVerificationService()
+	) {}
+
 	async updateFindingStatus(req: Request, res: Response): Promise<void> {
 		if (!req.user?.userId) {
 			res.status(401).json({ error: 'Unauthorized' })
@@ -94,6 +109,29 @@ export class ReviewController {
 			res.status(201).json({ proposal })
 		} catch (error) {
 			respondWithError(error, res, 'Unable to save fix proposal.')
+		}
+	}
+
+	async verifyFixProposal(req: Request, res: Response): Promise<void> {
+		if (!req.user?.userId) {
+			res.status(401).json({ error: 'Unauthorized' })
+			return
+		}
+		const parsed = verifyFixProposalSchema.safeParse(req.body)
+		if (!parsed.success) {
+			res.status(400).json({ error: 'Invalid fix verification request.' })
+			return
+		}
+
+		try {
+			const attempt = await this.fixVerificationService.verifyProposal(
+				req.user.userId,
+				req.params.proposalId,
+				parsed.data.requestKey
+			)
+			res.json({ attempt })
+		} catch (error) {
+			respondWithError(error, res, 'Unable to verify this fix proposal.')
 		}
 	}
 

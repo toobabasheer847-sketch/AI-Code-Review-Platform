@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import {
   findingStatuses,
   reviewApi,
+  type FixVerificationAttempt,
   type FindingVerificationRecord,
   type FindingStatus,
   type ReviewDetail,
@@ -32,6 +33,13 @@ const verificationStatusLabels: Record<FindingVerificationRecord['status'], stri
   VERIFIED: 'Independently verified',
   VERIFICATION_FAILED: 'Verification failed',
   INCONCLUSIVE: 'Inconclusive',
+}
+
+const fixVerificationStatusLabels: Record<FixVerificationAttempt['status'], string> = {
+  RUNNING: 'Running',
+  VERIFIED: 'Verified',
+  FAILED: 'Failed',
+  INCONCLUSIVE: 'Needs review',
 }
 
 function FindingLifecyclePanel({
@@ -67,6 +75,13 @@ function FindingLifecyclePanel({
     mutationFn: () => reviewApi.createFixProposal(finding.id, patch),
     onSuccess: async () => {
       setPatch('')
+      await queryClient.invalidateQueries({ queryKey: ['reviews', reviewId] })
+    },
+  })
+  const verifyProposal = useMutation({
+    mutationFn: (proposalId: string) =>
+      reviewApi.verifyFixProposal(proposalId, { requestKey: crypto.randomUUID() }),
+    onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['reviews', reviewId] })
     },
   })
@@ -277,7 +292,8 @@ function FindingLifecyclePanel({
           Reviewable fix proposals
         </h5>
         <p className="mt-1 text-xs text-amber-200">
-          Saving a proposal never applies it. This deployment does not execute proposals.
+          Saving never applies a proposal. Without an isolated runner, verification requests are
+          marked Needs review; AI output alone cannot verify a fix.
         </p>
         <form
           className="mt-3 grid gap-2"
@@ -330,11 +346,36 @@ function FindingLifecyclePanel({
                     {proposal.patch}
                   </pre>
                 </details>
+                <button
+                  type="button"
+                  onClick={() => verifyProposal.mutate(proposal.id)}
+                  disabled={verifyProposal.isPending}
+                  className="mt-3 min-h-9 rounded-lg bg-indigo-500/20 px-3 text-xs font-medium text-indigo-200 hover:bg-indigo-500/30 disabled:opacity-50"
+                >
+                  {verifyProposal.isPending ? 'Verifying…' : 'Request safe verification'}
+                </button>
                 {proposal.attempts.map((attempt) => (
                   <div key={attempt.id} className="mt-3 border-t border-slate-800 pt-2 text-xs">
                     <p className="text-slate-300">
-                      Proposal verification (does not mean applied): {attempt.status} ·{' '}
+                      Proposal verification (does not mean applied):{' '}
+                      {fixVerificationStatusLabels[attempt.status]} ·{' '}
                       {attempt.executionStatus}
+                    </p>
+                    <p className="mt-1 text-slate-400">
+                      Tests{' '}
+                      {attempt.testsPassed === null
+                        ? 'not run'
+                        : attempt.testsPassed
+                          ? 'passed'
+                          : 'failed'}
+                      {' · Issue reproduced before: '}
+                      {attempt.originalIssueReproducedBefore === null
+                        ? 'unknown'
+                        : attempt.originalIssueReproducedBefore ? 'yes' : 'no'}
+                      {' · after: '}
+                      {attempt.originalIssueReproducedAfter === null
+                        ? 'unknown'
+                        : attempt.originalIssueReproducedAfter ? 'yes' : 'no'}
                     </p>
                     <p className="mt-1 text-slate-500">
                       Started {new Date(attempt.startedAt).toLocaleString()}
@@ -357,6 +398,13 @@ function FindingLifecyclePanel({
                     )}
                   </div>
                 ))}
+                {verifyProposal.isError && (
+                  <p role="alert" className="mt-2 text-xs text-red-300">
+                    {verifyProposal.error instanceof Error
+                      ? verifyProposal.error.message
+                      : 'Fix verification could not be requested.'}
+                  </p>
+                )}
               </li>
             ))}
           </ol>

@@ -13,6 +13,11 @@ router.patch('/findings/:findingId/status', authMiddleware, (req, res) =>
 router.post('/findings/:findingId/fix-proposals', authMiddleware, (req, res) =>
   controller.createFixProposal(req, res)
 )
+router.post(
+  '/fix-proposals/:proposalId/verification-attempts',
+  authMiddleware,
+  (req, res) => controller.verifyFixProposal(req, res)
+)
 router.post('/findings/:findingId/verification-requests', authMiddleware, (req, res) =>
   controller.requestFindingVerification(req, res)
 )

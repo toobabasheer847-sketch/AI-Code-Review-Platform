@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import type { Request, Response } from 'express'
 import {
   classifyVerificationResult,
   createFixProposalSchema,
@@ -16,6 +17,7 @@ import {
   type FixProposalStore,
   type TrustedVerificationStore,
 } from './fix-verification.service'
+import { ReviewController } from './review.controller'
 
 const patch = [
   'diff --git a/src/index.ts b/src/index.ts',
@@ -26,6 +28,87 @@ const patch = [
   '+new()',
 ].join('\n')
 const patchSha256 = hashFixPatch(patch)
+
+function createControllerResponse() {
+  let statusCode = 200
+  let body: unknown
+  const response = {
+    status(code: number) {
+      statusCode = code
+      return response
+    },
+    json(value: unknown) {
+      body = value
+      return response
+    },
+  }
+  return {
+    response: response as unknown as Response,
+    get statusCode() {
+      return statusCode
+    },
+    get body() {
+      return body
+    },
+  }
+}
+
+test('fix verification endpoint validates authentication and forwards the request key', async () => {
+  const calls: Array<[string, string, string]> = []
+  const attempt: FixProposalRecord['attempts'][number] = {
+    id: 'attempt-1',
+    requestKey: 'request-1',
+    patchSha256,
+    status: 'INCONCLUSIVE',
+    executionStatus: 'BLOCKED',
+    testCommands: [],
+    testsPassed: null,
+    originalIssueReproducedBefore: null,
+    originalIssueReproducedAfter: null,
+    startedAt: new Date('2026-10-22T12:00:00.000Z'),
+    completedAt: new Date('2026-10-22T12:00:00.000Z'),
+    sanitizedLogs: 'No isolated verification runner is configured.',
+    createdAt: new Date('2026-10-22T12:00:00.000Z'),
+  }
+  const controller = new ReviewController({
+    async verifyProposal(userId, proposalId, requestKey) {
+      calls.push([userId, proposalId, requestKey])
+      return attempt
+    },
+  })
+
+  const unauthorized = createControllerResponse()
+  await controller.verifyFixProposal(
+    { params: { proposalId: 'proposal-1' }, body: { requestKey: 'request-1' } } as Request,
+    unauthorized.response
+  )
+  assert.equal(unauthorized.statusCode, 401)
+
+  const invalid = createControllerResponse()
+  await controller.verifyFixProposal(
+    {
+      user: { userId: 'owner-1' },
+      params: { proposalId: 'proposal-1' },
+      body: { requestKey: 'bad key' },
+    } as Request,
+    invalid.response
+  )
+  assert.equal(invalid.statusCode, 400)
+  assert.equal(calls.length, 0)
+
+  const successful = createControllerResponse()
+  await controller.verifyFixProposal(
+    {
+      user: { userId: 'owner-1' },
+      params: { proposalId: 'proposal-1' },
+      body: { requestKey: 'request-1' },
+    } as Request,
+    successful.response
+  )
+  assert.equal(successful.statusCode, 200)
+  assert.deepEqual(calls, [['owner-1', 'proposal-1', 'request-1']])
+  assert.deepEqual(successful.body, { attempt })
+})
 
 test('validates a bounded unified diff and rejects path traversal and binary input', () => {
   assert.equal(createFixProposalSchema.safeParse({ patch }).success, true)

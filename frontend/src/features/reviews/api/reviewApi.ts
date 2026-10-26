@@ -169,6 +169,17 @@ export const reviewApi = {
     return res.data
   },
 
+  verifyFixProposal: async (
+    proposalId: string,
+    input: { requestKey: string }
+  ): Promise<{ attempt: FixVerificationAttempt }> => {
+    const res = await axiosInstance.post<{ attempt: FixVerificationAttempt }>(
+      `/reviews/fix-proposals/${proposalId}/verification-attempts`,
+      input
+    )
+    return res.data
+  },
+
   requestFindingVerification: async (
     findingId: string,
     input: { requestKey: string; method: 'STATIC_ANALYSIS' | 'TARGETED_TEST' }

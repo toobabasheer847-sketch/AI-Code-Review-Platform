@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   reviewApi,
   type FindingFeedback,
+  type FixVerificationAttempt,
   type FixProposal,
   type FindingStatus,
   type ReviewDetail,
@@ -409,6 +410,20 @@ describe('finding lifecycle UI', () => {
       createdAt: '2026-10-22T12:00:00.000Z',
       attempts: [],
     }
+    const attempt: FixVerificationAttempt = {
+      id: 'attempt-1',
+      patchSha256: proposal.patchSha256,
+      status: 'INCONCLUSIVE',
+      executionStatus: 'BLOCKED',
+      testCommands: [],
+      testsPassed: null,
+      originalIssueReproducedBefore: null,
+      originalIssueReproducedAfter: null,
+      startedAt: '2026-10-22T12:01:00.000Z',
+      completedAt: '2026-10-22T12:01:00.000Z',
+      sanitizedLogs:
+        'No isolated verification runner is configured; the patch was not executed.',
+    }
     vi.spyOn(reviewApi, 'createFixProposal').mockImplementation(async () => {
       persistedReview = {
         ...persistedReview,
@@ -416,14 +431,40 @@ describe('finding lifecycle UI', () => {
       }
       return { proposal }
     })
+    vi.spyOn(reviewApi, 'verifyFixProposal').mockImplementation(async () => {
+      persistedReview = {
+        ...persistedReview,
+        findings: [
+          {
+            ...persistedReview.findings[0]!,
+            fixProposals: [{ ...proposal, attempts: [attempt] }],
+          },
+        ],
+      }
+      return { attempt }
+    })
     const container = await mountReview()
 
     expect(container.textContent).toContain(
-      'Saving a proposal never applies it. This deployment does not execute proposals.'
+      'Without an isolated runner, verification requests are marked Needs review'
     )
     await submitPatch(container, patch)
     await waitForText(container, proposal.patchSha256)
     expect(container.textContent).toContain('View patch')
     expect(container.textContent).toContain(patch)
+
+    const verifyButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Request safe verification')
+    )
+    expect(verifyButton).toBeDefined()
+    await act(async () => verifyButton?.click())
+    await waitForText(container, 'No isolated verification runner is configured')
+
+    expect(reviewApi.verifyFixProposal).toHaveBeenCalledWith(
+      proposal.id,
+      expect.objectContaining({ requestKey: expect.any(String) })
+    )
+    expect(container.textContent).toContain('Needs review')
+    expect(container.textContent).toContain('Tests not run')
   })
 })
