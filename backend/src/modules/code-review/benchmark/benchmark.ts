@@ -179,7 +179,9 @@ function parseRawFindings(content: string | null): ReviewFinding[] {
         })
       )
       const findings = rawFindingSchema.safeParse(parsed.findings)
-      return findings.success ? findings.data : []
+      return findings.success
+        ? findings.data.map((finding) => ({ ...finding, source: 'AI_REVIEW' as const }))
+        : []
     }
   } catch {
     return []

@@ -151,6 +151,7 @@ export interface PullRequestFinding {
   category: string
   title?: string | null
   message: string
+  source?: 'AI_REVIEW' | 'STATIC_ANALYSIS'
   impact?: string | null
   evidence?: string | null
   suggestions: string[]
@@ -1261,9 +1262,11 @@ export class GitHubService {
           : {}),
         side: 'RIGHT' as const,
         body: [
-          `**AI-generated suggestion · ${finding.severity.toUpperCase()} · ${finding.category}: ${finding.title ?? 'Review finding'}**`,
+          `**${finding.source === 'STATIC_ANALYSIS' ? 'Deterministic scanner match' : 'AI-generated suggestion'} · ${finding.severity.toUpperCase()} · ${finding.category}: ${finding.title ?? 'Review finding'}**`,
           '',
-          'Not independently verified; review the evidence before acting.',
+          finding.source === 'STATIC_ANALYSIS'
+            ? 'A credential-pattern rule matched; credential validity and exploitability are not confirmed.'
+            : 'Not independently verified; review the evidence before acting.',
           '',
           finding.message,
           ...(finding.impact ? ['', `Impact: ${finding.impact}`] : []),

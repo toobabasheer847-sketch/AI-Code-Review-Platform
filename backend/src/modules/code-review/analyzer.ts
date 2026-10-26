@@ -3,6 +3,9 @@ import { z } from 'zod'
 import { env, hasUsableOpenAIKey } from '@/config/env'
 import type { ReviewSourceFile } from '@/modules/github/github.service'
 import { REVIEW_RESPONSE_FORMAT, REVIEW_SYSTEM_PROMPT } from './prompts'
+import { redactCredentialSource, scanCredentialPatterns } from './security-scanner'
+
+export type FindingSource = 'AI_REVIEW' | 'STATIC_ANALYSIS'
 
 const findingSchema = z.object({
   file: z.string().min(1).max(500),
@@ -22,7 +25,7 @@ const analysisSchema = z.object({
   findings: z.array(findingSchema).max(100),
 })
 
-export type ReviewFinding = z.infer<typeof findingSchema>
+export type ReviewFinding = z.infer<typeof findingSchema> & { source?: FindingSource }
 
 export interface ReviewAnalysis {
   summary: string
@@ -97,6 +100,21 @@ function areEquivalentFindings(
     sameIssue &&
     left.line <= rightEnd &&
     right.line <= leftEnd
+  )
+}
+
+function isDuplicateOfStaticFinding(
+  existing: ReviewFinding,
+  candidate: ReviewFinding
+): boolean {
+  const existingEnd = existing.endLine ?? existing.line
+  const candidateEnd = candidate.endLine ?? candidate.line
+  return (
+    existing.category === candidate.category &&
+    existing.file.toLowerCase() === candidate.file.toLowerCase() &&
+    normalizeFindingText(existing.evidence) === normalizeFindingText(candidate.evidence) &&
+    existing.line <= candidateEnd &&
+    candidate.line <= existingEnd
   )
 }
 
@@ -215,7 +233,7 @@ export function validateAnalysis(
     }
 
     if (findings.some((existing) => areEquivalentFindings(existing, finding))) continue
-    findings.push({ ...finding, endLine })
+    findings.push({ ...finding, endLine, source: 'AI_REVIEW' })
   }
 
   if (changedContextUsed.size > 0) {
@@ -282,7 +300,14 @@ export async function analyzeCode(
     throw new Error('No supported source files were found for this review')
   }
 
-  const context = prepareReviewContext(files)
+  const securityFindings = scanCredentialPatterns(files).filter((finding) => {
+    const sourceFile = files.find((file) => file.path === finding.file)
+    return (
+      sourceFile?.changedLines === undefined ||
+      sourceFile.changedLines.includes(finding.line)
+    )
+  })
+  const context = prepareReviewContext(redactCredentialSource(files))
   let content: string | null
   try {
     content = await provider(
@@ -314,9 +339,42 @@ export async function analyzeCode(
     throw new ReviewProviderError('malformed_response')
   }
 
+  let aiAnalysis: ReviewAnalysis
   try {
-    return validateAnalysis(parsed, context.files, context.limitations)
+    aiAnalysis = validateAnalysis(parsed, context.files, context.limitations)
   } catch {
     throw new ReviewProviderError('malformed_response')
+  }
+
+  const findings = [...aiAnalysis.findings]
+  for (const finding of securityFindings) {
+    const duplicateIndex = findings.findIndex((existing) =>
+      isDuplicateOfStaticFinding(existing, finding)
+    )
+    if (duplicateIndex >= 0) {
+      findings[duplicateIndex] = finding
+    } else {
+      findings.push(finding)
+    }
+  }
+  const bugs = findings.filter((finding) => finding.category === 'bug').length
+  const securityIssues = findings.filter((finding) => finding.category === 'security').length
+  const performanceIssues = findings.filter(
+    (finding) => finding.category === 'performance'
+  ).length
+  const qualityIssues = findings.filter((finding) => finding.category === 'quality').length
+  return {
+    ...aiAnalysis,
+    findings,
+    analytics: {
+      totalIssues: findings.length,
+      bugs,
+      securityIssues,
+      performanceIssues,
+      qualityScore: Math.max(
+        0,
+        Math.min(100, 100 - bugs * 12 - securityIssues * 20 - performanceIssues * 8 - qualityIssues * 3)
+      ),
+    },
   }
 }

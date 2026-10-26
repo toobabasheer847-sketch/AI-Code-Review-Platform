@@ -184,7 +184,7 @@ test('keeps repository prompt-injection text in untrusted user data', async () =
 test('bounds prompt context and records files omitted by the provider limit', async () => {
   const manyFiles = Array.from({ length: 3 }, (_, index) => ({
     path: `src/large-${index}.ts`,
-    content: `const value${index} = "${'x'.repeat(28_000)}"`,
+    content: 'x'.repeat(19_990),
   }))
   const prepared = prepareReviewContext(manyFiles)
 
@@ -224,6 +224,40 @@ test('reports malformed and empty provider responses without parsing them as fin
     (error: unknown) =>
       error instanceof ReviewProviderError && error.kind === 'malformed_response'
   )
+})
+
+test('redacts credentials from provider context and reports them as inconclusive scanner findings', async () => {
+  const credential = `ghp_${'C'.repeat(32)}`
+  let submittedPrompt = ''
+  const result = await analyzeCode(
+    [{ path: 'src/config.ts', content: `const token = "${credential}";` }],
+    async (messages) => {
+      submittedPrompt = messages.map((message) => message.content).join('\n')
+      return JSON.stringify({ summary: 'Review complete.', findings: [] })
+    }
+  )
+
+  assert.equal(submittedPrompt.includes(credential), false)
+  assert.equal(result.findings.length, 1)
+  assert.equal(result.findings[0]?.source, 'STATIC_ANALYSIS')
+  assert.equal(JSON.stringify(result).includes(credential), false)
+})
+
+test('limits pull request scanner findings to changed lines', async () => {
+  const credential = `ghp_${'E'.repeat(32)}`
+  const result = await analyzeCode(
+    [
+      {
+        path: 'src/config.ts',
+        content: `const oldToken = "${credential}";\nconst currentToken = "${credential}";`,
+        changedLines: [2],
+      },
+    ],
+    async () => JSON.stringify({ summary: 'Review complete.', findings: [] })
+  )
+
+  assert.equal(result.findings.length, 1)
+  assert.equal(result.findings[0]?.line, 2)
 })
 
 test('classifies provider failures without exposing provider response details', async () => {

@@ -276,6 +276,55 @@ test('persists findings, analytics, review content, and completion in one transa
   })
 })
 
+test('persists scanner matches as inconclusive static analysis and redacts source snapshots', async () => {
+  const credential = `ghp_${'D'.repeat(32)}`
+  let persistedFinding: {
+    source?: string
+    verificationRecords: {
+      create: { status: string; method: string; resultSummary: string }
+    }
+  } | undefined
+  let persistedContent = ''
+  await persistReviewAnalysis(
+    {
+      async deleteFindings() {},
+      async createFindings(findings) {
+        persistedFinding = findings[0]
+      },
+      async upsertAnalytics() {},
+      async completeReview(_id, _summary, content) {
+        persistedContent = content
+      },
+    },
+    review,
+    {
+      ...analysis,
+      findings: [
+        {
+          ...analysis.findings[0]!,
+          source: 'STATIC_ANALYSIS',
+          evidence: 'const token = "[REDACTED]";',
+        },
+      ],
+    },
+    [
+      {
+        ...sourceFiles[0]!,
+        content: `const token = "${credential}";`,
+      },
+      sourceFiles[1]!,
+    ]
+  )
+
+  assert.ok(persistedFinding)
+  assert.equal(persistedFinding.source, undefined)
+  assert.equal(persistedFinding.verificationRecords.create.status, 'INCONCLUSIVE')
+  assert.equal(persistedFinding.verificationRecords.create.method, 'STATIC_ANALYSIS')
+  assert.match(persistedFinding.verificationRecords.create.resultSummary, /not been independently confirmed/)
+  assert.equal(persistedContent.includes(credential), false)
+  assert.match(persistedContent, /\[REDACTED\]/)
+})
+
 test('processes a review through running, analysis, persistence, and notification', async () => {
   const events: string[] = []
   let suppliedFiles: typeof sourceFiles = []

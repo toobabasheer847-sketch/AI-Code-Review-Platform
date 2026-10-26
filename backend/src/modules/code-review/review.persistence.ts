@@ -1,4 +1,5 @@
 import type { ReviewAnalysis } from './analyzer'
+import { redactCredentialSource } from './security-scanner'
 import type { ReviewSourceFile } from '@/modules/github/github.service'
 
 type FindingPersistenceInput = ReviewAnalysis['findings'][number] & {
@@ -6,8 +7,8 @@ type FindingPersistenceInput = ReviewAnalysis['findings'][number] & {
   verificationRecords: {
     create: {
       requestKey: string
-      status: 'AI_REPORTED'
-      method: 'AI_REVIEW'
+      status: 'AI_REPORTED' | 'INCONCLUSIVE'
+      method: 'AI_REVIEW' | 'STATIC_ANALYSIS'
       resultSummary: string
       sourceRevision: string
       startedAt: Date
@@ -53,28 +54,45 @@ export async function persistReviewAnalysis(
   files: ReviewSourceFile[]
 ): Promise<void> {
   const sourceRevision = resolveReviewSourceRevision(files)
-  const fileContent = files.map((file) => `--- ${file.path} ---\n${file.content}`).join('\n\n')
+  const fileContent = redactCredentialSource(files)
+    .map((file) => `--- ${file.path} ---\n${file.content}`)
+    .join('\n\n')
 
   await operations.deleteFindings(review.id)
   if (analysis.findings.length > 0) {
     const timestamp = new Date()
     await operations.createFindings(
-      analysis.findings.map((finding) => ({
-        ...finding,
-        reviewId: review.id,
-        verificationRecords: {
-          create: {
-            requestKey: `ai-review:${review.id}`,
-            status: 'AI_REPORTED',
-            method: 'AI_REVIEW',
-            resultSummary:
-              'AI-reported finding. Its cited evidence matched the retrieved source; the issue itself was not independently verified.',
-            sourceRevision,
-            startedAt: timestamp,
-            completedAt: timestamp,
+      analysis.findings.map((finding) => {
+        const { source, ...persistedFinding } = finding
+        return {
+          ...persistedFinding,
+          reviewId: review.id,
+          verificationRecords: {
+            create:
+              source === 'STATIC_ANALYSIS'
+                ? {
+                    requestKey: `static-analysis:${review.id}:${finding.file}:${finding.line}`,
+                    status: 'INCONCLUSIVE',
+                    method: 'STATIC_ANALYSIS',
+                    resultSummary:
+                      'A deterministic credential-pattern rule matched. Credential validity and exploitability have not been independently confirmed.',
+                    sourceRevision,
+                    startedAt: timestamp,
+                    completedAt: timestamp,
+                  }
+                : {
+                    requestKey: `ai-review:${review.id}`,
+                    status: 'AI_REPORTED',
+                    method: 'AI_REVIEW',
+                    resultSummary:
+                      'AI-reported finding. Its cited evidence matched the retrieved source; the issue itself was not independently verified.',
+                    sourceRevision,
+                    startedAt: timestamp,
+                    completedAt: timestamp,
+                  },
           },
-        },
-      })),
+        }
+      }),
       sourceRevision
     )
   }

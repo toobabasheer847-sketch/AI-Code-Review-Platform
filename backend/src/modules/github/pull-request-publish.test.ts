@@ -117,6 +117,26 @@ test('publishes only findings on valid added lines and includes a retry marker',
   assert.match(payload.comments[0].body, /dangerousCall/)
 })
 
+test('labels deterministic scanner matches distinctly from AI-generated suggestions', async () => {
+  const { github, calls } = createService()
+  await github.publishPullRequestFindings(
+    'user-1',
+    'owner/repository',
+    7,
+    pullRequest.head.sha,
+    'review-1',
+    [{ ...findings[0]!, source: 'STATIC_ANALYSIS' }],
+    { 'src/app.ts': [10, 11] }
+  )
+
+  const payload = JSON.parse(
+    calls.find((call) => call.method === 'POST')?.data as string
+  ) as { comments: Array<{ body: string }> }
+  assert.match(payload.comments[0]?.body ?? '', /Deterministic scanner match/)
+  assert.match(payload.comments[0]?.body ?? '', /validity and exploitability are not confirmed/)
+  assert.doesNotMatch(payload.comments[0]?.body ?? '', /AI-generated suggestion/)
+})
+
 test('does not republish an existing review marker or comment on stale commits', async () => {
   const duplicate = createService({ existingMarker: true })
   assert.equal(
