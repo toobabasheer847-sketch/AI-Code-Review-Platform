@@ -173,6 +173,7 @@ function parseRawFindings(content: string | null): ReviewFinding[] {
           category: z.enum(categories),
           title: z.string(),
           message: z.string(),
+          impact: z.string(),
           evidence: z.string(),
           suggestions: z.array(z.string()),
         })

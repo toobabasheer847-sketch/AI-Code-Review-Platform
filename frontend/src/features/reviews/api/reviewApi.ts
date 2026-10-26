@@ -102,6 +102,7 @@ export interface ReviewDetail {
     endLine?: number | null
     title?: string | null
     message: string
+    impact?: string | null
     evidence?: string | null
     severity: string
     category?: string

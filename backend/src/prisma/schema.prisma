@@ -617,6 +617,7 @@ model Finding {
   endLine                  Int?
   title                    String?
   message                  String
+  impact                   String?            @db.VarChar(2000)
   evidence                 String?
   severity                 String
   category                 String             @default("quality")

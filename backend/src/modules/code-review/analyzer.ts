@@ -12,6 +12,7 @@ const findingSchema = z.object({
   category: z.enum(['bug', 'security', 'performance', 'quality']),
   title: z.string().min(3).max(200),
   message: z.string().min(1).max(2000),
+  impact: z.string().min(1).max(2000),
   evidence: z.string().min(3).max(500),
   suggestions: z.array(z.string().min(1).max(1000)).max(5),
 })

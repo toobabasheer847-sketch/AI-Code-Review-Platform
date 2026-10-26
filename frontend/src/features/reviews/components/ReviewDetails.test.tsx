@@ -51,6 +51,7 @@ const baseFinding: ReviewDetail['findings'][number] = {
   line: 10,
   title: 'Example finding',
   message: 'A potential issue.',
+  impact: 'The behavior can affect callers.',
   evidence: 'throw error',
   severity: 'warning',
   category: 'bug',
@@ -192,6 +193,7 @@ describe('finding lifecycle UI', () => {
 
     expect(container.textContent).toContain('AI reported · unverified')
     expect(container.textContent).toContain('AI evidence matched source; no independent check ran')
+    expect(container.textContent).toContain('Impact: The behavior can affect callers.')
     expect(container.textContent).toContain(`Source revision ${'a'.repeat(12)}`)
     expect(container.querySelector('pre code')?.textContent).toBe('throw error')
   })

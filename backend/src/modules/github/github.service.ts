@@ -151,6 +151,7 @@ export interface PullRequestFinding {
   category: string
   title?: string | null
   message: string
+  impact?: string | null
   evidence?: string | null
   suggestions: string[]
 }
@@ -1263,6 +1264,7 @@ export class GitHubService {
           `**${finding.severity.toUpperCase()} · ${finding.category}: ${finding.title ?? 'Review finding'}**`,
           '',
           finding.message,
+          ...(finding.impact ? ['', `Impact: ${finding.impact}`] : []),
           '',
           `Evidence: \`${finding.evidence ?? ''}\``,
           ...(finding.suggestions.length

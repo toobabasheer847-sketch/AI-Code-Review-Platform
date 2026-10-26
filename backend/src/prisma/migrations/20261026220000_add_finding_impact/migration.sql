@@ -1,0 +1,2 @@
+ALTER TABLE "Finding"
+ADD COLUMN "impact" VARCHAR(2000);

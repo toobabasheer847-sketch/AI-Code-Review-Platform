@@ -25,6 +25,7 @@ const findings: PullRequestFinding[] = [
     severity: 'error',
     category: 'security',
     message: 'Validate the input before use.',
+    impact: 'Invalid input may reach a sensitive operation.',
     evidence: 'dangerousCall(input)',
     suggestions: ['Reject invalid values.'],
   },
@@ -108,6 +109,7 @@ test('publishes only findings on valid added lines and includes a retry marker',
     },
   ])
   assert.match(payload.comments[0].body, /Unvalidated input/)
+  assert.match(payload.comments[0].body, /Impact: Invalid input may reach a sensitive operation/)
   assert.match(payload.comments[0].body, /dangerousCall/)
 })
 

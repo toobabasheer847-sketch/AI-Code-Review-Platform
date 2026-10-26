@@ -575,6 +575,12 @@ export const ReviewDetails = ({ review }: { review: ReviewDetail }): JSX.Element
                         </div>
                       )}
                       <div className="mt-2 text-sm text-slate-300">{f.message}</div>
+                      {f.impact && (
+                        <div className="mt-2 text-sm text-slate-400">
+                          <span className="font-medium text-slate-300">Impact: </span>
+                          {f.impact}
+                        </div>
+                      )}
                       {f.evidence && (
                         <pre className="mt-3 overflow-x-auto rounded bg-slate-950/60 p-3 text-xs text-slate-300">
                           <code>{f.evidence}</code>

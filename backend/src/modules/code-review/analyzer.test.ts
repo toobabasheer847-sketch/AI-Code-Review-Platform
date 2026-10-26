@@ -24,6 +24,7 @@ const finding = {
   category: 'bug',
   title: 'Unvalidated input reaches process',
   message: 'The input is sent to process without validation.',
+  impact: 'Invalid input can reach downstream processing and cause incorrect behavior.',
   evidence: 'process(input)',
   suggestions: ['Validate input before calling process.'],
 }
@@ -38,6 +39,16 @@ test('rejects incomplete and unsupported structured findings', () => {
         },
         files
       )
+  )
+  assert.throws(
+      () =>
+        validateAnalysis(
+          {
+            summary: 'Review',
+            findings: [{ ...finding, impact: undefined }],
+          },
+          files
+        )
   )
   assert.throws(
     () =>
