@@ -133,7 +133,7 @@ test('labels deterministic scanner matches distinctly from AI-generated suggesti
     calls.find((call) => call.method === 'POST')?.data as string
   ) as { comments: Array<{ body: string }> }
   assert.match(payload.comments[0]?.body ?? '', /Deterministic scanner match/)
-  assert.match(payload.comments[0]?.body ?? '', /validity and exploitability are not confirmed/)
+  assert.match(payload.comments[0]?.body ?? '', /review its evidence and verify the condition independently/)
   assert.doesNotMatch(payload.comments[0]?.body ?? '', /AI-generated suggestion/)
 })
 

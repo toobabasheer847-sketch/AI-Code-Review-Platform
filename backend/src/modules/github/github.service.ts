@@ -1265,7 +1265,7 @@ export class GitHubService {
           `**${finding.source === 'STATIC_ANALYSIS' ? 'Deterministic scanner match' : 'AI-generated suggestion'} · ${finding.severity.toUpperCase()} · ${finding.category}: ${finding.title ?? 'Review finding'}**`,
           '',
           finding.source === 'STATIC_ANALYSIS'
-            ? 'A credential-pattern rule matched; credential validity and exploitability are not confirmed.'
+            ? 'A deterministic static-analysis rule matched; review its evidence and verify the condition independently.'
             : 'Not independently verified; review the evidence before acting.',
           '',
           finding.message,

@@ -4,6 +4,7 @@ import { env, hasUsableOpenAIKey } from '@/config/env'
 import type { ReviewSourceFile } from '@/modules/github/github.service'
 import { REVIEW_RESPONSE_FORMAT, REVIEW_SYSTEM_PROMPT } from './prompts'
 import { redactCredentialSource, scanCredentialPatterns } from './security-scanner'
+import { analyzeCodeQuality } from './quality-analyzer'
 
 export type FindingSource = 'AI_REVIEW' | 'STATIC_ANALYSIS'
 
@@ -307,7 +308,9 @@ export async function analyzeCode(
       sourceFile.changedLines.includes(finding.line)
     )
   })
-  const context = prepareReviewContext(redactCredentialSource(files))
+  const sanitizedFiles = redactCredentialSource(files)
+  const qualityAnalysis = analyzeCodeQuality(sanitizedFiles)
+  const context = prepareReviewContext(sanitizedFiles)
   let content: string | null
   try {
     content = await provider(
@@ -347,7 +350,7 @@ export async function analyzeCode(
   }
 
   const findings = [...aiAnalysis.findings]
-  for (const finding of securityFindings) {
+  for (const finding of [...securityFindings, ...qualityAnalysis.findings]) {
     const duplicateIndex = findings.findIndex((existing) =>
       isDuplicateOfStaticFinding(existing, finding)
     )
@@ -366,6 +369,7 @@ export async function analyzeCode(
   return {
     ...aiAnalysis,
     findings,
+    limitations: [...new Set([...aiAnalysis.limitations, ...qualityAnalysis.limitations])],
     analytics: {
       totalIssues: findings.length,
       bugs,

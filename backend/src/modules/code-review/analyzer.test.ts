@@ -260,6 +260,24 @@ test('limits pull request scanner findings to changed lines', async () => {
   assert.equal(result.findings[0]?.line, 2)
 })
 
+test('integrates deterministic complexity findings and preserves their source attribution', async () => {
+  const content = [
+    'export function branchy(value: number) {',
+    ...Array.from({ length: 10 }, (_, index) => `  if (value > ${index}) value -= 1;`),
+    '  return value;',
+    '}',
+  ].join('\n')
+  const result = await analyzeCode(
+    [{ path: 'src/service.ts', content }],
+    async () => JSON.stringify({ summary: 'Review complete.', findings: [] })
+  )
+
+  assert.equal(result.findings.length, 1)
+  assert.equal(result.findings[0]?.source, 'STATIC_ANALYSIS')
+  assert.match(result.findings[0]?.title ?? '', /complexity/)
+  assert.equal(result.analytics.qualityScore, 97)
+})
+
 test('classifies provider failures without exposing provider response details', async () => {
   await assert.rejects(
     analyzeCode(files, async () => {

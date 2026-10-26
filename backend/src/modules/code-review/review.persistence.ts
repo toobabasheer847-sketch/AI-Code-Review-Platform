@@ -75,7 +75,7 @@ export async function persistReviewAnalysis(
                     status: 'INCONCLUSIVE',
                     method: 'STATIC_ANALYSIS',
                     resultSummary:
-                      'A deterministic credential-pattern rule matched. Credential validity and exploitability have not been independently confirmed.',
+                      'A deterministic static-analysis rule matched. The reported condition has not been independently confirmed.',
                     sourceRevision,
                     startedAt: timestamp,
                     completedAt: timestamp,
