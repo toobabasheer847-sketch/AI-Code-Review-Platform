@@ -586,6 +586,7 @@ model CodeReview {
 
   @@unique([repositoryId, pullRequestNumber, headSha])
   @@index([userId])
+  @@index([userId, createdAt])
   @@index([repositoryId])
   @@index([status])
 }
