@@ -148,6 +148,28 @@ There is no isolated runner, resource/time limit, actual test result, or
 coverage integration for generated suggestions. Do not treat suggestions or
 coverage figures from other tooling as proof of correctness.
 
+### Repository Q&A
+
+Authenticated users can ask a repository question with
+`POST /api/chat/repository-message`, supplying `repository` (`owner/name`),
+optional `branch` (defaults to `main`), and `question`. The request uses the
+authenticated user's existing GitHub OAuth access and fetches source through the
+review integration, which pins content to the branch commit and applies its
+existing file and size limits. Each response includes that source revision,
+retrieved evidence snippets with file paths and line ranges, and any source
+limitations. If no relevant source is found, the API reports that the available
+repository evidence is insufficient instead of calling the AI provider.
+
+This first iteration retrieves source for each question rather than creating a
+persistent index. It uses bounded lexical snippet retrieval, excludes common
+secret/environment, dependency, and build paths, redacts recognized credentials,
+and instructs the configured review AI provider to treat repository content as
+untrusted data. AI evidence identifiers are validated against the snippets
+actually retrieved. The endpoint does not persist repository chat history;
+existing review chat remains separately stored and owner-scoped. It does not
+provide an incremental index, a frontend Q&A history, or embeddings/vector
+search.
+
 An opt-in real-provider integration test uses only a small synthetic source
 file and does not execute it. It is excluded from the regular test suite:
 

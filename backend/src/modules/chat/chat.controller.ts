@@ -4,6 +4,7 @@ import { ChatReviewNotFoundError } from './chat.service'
 import { sendMessageSchema } from './chat.validation'
 import { authMiddleware } from '@/middleware/auth.middleware'
 import logger from '@/utils/logger'
+import { RepositoryQAController } from './repository-qa.controller'
 
 const chatService = new ChatService()
 
@@ -40,8 +41,12 @@ export class ChatController {
 export const chatRoutes = (): Router => {
 	const router = Router()
 	const controller = new ChatController()
+	const repositoryQAController = new RepositoryQAController()
 
 	router.post('/message', authMiddleware, (req, res) => controller.sendMessage(req, res))
+	router.post('/repository-message', authMiddleware, (req, res) =>
+		repositoryQAController.ask(req, res)
+	)
 
 	return router
 }

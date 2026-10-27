@@ -36,6 +36,7 @@ test('mounts protected API routes and rejects requests without a valid token', a
     ['/reviews/findings/not-owned/verification-requests/request-1', { method: 'GET' }],
     ['/billing/usage'],
     ['/chat/message', { method: 'POST' }],
+    ['/chat/repository-message', { method: 'POST' }],
     ['/automations'],
     ['/automations', { method: 'POST' }],
     ['/automations/not-owned/reject', { method: 'POST' }],
