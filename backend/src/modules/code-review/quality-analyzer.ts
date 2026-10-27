@@ -2,7 +2,6 @@ import ts from 'typescript'
 import { performance } from 'node:perf_hooks'
 import type { ReviewFinding } from './analyzer'
 import {
-  MAX_SECURITY_SCAN_DURATION_MS,
   MAX_SECURITY_SCAN_FILE_BYTES,
   MAX_SECURITY_SCAN_FILES,
   MAX_SECURITY_SCAN_TOTAL_BYTES,
@@ -10,6 +9,7 @@ import {
 import type { ReviewSourceFile } from '@/modules/github/github.service'
 
 export const MAX_FUNCTION_CYCLOMATIC_COMPLEXITY = 10
+export const MAX_QUALITY_ANALYSIS_DURATION_MS = 1_000
 
 const supportedExtensions = new Set([
   '.cjs',
@@ -137,7 +137,7 @@ export function analyzeCodeQuality(
 
   const now = options.now ?? performance.now.bind(performance)
   const startedAt = now()
-  const maxDurationMs = options.maxDurationMs ?? MAX_SECURITY_SCAN_DURATION_MS
+  const maxDurationMs = options.maxDurationMs ?? MAX_QUALITY_ANALYSIS_DURATION_MS
   if (!Number.isFinite(maxDurationMs) || maxDurationMs <= 0) {
     throw new QualityAnalysisError('Invalid quality analysis time budget')
   }
@@ -186,6 +186,9 @@ export function analyzeCodeQuality(
       true,
       scriptKind
     )
+    if (now() - startedAt > maxDurationMs) {
+      throw new QualityAnalysisError('Quality analysis timed out')
+    }
     const parseDiagnostics = (
       sourceFile as ts.SourceFile & { parseDiagnostics: readonly ts.Diagnostic[] }
     ).parseDiagnostics
@@ -194,8 +197,13 @@ export function analyzeCodeQuality(
       continue
     }
 
+    let visitedNodes = 0
     const visit = (node: ts.Node): void => {
-      if (now() - startedAt > maxDurationMs) {
+      visitedNodes += 1
+      if (
+        (visitedNodes === 1 || visitedNodes % 64 === 0) &&
+        now() - startedAt > maxDurationMs
+      ) {
         throw new QualityAnalysisError('Quality analysis timed out')
       }
       if (isFunctionLike(node) && node.body) {

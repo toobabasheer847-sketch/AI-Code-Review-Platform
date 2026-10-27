@@ -198,6 +198,51 @@ describe('finding lifecycle UI', () => {
     expect(container.querySelector('pre code')?.textContent).toBe('throw error')
   })
 
+  it('shows generated test code as a preview without applying or executing it', async () => {
+    const suggestion = {
+      name: 'rejects empty input',
+      code: "test('rejects empty input', () => { assert.throws(() => handle('')) })",
+      explanation: 'Covers invalid input.',
+      expectedBenefit: 'Adds an edge-case assertion.',
+      behaviorChanging: true,
+    }
+    const generateSpy = vi
+      .spyOn(reviewApi, 'generateTestSuggestions')
+      .mockResolvedValue({
+        result: {
+          framework: 'node:test via tsx',
+          suggestions: [suggestion],
+          duplicateCount: 1,
+          previewOnly: true,
+        },
+      })
+    const container = await mountReview()
+    const button = Array.from(container.querySelectorAll('button')).find((item) =>
+      item.textContent?.includes('Generate test suggestions')
+    )
+
+    expect(container.textContent).toContain('Suggestions are not applied or executed.')
+    await act(async () => button?.click())
+    await waitForText(container, suggestion.code)
+
+    expect(generateSpy).toHaveBeenCalledWith('review-1', 'finding-1')
+    expect(
+      Array.from(container.querySelectorAll('pre code')).some(
+        (code) => code.textContent === suggestion.code
+      )
+    ).toBe(true)
+    expect(container.textContent).toContain('Expected benefit: Adds an edge-case assertion.')
+    expect(container.textContent).toContain(
+      'Potential behavior change (AI assessment): yes. Review intent before any approval.'
+    )
+    expect(container.textContent).toContain('Omitted 1 duplicate suggestion(s).')
+    expect(
+      Array.from(container.querySelectorAll('button')).some((item) =>
+        /apply|run|execute/i.test(item.textContent ?? '')
+      )
+    ).toBe(false)
+  })
+
   it('requests only an approved profile and displays the inconclusive no-runner result', async () => {
     const verification = {
       id: 'verification-2',

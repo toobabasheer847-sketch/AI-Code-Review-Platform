@@ -126,6 +126,28 @@ are deduplicated conservatively only when file, category, exact normalized
 evidence, an overlapping line range, and title or message agree. Different
 evidence or distinct issue wording is preserved.
 
+### AI test suggestion previews
+
+`POST /api/reviews/:id/findings/:findingId/test-suggestions` generates up to
+three TypeScript/JavaScript test-code suggestions for an owned review finding.
+Backend source uses the repository's `node:test`/`tsx` framework; frontend
+source uses Vitest. The API returns code as a preview only. It does not write
+files, run generated code, or report coverage. Review the suggestion before
+copying it into the project; no automatic apply or execution approval flow is
+available yet.
+
+The generator checks for duplicate names and test bodies in related test files
+included in the persisted, pinned review snapshot. That snapshot can omit tests
+from elsewhere in the repository, so duplicate checks are not a repository-wide
+test inventory. Unsupported languages, malformed provider output, and provider
+timeouts return explicit errors. The review owner is checked before generation,
+and suggestions are not persisted or linked to verification/analytics records.
+
+Generated tests are untrusted code and are never executed by this feature.
+There is no isolated runner, resource/time limit, actual test result, or
+coverage integration for generated suggestions. Do not treat suggestions or
+coverage figures from other tooling as proof of correctness.
+
 An opt-in real-provider integration test uses only a small synthetic source
 file and does not execute it. It is excluded from the regular test suite:
 

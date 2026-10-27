@@ -8,6 +8,7 @@ import {
   type FindingVerificationRecord,
   type FindingStatus,
   type ReviewDetail,
+  type TestSuggestionResult,
 } from '@/features/reviews/api/reviewApi'
 
 const statusLabels: Record<FindingStatus, string> = {
@@ -55,6 +56,7 @@ function FindingLifecyclePanel({
   const [nextStatus, setNextStatus] = useState<FindingStatus>(finding.status)
   const [reason, setReason] = useState('')
   const [patch, setPatch] = useState('')
+  const [testSuggestions, setTestSuggestions] = useState<TestSuggestionResult | null>(null)
   const [verificationMethod, setVerificationMethod] =
     useState<'STATIC_ANALYSIS' | 'TARGETED_TEST'>('STATIC_ANALYSIS')
   const updateStatus = useMutation({
@@ -94,6 +96,10 @@ function FindingLifecyclePanel({
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['reviews', reviewId] })
     },
+  })
+  const generateTestSuggestions = useMutation({
+    mutationFn: () => reviewApi.generateTestSuggestions(reviewId, finding.id),
+    onSuccess: ({ result }) => setTestSuggestions(result),
   })
 
   useEffect(() => setNextStatus(finding.status), [finding.status])
@@ -284,6 +290,66 @@ function FindingLifecyclePanel({
               </li>
             ))}
           </ol>
+        )}
+      </div>
+
+      <div className="mt-5 border-t border-slate-800 pt-4">
+        <h5 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+          Suggested tests
+        </h5>
+        <p className="mt-1 text-xs text-amber-200">
+          Preview only. Suggestions are not applied or executed. Review and explicitly approve
+          before any future application or isolated test run.
+        </p>
+        <button
+          type="button"
+          onClick={() => generateTestSuggestions.mutate()}
+          disabled={generateTestSuggestions.isPending}
+          className="mt-3 min-h-9 rounded-lg bg-indigo-500/20 px-3 text-xs font-medium text-indigo-200 hover:bg-indigo-500/30 disabled:opacity-50"
+        >
+          {generateTestSuggestions.isPending ? 'Generating…' : 'Generate test suggestions'}
+        </button>
+        {generateTestSuggestions.isError && (
+          <p role="alert" className="mt-2 text-xs text-red-300">
+            {generateTestSuggestions.error instanceof Error
+              ? generateTestSuggestions.error.message
+              : 'Test suggestions could not be generated.'}
+          </p>
+        )}
+        {testSuggestions && (
+          <div className="mt-3 space-y-3">
+            <p className="text-xs text-slate-400">
+              Framework: {testSuggestions.framework}. Generated code is unverified.
+              {testSuggestions.duplicateCount > 0
+                ? ` Omitted ${testSuggestions.duplicateCount} duplicate suggestion(s).`
+                : ''}
+            </p>
+            {testSuggestions.suggestions.length === 0 ? (
+              <p className="text-xs text-slate-400">
+                No new test suggestions were returned after duplicate checks.
+              </p>
+            ) : (
+              testSuggestions.suggestions.map((suggestion) => (
+                <section
+                  key={suggestion.name}
+                  className="rounded-md border border-slate-800 bg-slate-950/50 p-3"
+                >
+                  <h6 className="text-sm font-medium text-slate-200">{suggestion.name}</h6>
+                  <p className="mt-1 text-xs text-slate-400">{suggestion.explanation}</p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Expected benefit: {suggestion.expectedBenefit}
+                  </p>
+                  <p className="mt-1 text-xs text-amber-200">
+                    Potential behavior change (AI assessment): {suggestion.behaviorChanging ? 'yes' : 'not flagged'}.
+                    Review intent before any approval.
+                  </p>
+                  <pre className="mt-2 overflow-x-auto rounded bg-slate-950 p-3 text-xs text-slate-200">
+                    <code>{suggestion.code}</code>
+                  </pre>
+                </section>
+              ))
+            )}
+          </div>
         )}
       </div>
 

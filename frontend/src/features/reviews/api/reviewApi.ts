@@ -89,6 +89,21 @@ export interface ReviewChat {
   messages: ReviewChatMessage[]
 }
 
+export interface TestSuggestion {
+  name: string
+  code: string
+  explanation: string
+  expectedBenefit: string
+  behaviorChanging: boolean
+}
+
+export interface TestSuggestionResult {
+  framework: 'node:test via tsx' | 'vitest'
+  suggestions: TestSuggestion[]
+  duplicateCount: number
+  previewOnly: true
+}
+
 export interface ReviewDetail {
   id: string
   repository: { name: string; url: string }
@@ -145,6 +160,16 @@ export const reviewApi = {
   },
   start: async (repository: string, branch = 'main'): Promise<{ reviewId: string }> => {
     const res = await axiosInstance.post<{ reviewId: string }>('/reviews/start', { repository, branch })
+    return res.data
+  },
+
+  generateTestSuggestions: async (
+    reviewId: string,
+    findingId: string
+  ): Promise<{ result: TestSuggestionResult }> => {
+    const res = await axiosInstance.post<{ result: TestSuggestionResult }>(
+      `/reviews/${reviewId}/findings/${findingId}/test-suggestions`
+    )
     return res.data
   },
 
