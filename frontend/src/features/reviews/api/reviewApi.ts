@@ -20,6 +20,27 @@ export interface FindingFeedback {
   user: { fullName: string }
 }
 
+export const findingFeedbackCategories = [
+  'TRUE_POSITIVE',
+  'FALSE_POSITIVE',
+  'ALREADY_FIXED',
+  'NEEDS_REVIEW',
+] as const
+
+export type FindingFeedbackCategory = (typeof findingFeedbackCategories)[number]
+
+export interface FindingAssessmentFeedback {
+  id: string
+  findingId: string
+  userId: string
+  repositoryId: string
+  requestKey: string
+  category: FindingFeedbackCategory
+  explanation: string | null
+  createdAt: string
+  user: { fullName: string }
+}
+
 export interface FixVerificationAttempt {
   id: string
   patchSha256: string
@@ -165,6 +186,7 @@ export interface ReviewDetail {
     independentlyVerifiedAt: string | null
     verificationRecords: FindingVerificationRecord[]
     feedback: FindingFeedback[]
+    assessmentFeedback: FindingAssessmentFeedback[]
     fixProposals: FixProposal[]
   }>
   findingLifecycleAnalytics: {
@@ -190,6 +212,21 @@ export interface ReviewDetail {
 export const reviewApi = {
   list: async (): Promise<ReviewSummary[]> => {
     const res = await axiosInstance.get<ReviewSummary[]>('/reviews')
+    return res.data
+  },
+
+  submitFindingFeedback: async (
+    findingId: string,
+    input: {
+      requestKey: string
+      category: FindingFeedbackCategory
+      explanation?: string
+    }
+  ): Promise<{ feedback: FindingAssessmentFeedback }> => {
+    const res = await axiosInstance.post<{ feedback: FindingAssessmentFeedback }>(
+      `/reviews/findings/${findingId}/feedback`,
+      input
+    )
     return res.data
   },
 

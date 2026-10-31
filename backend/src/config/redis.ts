@@ -3,11 +3,29 @@ import { env } from './env'
 import logger from '@/utils/logger'
 import { getRedisConnectionTarget } from './redis-connection'
 
+const redisTarget = getRedisConnectionTarget()
+
 export const redis = createClient({
   url: env.REDIS_URL,
 })
 
-redis.on('error', () => logger.error('Redis client error'))
+redis.on('error', (error) => {
+  const errorCode =
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    typeof error.code === 'string'
+      ? error.code
+      : undefined
+  logger.error(
+    {
+      ...redisTarget,
+      errorType: error instanceof Error ? error.name : 'UnknownError',
+      ...(errorCode ? { errorCode } : {}),
+    },
+    'Redis client error'
+  )
+})
 
 export async function connectRedis(): Promise<void> {
   if (redis.isOpen) return

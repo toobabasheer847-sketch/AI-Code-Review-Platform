@@ -160,6 +160,7 @@ been independently verified in a production deployment.
 - `POST /api/reviews` - Create new review
 - `GET /api/reviews/:id` - Get review details
 - `PATCH /api/reviews/findings/:findingId/status` - Update an owned finding's status and record optional feedback
+- `POST /api/reviews/findings/:findingId/feedback` - Submit idempotent True Positive, False Positive, Already Fixed, or Needs Review assessment feedback
 - `POST /api/reviews/findings/:findingId/fix-proposals` - Save an owned finding's unified-diff fix proposal
 - `POST /api/reviews/fix-proposals/:proposalId/verification-attempts` - Record an idempotent fix verification attempt
 - `GET /api/reviews/fix-verification-attempts` and `GET /api/reviews/fix-verification-attempts/:attemptId` - List or retrieve owner-scoped verification evidence
@@ -170,6 +171,10 @@ been independently verified in a production deployment.
 Fix verification history and dashboard behavior, status rules, and remote
 isolated-runner setup are documented in
 [docs/fix-verification-engine.md](docs/fix-verification-engine.md).
+Finding assessment feedback is stored separately from lifecycle changes and AI
+findings. Analytics, project preferences, and duplicate-detection rules are
+planned follow-up phases; a single false-positive report does not suppress
+findings or security alerts.
 
 ### Repository Endpoints
 

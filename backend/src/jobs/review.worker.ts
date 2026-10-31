@@ -196,8 +196,21 @@ const worker = new Worker<ReviewJobData>(
 worker.on('failed', (job) => {
   logger.error({ reviewId: job?.data.reviewId }, 'Code review job failed')
 })
-worker.on('error', () => {
-  logger.error('Code review worker error')
+worker.on('error', (error) => {
+  const errorCode =
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    typeof error.code === 'string'
+      ? error.code
+      : undefined
+  logger.error(
+    {
+      errorType: error instanceof Error ? error.name : 'UnknownError',
+      ...(errorCode ? { errorCode } : {}),
+    },
+    'Code review worker error'
+  )
 })
 
 export async function startReviewWorker(): Promise<void> {

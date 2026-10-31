@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   reviewApi,
+  type FindingAssessmentFeedback,
   type FindingFeedback,
   type FixVerificationAttempt,
   type FixProposal,
@@ -78,6 +79,7 @@ const baseFinding: ReviewDetail['findings'][number] = {
     },
   ],
   feedback: [],
+  assessmentFeedback: [],
   fixProposals: [],
 }
 
@@ -167,6 +169,33 @@ async function submitPatch(container: HTMLElement, patch: string): Promise<void>
     )?.set
     valueSetter?.call(input, patch)
     input!.dispatchEvent(new Event('input', { bubbles: true }))
+    form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  })
+}
+
+async function submitAssessment(
+  container: HTMLElement,
+  category: 'TRUE_POSITIVE' | 'FALSE_POSITIVE' | 'ALREADY_FIXED' | 'NEEDS_REVIEW',
+  explanation?: string
+): Promise<void> {
+  const select = container.querySelector<HTMLSelectElement>('#assessment-category-finding-1')
+  const input = container.querySelector<HTMLInputElement>('#assessment-explanation-finding-1')
+  const form = select?.closest('form')
+  expect(select).not.toBeNull()
+  expect(input).not.toBeNull()
+  expect(form).not.toBeNull()
+
+  await act(async () => {
+    select!.value = category
+    select!.dispatchEvent(new Event('change', { bubbles: true }))
+    if (explanation !== undefined) {
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        'value'
+      )?.set
+      valueSetter?.call(input, explanation)
+      input!.dispatchEvent(new Event('input', { bubbles: true }))
+    }
     form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
   })
 }
@@ -428,11 +457,64 @@ describe('finding lifecycle UI', () => {
     expect(persistedReview.findings[0]?.status).toBe('UNREVIEWED')
   })
 
+  it('submits explicit accuracy feedback separately from lifecycle status', async () => {
+    const submitSpy = vi
+      .spyOn(reviewApi, 'submitFindingFeedback')
+      .mockImplementation(async (_findingId, input) => {
+        const previousFinding = persistedReview.findings[0]!
+        const feedback: FindingAssessmentFeedback = {
+          id: 'assessment-feedback-1',
+          findingId: 'finding-1',
+          userId: 'developer-1',
+          repositoryId: 'repository-1',
+          requestKey: input.requestKey,
+          category: input.category,
+          explanation: input.explanation ?? null,
+          createdAt: '2026-10-22T12:00:00.000Z',
+          user: { fullName: 'Feedback Developer' },
+        }
+        persistedReview = {
+          ...persistedReview,
+          findings: [
+            {
+              ...previousFinding,
+              assessmentFeedback: [...previousFinding.assessmentFeedback, feedback],
+            },
+          ],
+        }
+        return { feedback }
+      })
+    const container = await mountReview()
+
+    expect(container.textContent).toContain(
+      'One report will not suppress a finding or retrain the model.'
+    )
+    await submitAssessment(
+      container,
+      'FALSE_POSITIVE',
+      'The reported branch cannot be reached.'
+    )
+    await waitForText(container, 'The reported branch cannot be reached.')
+
+    expect(submitSpy).toHaveBeenCalledWith(
+      'finding-1',
+      expect.objectContaining({
+        requestKey: expect.any(String),
+        category: 'FALSE_POSITIVE',
+        explanation: 'The reported branch cannot be reached.',
+      })
+    )
+    expect(persistedReview.findings[0]?.status).toBe('UNREVIEWED')
+    expect(container.textContent).toContain('False positive')
+    expect(container.textContent).toContain('Feedback Developer')
+  })
+
   it('distinguishes developer-fixed findings from persisted independent verification', async () => {
     persistedReview = createReview({
       ...baseFinding,
       status: 'FIXED',
       feedback: [],
+      assessmentFeedback: [],
       independentlyVerifiedAt: null,
     })
     const container = await mountReview()

@@ -14,6 +14,9 @@ router.get('/analytics', authMiddleware, (req, res) =>
   analyticsController.get(req, res)
 )
 router.post('/start', authMiddleware, (req, res) => controller.startReview(req, res))
+router.post('/findings/:findingId/feedback', authMiddleware, (req, res) =>
+  controller.submitFindingFeedback(req, res)
+)
 router.get('/fix-verification-attempts', authMiddleware, (req, res) =>
   controller.listFixVerifications(req, res)
 )

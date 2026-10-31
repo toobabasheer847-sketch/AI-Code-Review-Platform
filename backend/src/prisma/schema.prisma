@@ -35,6 +35,7 @@ model User {
   socialPostEvents    SocialPostEvent[]
   workMemories        WorkMemory[]
   findingFeedback     FindingFeedback[]
+  findingAssessmentFeedback FindingAssessmentFeedback[]
   fixProposals        FixProposal[]
   fixVerificationAttempts FixVerificationAttempt[]
   fixVerificationReviews           FixVerificationAttempt[]          @relation("FixVerificationReviewer")
@@ -478,6 +479,7 @@ model Repository {
   isPrivate   Boolean      @default(false)
   reviews     CodeReview[]
   workMemories WorkMemory[]
+  findingAssessmentFeedback FindingAssessmentFeedback[]
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
@@ -534,6 +536,13 @@ enum FindingStatus {
   DUPLICATE
   FIXED
   WONT_FIX
+}
+
+enum FindingFeedbackCategory {
+  TRUE_POSITIVE
+  FALSE_POSITIVE
+  ALREADY_FIXED
+  NEEDS_REVIEW
 }
 
 enum FixVerificationStatus {
@@ -633,6 +642,7 @@ model Finding {
   status                   FindingStatus      @default(UNREVIEWED)
   independentlyVerifiedAt  DateTime?
   feedback                 FindingFeedback[]
+  assessmentFeedback       FindingAssessmentFeedback[]
   fixProposals             FixProposal[]
   verificationRecords      FindingVerificationRecord[]
   createdAt                DateTime           @default(now())
@@ -676,6 +686,24 @@ model FindingFeedback {
 
   @@index([findingId, createdAt])
   @@index([userId, createdAt])
+}
+
+model FindingAssessmentFeedback {
+  id           String                 @id @default(cuid())
+  findingId    String
+  finding      Finding                @relation(fields: [findingId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  repositoryId String
+  repository   Repository             @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  requestKey   String
+  category     FindingFeedbackCategory
+  explanation  String?                @db.VarChar(1000)
+  createdAt    DateTime               @default(now())
+
+  @@unique([findingId, userId, requestKey])
+  @@index([repositoryId, category, createdAt])
+  @@index([findingId, userId, createdAt])
 }
 
 model FixProposal {

@@ -3,6 +3,7 @@ import { ZodError, z } from 'zod'
 import { ReviewNotFoundError, ReviewService } from './review.service'
 import { updateFindingStatusSchema } from './finding-lifecycle.domain'
 import { FindingLifecycleService } from './finding-lifecycle.service'
+import { FindingFeedbackService } from './finding-feedback.service'
 import {
 	FixProposalService,
 	FixVerificationEvidenceService,
@@ -16,6 +17,7 @@ import logger from '@/utils/logger'
 
 const reviewService = new ReviewService()
 const findingLifecycleService = new FindingLifecycleService()
+const findingFeedbackService = new FindingFeedbackService()
 const fixProposalService = new FixProposalService()
 const findingVerificationService = new FindingVerificationService()
 const fixVerificationEvidenceService = new FixVerificationEvidenceService()
@@ -72,8 +74,27 @@ export class ReviewController {
 		private readonly verificationEvidenceService: Pick<
 			FixVerificationEvidenceService,
 			'list' | 'get' | 'review'
-		> = fixVerificationEvidenceService
+		> = fixVerificationEvidenceService,
+		private readonly feedbackService: Pick<FindingFeedbackService, 'submit'> =
+			findingFeedbackService
 	) {}
+
+	async submitFindingFeedback(req: Request, res: Response): Promise<void> {
+		if (!req.user?.userId) {
+			res.status(401).json({ error: 'Unauthorized' })
+			return
+		}
+		try {
+			const feedback = await this.feedbackService.submit(
+				req.user.userId,
+				req.params.findingId,
+				req.body
+			)
+			res.status(201).json({ feedback })
+		} catch (error) {
+			respondWithError(error, res, 'Unable to save finding feedback.')
+		}
+	}
 
 	async listFixVerifications(req: Request, res: Response): Promise<void> {
 		if (!req.user?.userId) {

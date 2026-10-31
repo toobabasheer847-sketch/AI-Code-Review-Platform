@@ -6,6 +6,7 @@ import {
   reviewApi,
   type FixVerificationAttempt,
   type FindingVerificationRecord,
+  type FindingFeedbackCategory,
   type FindingStatus,
   type ReviewDetail,
   type TestSuggestionResult,
@@ -43,6 +44,13 @@ const fixVerificationStatusLabels: Record<FixVerificationAttempt['status'], stri
   NEEDS_REVIEW: 'Needs review',
 }
 
+const findingFeedbackCategoryLabels: Record<FindingFeedbackCategory, string> = {
+  TRUE_POSITIVE: 'True positive',
+  FALSE_POSITIVE: 'False positive',
+  ALREADY_FIXED: 'Already fixed',
+  NEEDS_REVIEW: 'Needs review',
+}
+
 function FindingLifecyclePanel({
   reviewId,
   sourceRevision,
@@ -56,6 +64,9 @@ function FindingLifecyclePanel({
   const [nextStatus, setNextStatus] = useState<FindingStatus>(finding.status)
   const [reason, setReason] = useState('')
   const [patch, setPatch] = useState('')
+  const [assessmentCategory, setAssessmentCategory] =
+    useState<FindingFeedbackCategory>('NEEDS_REVIEW')
+  const [assessmentExplanation, setAssessmentExplanation] = useState('')
   const [humanReviewDecision, setHumanReviewDecision] =
     useState<'APPROVE' | 'REJECT' | 'NEEDS_MORE_EVIDENCE'>('NEEDS_MORE_EVIDENCE')
   const [humanReviewNote, setHumanReviewNote] = useState('')
@@ -74,6 +85,18 @@ function FindingLifecyclePanel({
         queryClient.invalidateQueries({ queryKey: ['reviews', reviewId] }),
         queryClient.invalidateQueries({ queryKey: ['reviews'] }),
       ])
+    },
+  })
+  const submitAssessmentFeedback = useMutation({
+    mutationFn: () =>
+      reviewApi.submitFindingFeedback(finding.id, {
+        requestKey: crypto.randomUUID(),
+        category: assessmentCategory,
+        ...(assessmentExplanation.trim() ? { explanation: assessmentExplanation.trim() } : {}),
+      }),
+    onSuccess: async () => {
+      setAssessmentExplanation('')
+      await queryClient.invalidateQueries({ queryKey: ['reviews', reviewId] })
     },
   })
   const createProposal = useMutation({
@@ -304,6 +327,91 @@ function FindingLifecyclePanel({
                   {new Date(entry.createdAt).toLocaleString()}
                 </p>
                 {entry.reason && <p className="mt-1 whitespace-pre-wrap">{entry.reason}</p>}
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
+
+      <div className="mt-5 border-t border-slate-800 pt-4">
+        <h5 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+          Review accuracy feedback
+        </h5>
+        <p className="mt-1 text-xs text-slate-500">
+          This developer assessment is stored separately from finding status and AI-generated
+          analysis. One report will not suppress a finding or retrain the model.
+        </p>
+        <form
+          className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto]"
+          onSubmit={(event) => {
+            event.preventDefault()
+            submitAssessmentFeedback.mutate()
+          }}
+        >
+          <label className="sr-only" htmlFor={`assessment-category-${finding.id}`}>
+            Finding assessment
+          </label>
+          <select
+            id={`assessment-category-${finding.id}`}
+            value={assessmentCategory}
+            onChange={(event) =>
+              setAssessmentCategory(event.target.value as FindingFeedbackCategory)
+            }
+            disabled={submitAssessmentFeedback.isPending}
+            className="min-h-10 rounded-lg border border-slate-700 bg-slate-900 px-3 text-sm text-slate-200"
+          >
+            {Object.entries(findingFeedbackCategoryLabels).map(([category, label]) => (
+              <option key={category} value={category}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <label className="sr-only" htmlFor={`assessment-explanation-${finding.id}`}>
+            Optional assessment explanation
+          </label>
+          <input
+            id={`assessment-explanation-${finding.id}`}
+            value={assessmentExplanation}
+            onChange={(event) => setAssessmentExplanation(event.target.value)}
+            maxLength={1_000}
+            disabled={submitAssessmentFeedback.isPending}
+            placeholder="Optional explanation for this assessment"
+            className="min-h-10 rounded-lg border border-slate-700 bg-slate-900 px-3 text-sm text-slate-200 placeholder:text-slate-500"
+          />
+          <button
+            type="submit"
+            disabled={submitAssessmentFeedback.isPending}
+            className="min-h-10 rounded-lg bg-indigo-500/20 px-4 text-sm font-medium text-indigo-200 hover:bg-indigo-500/30 disabled:opacity-50"
+          >
+            {submitAssessmentFeedback.isPending ? 'Saving…' : 'Submit feedback'}
+          </button>
+        </form>
+        {submitAssessmentFeedback.isError && (
+          <p role="alert" className="mt-2 text-sm text-red-300">
+            {submitAssessmentFeedback.error instanceof Error
+              ? submitAssessmentFeedback.error.message
+              : 'Finding feedback could not be saved.'}
+          </p>
+        )}
+        {finding.assessmentFeedback.length === 0 ? (
+          <p className="mt-3 text-xs text-slate-500">No accuracy feedback submitted yet.</p>
+        ) : (
+          <ol className="mt-3 space-y-2">
+            {finding.assessmentFeedback.map((entry) => (
+              <li
+                key={entry.id}
+                className="border-l border-slate-700 pl-3 text-xs text-slate-400"
+              >
+                <p>
+                  <span className="text-slate-200">{entry.user.fullName}</span>
+                  {' · '}
+                  {findingFeedbackCategoryLabels[entry.category]}
+                  {' · '}
+                  {new Date(entry.createdAt).toLocaleString()}
+                </p>
+                {entry.explanation && (
+                  <p className="mt-1 whitespace-pre-wrap">{entry.explanation}</p>
+                )}
               </li>
             ))}
           </ol>
