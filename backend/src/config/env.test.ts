@@ -26,6 +26,9 @@ function productionConfiguration(): typeof env {
     GITHUB_CLIENT_SECRET: 'github-client-secret',
     GITHUB_WEBHOOK_SECRET: 'github-webhook-secret',
     GITHUB_CALLBACK_URL: 'https://api.example.test/api/auth/github/callback',
+    FIX_VERIFICATION_RUNNER_URL: '',
+    FIX_VERIFICATION_RUNNER_TOKEN: '',
+    FIX_VERIFICATION_RUNNER_TIMEOUT_MS: 300_000,
     STRIPE_SECRET_KEY: 'sk_test_example',
     STRIPE_WEBHOOK_SECRET: 'whsec_example',
     STRIPE_PRO_PRICE_ID: 'price_example',
@@ -36,6 +39,32 @@ function productionConfiguration(): typeof env {
 
 test('accepts production configuration with HTTPS origins and TLS Redis', () => {
   assert.doesNotThrow(() => validateEnvironment(productionConfiguration()))
+})
+
+test('requires a protected, bounded remote verification runner configuration', () => {
+  const configuredRunner = productionConfiguration()
+  configuredRunner.FIX_VERIFICATION_RUNNER_URL = 'https://runner.example.test'
+  configuredRunner.FIX_VERIFICATION_RUNNER_TOKEN = 'r'.repeat(48)
+  configuredRunner.FIX_VERIFICATION_RUNNER_TIMEOUT_MS = 60_000
+  assert.doesNotThrow(() => validateEnvironment(configuredRunner))
+
+  configuredRunner.FIX_VERIFICATION_RUNNER_URL = 'http://runner.example.test'
+  assert.throws(() => validateEnvironment(configuredRunner), /FIX_VERIFICATION_RUNNER_URL/)
+
+  configuredRunner.FIX_VERIFICATION_RUNNER_URL = 'https://runner.example.test'
+  configuredRunner.FIX_VERIFICATION_RUNNER_TOKEN = 'placeholder'
+  assert.throws(() => validateEnvironment(configuredRunner), /FIX_VERIFICATION_RUNNER_TOKEN/)
+
+  configuredRunner.FIX_VERIFICATION_RUNNER_TOKEN = 'r'.repeat(48)
+  configuredRunner.FIX_VERIFICATION_RUNNER_TIMEOUT_MS = 900_001
+  assert.throws(() => validateEnvironment(configuredRunner), /FIX_VERIFICATION_RUNNER_TIMEOUT_MS/)
+
+  configuredRunner.FIX_VERIFICATION_RUNNER_TIMEOUT_MS = 60_000
+  configuredRunner.FIX_VERIFICATION_RUNNER_URL = ''
+  assert.throws(
+    () => validateEnvironment(configuredRunner),
+    /FIX_VERIFICATION_RUNNER_URL and FIX_VERIFICATION_RUNNER_TOKEN/
+  )
 })
 
 test('prefers the process Redis URL over the local fallback', () => {

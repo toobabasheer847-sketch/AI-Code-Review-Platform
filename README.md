@@ -48,6 +48,7 @@ AI-CodeGuard/
 ## 🛠️ Tech Stack
 
 ### Frontend
+
 - **React 18** with TypeScript
 - **Vite** - Next generation build tool
 - **TanStack Query** - Data fetching and caching
@@ -61,6 +62,7 @@ AI-CodeGuard/
 - **React Hook Form** - Form state management
 
 ### Backend
+
 - **Express.js** - Web framework
 - **TypeScript** - Type safety
 - **Prisma ORM** - Database abstraction
@@ -77,6 +79,7 @@ AI-CodeGuard/
 ## 🚀 Getting Started
 
 ### Prerequisites
+
 - Node.js >= 18.0.0
 - npm >= 9.0.0
 - PostgreSQL 15+
@@ -86,18 +89,21 @@ AI-CodeGuard/
 ### Installation
 
 1. **Clone the repository**
+
 ```bash
 git clone https://github.com/yourusername/ai-codeguard.git
 cd ai-codeguard
 ```
 
 2. **Setup Environment Variables**
+
 ```bash
 copy .env.example .env
 # Configure backend values in backend/.env or export them in your shell
 ```
 
 3. **Install and configure**
+
 ```bash
 npm install
 npm run prisma:generate --workspace=backend
@@ -105,12 +111,14 @@ npm run prisma:deploy --workspace=backend
 ```
 
 4. **Run the applications** in separate terminals
+
 ```bash
 npm run dev --workspace=backend
 npm run dev --workspace=frontend
 ```
 
 5. **Access Application**
+
 - Frontend: http://localhost:3000
 - Backend API: http://localhost:3001
 - API Documentation: http://localhost:3001/api/docs
@@ -140,30 +148,43 @@ been independently verified in a production deployment.
 ## 📚 API Documentation
 
 ### Authentication Endpoints
+
 - `POST /api/auth/register` - Register new user
 - `POST /api/auth/login` - User login
 - `POST /api/auth/logout` - User logout
 - `GET /api/auth/github/callback` - GitHub OAuth callback
 
 ### Code Review Endpoints
+
 - `GET /api/reviews` - List reviews
 - `POST /api/reviews` - Create new review
 - `GET /api/reviews/:id` - Get review details
 - `PATCH /api/reviews/findings/:findingId/status` - Update an owned finding's status and record optional feedback
+- `POST /api/reviews/findings/:findingId/fix-proposals` - Save an owned finding's unified-diff fix proposal
+- `POST /api/reviews/fix-proposals/:proposalId/verification-attempts` - Record an idempotent fix verification attempt
+- `GET /api/reviews/fix-verification-attempts` and `GET /api/reviews/fix-verification-attempts/:attemptId` - List or retrieve owner-scoped verification evidence
+- `POST /api/reviews/fix-verification-attempts/:attemptId/review-decision` - Record a separate human review decision
 - `PUT /api/reviews/:id` - Update review
 - `DELETE /api/reviews/:id` - Delete review
 
+Fix verification history and dashboard behavior, status rules, and remote
+isolated-runner setup are documented in
+[docs/fix-verification-engine.md](docs/fix-verification-engine.md).
+
 ### Repository Endpoints
+
 - `GET /api/repositories` - List repositories
 - `POST /api/repositories` - Connect repository
 - `GET /api/repositories/:id` - Get repository details
 - `DELETE /api/repositories/:id` - Disconnect repository
 
 ### AI Endpoints
+
 - `POST /api/ai/analyze` - Analyze code with AI
 - `POST /api/ai/chat` - Chat about code review
 
 ### Automation MVP
+
 - `POST /api/automations` - Create and validate an automation plan (authenticated)
 - `GET /api/automations` and `GET /api/automations/:id` - List or retrieve owned workflows
 - `POST /api/automations/:id/approve` - Approve an unchanged, unexpired plan and queue it
@@ -274,6 +295,7 @@ key for this create operation. Publishing history retains provider identifiers,
 URLs, errors, and audit events.
 
 Official references:
+
 - [GitHub OAuth Apps authorization](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps)
 - [GitHub authenticated user endpoint](https://docs.github.com/en/rest/users/users#get-the-authenticated-user)
 - [GitHub OAuth application token revocation](https://docs.github.com/en/rest/apps/oauth-applications#delete-an-app-authorization)
@@ -395,6 +417,12 @@ settings (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRO_PRICE_ID`),
 and `FRONTEND_URL`. Configure mail variables to send account emails. Never put
 secrets in frontend `VITE_*` variables.
 
+Fix verification execution is disabled unless `FIX_VERIFICATION_RUNNER_URL`
+and `FIX_VERIFICATION_RUNNER_TOKEN` point to a separately deployed isolated
+runner. Without it, attempts remain `NEEDS_REVIEW`; see
+[docs/fix-verification-engine.md](docs/fix-verification-engine.md) for the
+runner protocol and deployment safeguards.
+
 ### Stripe test-mode checkout and webhooks
 
 1. In Stripe's **test** dashboard, create a recurring Pro price. Configure its
@@ -448,6 +476,7 @@ GitHub Actions CI is configured in `.github/workflows/ci.yml`.
 ### Commit Convention
 
 Uses conventional commits:
+
 ```
 feat: Add new feature
 fix: Fix bug

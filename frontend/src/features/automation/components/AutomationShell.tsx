@@ -14,6 +14,7 @@ import {
   Search,
   Settings,
   Send,
+  ShieldCheck,
   Workflow,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -30,6 +31,7 @@ const navigation = [
   { to: '/social', label: 'Social publishing', icon: Send },
   { to: '/integrations', label: 'Integrations', icon: Cable },
   { to: '/reviews', label: 'Code reviews', icon: FileSearch },
+  { to: '/verifications', label: 'Fix verification', icon: ShieldCheck },
   { to: '/github/repos', label: 'Repositories', icon: Github },
 ];
 

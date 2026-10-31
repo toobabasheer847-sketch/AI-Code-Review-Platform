@@ -31,6 +31,12 @@ test('mounts protected API routes and rejects requests without a valid token', a
     ],
     ['/reviews'],
     ['/reviews/analytics'],
+    ['/reviews/fix-verification-attempts'],
+    ['/reviews/fix-verification-attempts/attempt-1'],
+    [
+      '/reviews/fix-verification-attempts/attempt-1/review-decision',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' },
+    ],
     ['/reviews/findings/not-owned/status', { method: 'PATCH' }],
     ['/reviews/findings/not-owned/verification-requests', { method: 'POST' }],
     ['/reviews/findings/not-owned/verification-requests/request-1', { method: 'GET' }],
@@ -46,8 +52,14 @@ test('mounts protected API routes and rejects requests without a valid token', a
     ['/integrations/github/check', { method: 'POST' }],
     ['/social/posts'],
     ['/social/linkedin/connect', { method: 'POST' }],
-    ['/social/drafts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }],
-    ['/social/drafts/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }],
+    [
+      '/social/drafts',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' },
+    ],
+    [
+      '/social/drafts/generate',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' },
+    ],
     ['/social/posts/not-owned/approve', { method: 'POST' }],
     ['/social/posts/not-owned/retry', { method: 'POST' }],
   ];

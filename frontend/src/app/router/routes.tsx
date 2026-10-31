@@ -61,6 +61,11 @@ const ReviewsPage = lazy(() =>
 const ReviewByIdPage = lazy(() =>
   import('@features/reviews/pages/ReviewByIdPage').then((m) => ({ default: m.ReviewByIdPage }))
 );
+const VerificationHistoryPage = lazy(() =>
+  import('@features/reviews/pages/VerificationHistoryPage').then((m) => ({
+    default: m.VerificationHistoryPage,
+  }))
+);
 const SettingsPage = lazy(() =>
   import('@features/profile/pages/SettingsPage').then((m) => ({ default: m.SettingsPage }))
 );
@@ -239,6 +244,16 @@ export const routes: RouteObject[] = [
       <ProtectedRoute>
         <Suspense fallback={<LazyFallback />}>
           <BillingDashboard />
+        </Suspense>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/verifications',
+    element: (
+      <ProtectedRoute>
+        <Suspense fallback={<LazyFallback />}>
+          <VerificationHistoryPage />
         </Suspense>
       </ProtectedRoute>
     ),

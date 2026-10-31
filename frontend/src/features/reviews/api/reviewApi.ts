@@ -23,15 +23,54 @@ export interface FindingFeedback {
 export interface FixVerificationAttempt {
   id: string
   patchSha256: string
-  status: 'RUNNING' | 'VERIFIED' | 'FAILED' | 'INCONCLUSIVE'
+  status: 'RUNNING' | 'VERIFIED' | 'FAILED' | 'NEEDS_REVIEW'
   executionStatus: 'NOT_RUN' | 'SUCCEEDED' | 'FAILED' | 'TIMED_OUT' | 'BLOCKED'
   testCommands: string[]
+  checkResults: Array<{
+    name: 'TEST' | 'TYPECHECK' | 'LINT'
+    command: string
+    status: 'PASSED' | 'FAILED' | 'TIMED_OUT' | 'NOT_RUN'
+    exitCode: number | null
+    durationMs: number
+    failureDetails: string | null
+    logs: string
+  }>
   testsPassed: boolean | null
   originalIssueReproducedBefore: boolean | null
   originalIssueReproducedAfter: boolean | null
+  repositoryName: string
+  repositoryUrl: string
+  branch: string
+  pullRequestNumber: number | null
+  commitSha: string | null
+  findingTitle: string
+  findingSeverity: string
+  findingFile: string
+  changedFiles: string[]
+  executionDurationMs: number
+  exitCode: number | null
+  failureDetails: string | null
+  humanReviewDecision: 'APPROVE' | 'REJECT' | 'NEEDS_MORE_EVIDENCE' | null
+  humanReviewNote: string | null
+  humanReviewedAt: string | null
   startedAt: string
   completedAt: string | null
   sanitizedLogs: string | null
+}
+
+export interface FixVerificationDashboardRun extends FixVerificationAttempt {
+  reviewId: string
+  findingId: string
+  repositoryId: string
+}
+
+export interface FixVerificationDashboard {
+  total: number
+  verified: number
+  failed: number
+  needsReview: number
+  repositories: Array<{ id: string; name: string }>
+  runs: FixVerificationDashboardRun[]
 }
 
 export interface FixProposal {
@@ -201,6 +240,42 @@ export const reviewApi = {
   ): Promise<{ attempt: FixVerificationAttempt }> => {
     const res = await axiosInstance.post<{ attempt: FixVerificationAttempt }>(
       `/reviews/fix-proposals/${proposalId}/verification-attempts`,
+      input
+    )
+    return res.data
+  },
+
+  listFixVerifications: async (filters?: {
+    status?: FixVerificationAttempt['status']
+    repositoryId?: string
+    from?: string
+    to?: string
+  }): Promise<FixVerificationDashboard> => {
+    const res = await axiosInstance.get<FixVerificationDashboard>(
+      '/reviews/fix-verification-attempts',
+      { params: filters }
+    )
+    return res.data
+  },
+
+  getFixVerificationEvidence: async (
+    attemptId: string
+  ): Promise<{ attempt: FixVerificationAttempt }> => {
+    const res = await axiosInstance.get<{ attempt: FixVerificationAttempt }>(
+      `/reviews/fix-verification-attempts/${attemptId}`
+    )
+    return res.data
+  },
+
+  submitFixVerificationReview: async (
+    attemptId: string,
+    input: {
+      decision: 'APPROVE' | 'REJECT' | 'NEEDS_MORE_EVIDENCE'
+      note?: string
+    }
+  ): Promise<{ attempt: FixVerificationAttempt }> => {
+    const res = await axiosInstance.post<{ attempt: FixVerificationAttempt }>(
+      `/reviews/fix-verification-attempts/${attemptId}/review-decision`,
       input
     )
     return res.data

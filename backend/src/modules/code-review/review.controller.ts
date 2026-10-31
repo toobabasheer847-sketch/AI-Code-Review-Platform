@@ -5,6 +5,7 @@ import { updateFindingStatusSchema } from './finding-lifecycle.domain'
 import { FindingLifecycleService } from './finding-lifecycle.service'
 import {
 	FixProposalService,
+	FixVerificationEvidenceService,
 	FixVerificationService,
 } from './fix-verification.service'
 import {
@@ -17,6 +18,7 @@ const reviewService = new ReviewService()
 const findingLifecycleService = new FindingLifecycleService()
 const fixProposalService = new FixProposalService()
 const findingVerificationService = new FindingVerificationService()
+const fixVerificationEvidenceService = new FixVerificationEvidenceService()
 const verifyFixProposalSchema = z
 	.object({
 		requestKey: z.string().min(1).max(128).regex(/^[A-Za-z0-9._:-]+$/),
@@ -66,8 +68,61 @@ export class ReviewController {
 		private readonly fixVerificationService: Pick<
 			FixVerificationService,
 			'verifyProposal'
-		> = new FixVerificationService()
+		> = new FixVerificationService(),
+		private readonly verificationEvidenceService: Pick<
+			FixVerificationEvidenceService,
+			'list' | 'get' | 'review'
+		> = fixVerificationEvidenceService
 	) {}
+
+	async listFixVerifications(req: Request, res: Response): Promise<void> {
+		if (!req.user?.userId) {
+			res.status(401).json({ error: 'Unauthorized' })
+			return
+		}
+		try {
+			const dashboard = await this.verificationEvidenceService.list(
+				req.user.userId,
+				req.query
+			)
+			res.json(dashboard)
+		} catch (error) {
+			respondWithError(error, res, 'Unable to list fix verification evidence.')
+		}
+	}
+
+	async getFixVerificationEvidence(req: Request, res: Response): Promise<void> {
+		if (!req.user?.userId) {
+			res.status(401).json({ error: 'Unauthorized' })
+			return
+		}
+		try {
+			const attempt = await this.verificationEvidenceService.get(
+				req.user.userId,
+				req.params.attemptId
+			)
+			res.json({ attempt })
+		} catch (error) {
+			respondWithError(error, res, 'Unable to load fix verification evidence.')
+		}
+	}
+
+	async submitFixVerificationReview(req: Request, res: Response): Promise<void> {
+		if (!req.user?.userId) {
+			res.status(401).json({ error: 'Unauthorized' })
+			return
+		}
+		try {
+			const attempt = await this.verificationEvidenceService.review(
+				req.user.userId,
+				req.params.attemptId,
+				req.body
+			)
+			res.json({ attempt })
+		} catch (error) {
+			respondWithError(error, res, 'Unable to record the human review decision.')
+		}
+	}
 
 	async updateFindingStatus(req: Request, res: Response): Promise<void> {
 		if (!req.user?.userId) {

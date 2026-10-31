@@ -40,7 +40,7 @@ const fixVerificationStatusLabels: Record<FixVerificationAttempt['status'], stri
   RUNNING: 'Running',
   VERIFIED: 'Verified',
   FAILED: 'Failed',
-  INCONCLUSIVE: 'Needs review',
+  NEEDS_REVIEW: 'Needs review',
 }
 
 function FindingLifecyclePanel({
@@ -56,6 +56,9 @@ function FindingLifecyclePanel({
   const [nextStatus, setNextStatus] = useState<FindingStatus>(finding.status)
   const [reason, setReason] = useState('')
   const [patch, setPatch] = useState('')
+  const [humanReviewDecision, setHumanReviewDecision] =
+    useState<'APPROVE' | 'REJECT' | 'NEEDS_MORE_EVIDENCE'>('NEEDS_MORE_EVIDENCE')
+  const [humanReviewNote, setHumanReviewNote] = useState('')
   const [testSuggestions, setTestSuggestions] = useState<TestSuggestionResult | null>(null)
   const [verificationMethod, setVerificationMethod] =
     useState<'STATIC_ANALYSIS' | 'TARGETED_TEST'>('STATIC_ANALYSIS')
@@ -85,6 +88,20 @@ function FindingLifecyclePanel({
       reviewApi.verifyFixProposal(proposalId, { requestKey: crypto.randomUUID() }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['reviews', reviewId] })
+    },
+  })
+  const reviewVerification = useMutation({
+    mutationFn: (attemptId: string) =>
+      reviewApi.submitFixVerificationReview(attemptId, {
+        decision: humanReviewDecision,
+        ...(humanReviewNote.trim() ? { note: humanReviewNote.trim() } : {}),
+      }),
+    onSuccess: async () => {
+      setHumanReviewNote('')
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['reviews', reviewId] }),
+        queryClient.invalidateQueries({ queryKey: ['fix-verifications'] }),
+      ])
     },
   })
   const requestVerification = useMutation({
@@ -443,6 +460,102 @@ function FindingLifecyclePanel({
                         ? 'unknown'
                         : attempt.originalIssueReproducedAfter ? 'yes' : 'no'}
                     </p>
+                    {attempt.commitSha && (
+                      <p className="mt-1 font-mono text-slate-500">
+                        Commit {attempt.commitSha}
+                      </p>
+                    )}
+                    {attempt.changedFiles.length > 0 && (
+                      <p className="mt-1 text-slate-500">
+                        Changed files: {attempt.changedFiles.join(', ')}
+                      </p>
+                    )}
+                    {attempt.checkResults.length > 0 && (
+                      <ul className="mt-2 space-y-1">
+                        {attempt.checkResults.map((check, index) => (
+                          <li
+                            key={`${attempt.id}-check-${index}`}
+                            className="text-slate-400"
+                          >
+                            {check.name} · {check.status}
+                            {check.exitCode === null ? '' : ` · exit ${check.exitCode}`}
+                            {` · ${check.durationMs} ms`}
+                            {check.failureDetails && (
+                              <p className="mt-1 whitespace-pre-wrap text-rose-300">
+                                {check.failureDetails}
+                              </p>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {attempt.humanReviewDecision ? (
+                      <p className="mt-2 text-slate-400">
+                        Human decision: {attempt.humanReviewDecision.replace(/_/g, ' ')}
+                        {attempt.humanReviewedAt &&
+                          ` · ${new Date(attempt.humanReviewedAt).toLocaleString()}`}
+                        {attempt.humanReviewNote && ` · ${attempt.humanReviewNote}`}
+                      </p>
+                    ) : attempt.status !== 'RUNNING' ? (
+                      <form
+                        className="mt-3 flex flex-wrap items-center gap-2"
+                        onSubmit={(event) => {
+                          event.preventDefault()
+                          reviewVerification.mutate(attempt.id)
+                        }}
+                      >
+                        <label
+                          className="sr-only"
+                          htmlFor={`human-review-decision-${attempt.id}`}
+                        >
+                          Human review decision
+                        </label>
+                        <select
+                          id={`human-review-decision-${attempt.id}`}
+                          value={humanReviewDecision}
+                          onChange={(event) =>
+                            setHumanReviewDecision(
+                              event.target.value as
+                                | 'APPROVE'
+                                | 'REJECT'
+                                | 'NEEDS_MORE_EVIDENCE'
+                            )
+                          }
+                          disabled={reviewVerification.isPending}
+                          className="min-h-9 rounded-lg border border-slate-700 bg-slate-900 px-3 text-xs text-slate-300"
+                        >
+                          <option value="APPROVE">Approve evidence</option>
+                          <option value="REJECT">Reject evidence</option>
+                          <option value="NEEDS_MORE_EVIDENCE">Request more evidence</option>
+                        </select>
+                        <label className="sr-only" htmlFor={`human-review-note-${attempt.id}`}>
+                          Human review note
+                        </label>
+                        <input
+                          id={`human-review-note-${attempt.id}`}
+                          value={humanReviewNote}
+                          onChange={(event) => setHumanReviewNote(event.target.value)}
+                          maxLength={1_000}
+                          placeholder="Optional review note"
+                          disabled={reviewVerification.isPending}
+                          className="min-h-9 rounded-lg border border-slate-700 bg-slate-900 px-3 text-xs text-slate-200 placeholder:text-slate-500"
+                        />
+                        <button
+                          type="submit"
+                          disabled={reviewVerification.isPending}
+                          className="min-h-9 rounded-lg border border-slate-700 px-3 text-xs text-slate-300 hover:bg-slate-800 disabled:opacity-50"
+                        >
+                          Record decision
+                        </button>
+                      </form>
+                    ) : null}
+                    {reviewVerification.isError && (
+                      <p role="alert" className="mt-2 text-xs text-red-300">
+                        {reviewVerification.error instanceof Error
+                          ? reviewVerification.error.message
+                          : 'Human review decision could not be saved.'}
+                      </p>
+                    )}
                     <p className="mt-1 text-slate-500">
                       Started {new Date(attempt.startedAt).toLocaleString()}
                       {attempt.completedAt &&

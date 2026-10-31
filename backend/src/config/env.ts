@@ -51,6 +51,11 @@ export const env = {
   GITHUB_CLIENT_SECRET: process.env.GITHUB_CLIENT_SECRET || '',
   GITHUB_WEBHOOK_SECRET: process.env.GITHUB_WEBHOOK_SECRET || '',
   GITHUB_CALLBACK_URL: process.env.GITHUB_CALLBACK_URL || 'http://localhost:3001/api/auth/github/callback',
+  FIX_VERIFICATION_RUNNER_URL: process.env.FIX_VERIFICATION_RUNNER_URL?.trim() || '',
+  FIX_VERIFICATION_RUNNER_TOKEN: process.env.FIX_VERIFICATION_RUNNER_TOKEN || '',
+  FIX_VERIFICATION_RUNNER_TIMEOUT_MS: process.env.FIX_VERIFICATION_RUNNER_TIMEOUT_MS
+    ? Number(process.env.FIX_VERIFICATION_RUNNER_TIMEOUT_MS)
+    : 300_000,
   LINKEDIN_CLIENT_ID: process.env.LINKEDIN_CLIENT_ID || '',
   LINKEDIN_CLIENT_SECRET: process.env.LINKEDIN_CLIENT_SECRET || '',
   LINKEDIN_CALLBACK_URL:
@@ -86,6 +91,56 @@ export function validateEnvironment(configuration: typeof env): void {
 
   if (!Number.isSafeInteger(configuration.PORT) || configuration.PORT < 1 || configuration.PORT > 65535) {
     configurationErrors.push('PORT must be an integer between 1 and 65535')
+  }
+
+  const hasVerificationRunnerUrl = Boolean(configuration.FIX_VERIFICATION_RUNNER_URL)
+  const hasVerificationRunnerToken = Boolean(configuration.FIX_VERIFICATION_RUNNER_TOKEN)
+  if (hasVerificationRunnerUrl !== hasVerificationRunnerToken) {
+    configurationErrors.push(
+      'FIX_VERIFICATION_RUNNER_URL and FIX_VERIFICATION_RUNNER_TOKEN must be configured together'
+    )
+  }
+  if (
+    !Number.isSafeInteger(configuration.FIX_VERIFICATION_RUNNER_TIMEOUT_MS) ||
+    configuration.FIX_VERIFICATION_RUNNER_TIMEOUT_MS < 1_000 ||
+    configuration.FIX_VERIFICATION_RUNNER_TIMEOUT_MS > 900_000
+  ) {
+    configurationErrors.push(
+      'FIX_VERIFICATION_RUNNER_TIMEOUT_MS must be between 1000 and 900000'
+    )
+  }
+  if (hasVerificationRunnerUrl) {
+    let verificationRunnerUrl: URL | null = null
+    try {
+      verificationRunnerUrl = new URL(configuration.FIX_VERIFICATION_RUNNER_URL)
+    } catch {
+      verificationRunnerUrl = null
+    }
+    if (
+      !verificationRunnerUrl ||
+      !/^https?:$/.test(verificationRunnerUrl.protocol) ||
+      Boolean(
+        verificationRunnerUrl.username ||
+          verificationRunnerUrl.password ||
+          verificationRunnerUrl.search ||
+          verificationRunnerUrl.hash
+      ) ||
+      (configuration.NODE_ENV === 'production' &&
+        (verificationRunnerUrl.protocol !== 'https:' ||
+          isLocalAddress(configuration.FIX_VERIFICATION_RUNNER_URL)))
+    ) {
+      configurationErrors.push(
+        'FIX_VERIFICATION_RUNNER_URL must be a valid HTTPS URL in production without credentials, query, or fragment'
+      )
+    }
+    if (
+      configuration.FIX_VERIFICATION_RUNNER_TOKEN.length < 32 ||
+      isPlaceholderSecret(configuration.FIX_VERIFICATION_RUNNER_TOKEN)
+    ) {
+      configurationErrors.push(
+        'FIX_VERIFICATION_RUNNER_TOKEN must be a non-placeholder secret of at least 32 characters'
+      )
+    }
   }
 
   if (!/^postgres(?:ql)?:\/\//i.test(configuration.DATABASE_URL)) {

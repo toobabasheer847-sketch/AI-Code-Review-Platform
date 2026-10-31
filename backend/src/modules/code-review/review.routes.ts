@@ -14,6 +14,17 @@ router.get('/analytics', authMiddleware, (req, res) =>
   analyticsController.get(req, res)
 )
 router.post('/start', authMiddleware, (req, res) => controller.startReview(req, res))
+router.get('/fix-verification-attempts', authMiddleware, (req, res) =>
+  controller.listFixVerifications(req, res)
+)
+router.get('/fix-verification-attempts/:attemptId', authMiddleware, (req, res) =>
+  controller.getFixVerificationEvidence(req, res)
+)
+router.post(
+  '/fix-verification-attempts/:attemptId/review-decision',
+  authMiddleware,
+  (req, res) => controller.submitFixVerificationReview(req, res)
+)
 router.post('/:id/findings/:findingId/test-suggestions', authMiddleware, (req, res) =>
   testGenerationController.generateForFinding(req, res)
 )

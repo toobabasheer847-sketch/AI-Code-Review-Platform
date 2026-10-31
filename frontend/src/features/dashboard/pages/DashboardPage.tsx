@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query'
 import {
   Activity,
   ArrowRight,
@@ -20,7 +21,7 @@ import { AutomationShell } from '@/features/automation/components/AutomationShel
 import { DashboardMetricCard } from '@/features/automation/components/DashboardMetricCard'
 import { useAutomations } from '@/features/automation/hooks/useAutomations'
 import { ConnectGitHubButton } from '@/features/github/components/ConnectGitHubButton'
-import type { ReviewSummary } from '@/features/reviews/api/reviewApi'
+import { reviewApi, type ReviewSummary } from '@/features/reviews/api/reviewApi'
 import { useListReviews } from '@/features/reviews/hooks/useReviews'
 
 function RecentReview({ review }: { review: ReviewSummary }): JSX.Element {
@@ -57,6 +58,10 @@ export const DashboardPage = (): JSX.Element => {
   const justConnected = searchParams.get('connected') === 'true'
   const automations = useAutomations()
   const reviews = useListReviews()
+  const verifications = useQuery({
+    queryKey: ['fix-verifications'],
+    queryFn: () => reviewApi.listFixVerifications(),
+  })
   const [goal, setGoal] = useState('')
   const [mode, setMode] = useState<AutomationMode>('APPROVAL_REQUIRED')
   const [formError, setFormError] = useState<string | null>(null)
@@ -155,6 +160,44 @@ export const DashboardPage = (): JSX.Element => {
           tone="bg-rose-400/10 text-rose-300"
         />
       </div>
+
+      <section className="mt-5 rounded-xl border border-white/[0.07] bg-[#0e121b] p-4 sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-200">AI fix verification</h3>
+            <p className="mt-1 text-[10px] text-slate-600">
+              Real execution evidence is required before a fix can be verified.
+            </p>
+          </div>
+          <Link
+            to="/verifications"
+            className="inline-flex items-center gap-1 text-[10px] font-medium text-indigo-300 hover:text-indigo-200"
+          >
+            View evidence <ArrowRight className="h-3 w-3" aria-hidden="true" />
+          </Link>
+        </div>
+        {verifications.isError ? (
+          <p className="mt-3 text-xs text-rose-300" role="alert">
+            Unable to load verification totals.
+          </p>
+        ) : (
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {[
+              ['Total runs', verifications.data?.total],
+              ['Verified', verifications.data?.verified],
+              ['Failed', verifications.data?.failed],
+              ['Needs review', verifications.data?.needsReview],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-lg border border-white/[0.05] px-3 py-2">
+                <p className="text-[10px] text-slate-500">{label}</p>
+                <p className="mt-1 text-lg font-semibold text-slate-200">
+                  {verifications.isLoading ? '—' : value ?? 0}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.8fr)]">
         <div>
