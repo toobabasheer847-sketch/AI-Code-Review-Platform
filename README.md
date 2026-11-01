@@ -1,7 +1,7 @@
 # AI-CodeGuard - AI Code Review Platform
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Node.js](https://img.shields.io/badge/node.js-18%2B-green.svg)
+![Node.js](https://img.shields.io/badge/node.js-20%2B-green.svg)
 ![TypeScript](https://img.shields.io/badge/typescript-5.3%2B-blue.svg)
 
 AI-CodeGuard is a full-stack application for AI-assisted code review with GitHub integration, background processing, and optional subscription billing.
@@ -80,8 +80,8 @@ AI-CodeGuard/
 
 ### Prerequisites
 
-- Node.js >= 18.0.0
-- npm >= 9.0.0
+- Node.js >= 20.0.0
+- npm >= 10.0.0
 - PostgreSQL 15+
 - Redis 7+
 - Docker & Docker Compose (optional)

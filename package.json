@@ -17,6 +17,16 @@
     "test": "npm run test --workspace=backend",
     "prepare": "husky install"
   },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  },
+  "overrides": {
+    "body-parser": "1.20.9",
+    "fast-uri": "3.1.9",
+    "follow-redirects": "1.16.2",
+    "postcss-selector-parser": "6.1.5"
+  },
   "devDependencies": {
     "@commitlint/config-conventional": "^18.4.0",
     "@typescript-eslint/parser": "^7.18.0",
