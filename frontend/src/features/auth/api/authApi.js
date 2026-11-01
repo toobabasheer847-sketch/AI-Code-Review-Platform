@@ -4,6 +4,10 @@
  */
 import { axiosInstance } from '@/lib/axios';
 export const authApi = {
+    getCsrfToken: async () => {
+        const response = await axiosInstance.get('/auth/csrf');
+        return response.data;
+    },
     register: async (payload) => {
         const response = await axiosInstance.post('/auth/register', payload);
         return response.data;
@@ -19,8 +23,8 @@ export const authApi = {
     logout: async () => {
         await axiosInstance.post('/auth/logout');
     },
-    verifyEmail: async (token) => {
-        const response = await axiosInstance.post('/auth/verify-email', { token });
+    verifyEmail: async (email, otp) => {
+        const response = await axiosInstance.post('/auth/verify-email', { email, otp });
         return response.data;
     },
     resendVerificationEmail: async () => {
@@ -29,6 +33,10 @@ export const authApi = {
     },
     requestPasswordReset: async (email) => {
         const response = await axiosInstance.post('/auth/password-reset/request', { email });
+        return response.data;
+    },
+    requestEmailVerification: async (email) => {
+        const response = await axiosInstance.post('/auth/verification-email/request', { email });
         return response.data;
     },
     resetPassword: async (token, password) => {

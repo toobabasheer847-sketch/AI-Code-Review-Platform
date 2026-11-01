@@ -56,8 +56,6 @@ function getAuthErrorMessage(error: unknown, fallback: string): string {
  * Hook for user registration
  */
 export const useRegister = (): UseMutationResult<RegisterResponse, Error, RegisterPayload> => {
-  const setUser = useAppStore((state) => state.setUser)
-  const setToken = useAppStore((state) => state.setToken)
   const setIsLoading = useAppStore((state) => state.setIsLoading)
   const setError = useAppStore((state) => state.setError)
 
@@ -70,11 +68,7 @@ export const useRegister = (): UseMutationResult<RegisterResponse, Error, Regist
         setIsLoading(false)
       }
     },
-    onSuccess: () => {
-      setToken(null)
-      setUser(null)
-      setError(null)
-    },
+    onSuccess: () => setError(null),
     onError: (error: Error) => {
       setError(getAuthErrorMessage(error, 'Registration failed. Please try again.'))
     },
@@ -87,7 +81,6 @@ export const useRegister = (): UseMutationResult<RegisterResponse, Error, Regist
 export const useLogin = (): UseMutationResult<AuthResponse, Error, LoginPayload> => {
   const queryClient = useQueryClient()
   const setUser = useAppStore((state) => state.setUser)
-  const setToken = useAppStore((state) => state.setToken)
   const setIsLoading = useAppStore((state) => state.setIsLoading)
   const setError = useAppStore((state) => state.setError)
 
@@ -101,7 +94,7 @@ export const useLogin = (): UseMutationResult<AuthResponse, Error, LoginPayload>
       }
     },
     onSuccess: (data: AuthResponse) => {
-      setToken(data.token)
+      queryClient.removeQueries()
       setUser(data.user)
       queryClient.setQueryData(['me'], data.user)
       setError(null)
@@ -116,7 +109,6 @@ export const useLogin = (): UseMutationResult<AuthResponse, Error, LoginPayload>
  * Hook for fetching current user (protected)
  */
 export const useMe = (): UseQueryResult<UserResponse['user'], Error> => {
-  const token = useAppStore((state) => state.token)
   const setUser = useAppStore((state) => state.setUser)
 
   return useQuery({
@@ -126,7 +118,7 @@ export const useMe = (): UseQueryResult<UserResponse['user'], Error> => {
       setUser(response.user)
       return response.user
     },
-    enabled: !!token,
+    enabled: true,
     staleTime: 5 * 60 * 1000, // 5 minutes
   })
 }

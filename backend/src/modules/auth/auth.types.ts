@@ -10,7 +10,7 @@ export interface UserResponse {
   updatedAt: Date
 }
 
-export interface AuthResponse {
+export interface LoginResult {
   token: string
   user: UserResponse
 }

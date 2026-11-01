@@ -2,6 +2,8 @@ import { Request, Response, NextFunction } from 'express'
 import { verifyToken } from '@/utils/jwt'
 import type { JWTPayload } from '@/types'
 import { prisma } from '@/config/database'
+import { clearSessionCookies, readCookie } from '@/modules/auth/auth-session'
+import { env } from '@/config/env'
 
 export function isTokenVersionCurrent(
   payload: JWTPayload,
@@ -44,15 +46,15 @@ export function createAuthMiddleware(
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     let decoded: JWTPayload
     try {
-      const authHeader = req.headers.authorization
-      if (!authHeader?.startsWith('Bearer ')) {
-        res.status(401).json({ error: 'Missing or invalid authorization header' })
+      const token = readCookie(req, env.AUTH_SESSION_COOKIE_NAME)
+      if (!token) {
+        res.status(401).json({ error: 'Missing or invalid session' })
         return
       }
 
-      const token = authHeader.substring(7)
       decoded = verifyToken(token)
     } catch {
+      clearSessionCookies(res)
       res.status(401).json({ error: 'Invalid token' })
       return
     }
@@ -63,6 +65,7 @@ export function createAuthMiddleware(
         authState === null ||
         !isTokenVersionCurrent(decoded, authState.tokenVersion)
       ) {
+        clearSessionCookies(res)
         res.status(401).json({ error: 'Invalid or revoked token' })
         return
       }

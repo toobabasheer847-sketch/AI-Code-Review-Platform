@@ -1,11 +1,12 @@
 import express, { Express } from 'express'
-import cors from 'cors'
 import helmet from 'helmet'
 import pinoHttp from 'pino-http'
 import rateLimit from 'express-rate-limit'
 import { env } from '@/config/env'
 import logger from '@/utils/logger'
 import { errorMiddleware } from '@/middleware/error.middleware'
+import { apiSecurityMiddleware } from '@/middleware/api-security.middleware'
+import { corsMiddleware } from '@/middleware/cors.middleware'
 import { createApiRoutes } from '@/routes'
 import { prisma } from '@/config/database'
 import { redis } from '@/config/redis'
@@ -37,10 +38,7 @@ export const createApp = (): Express => {
   app.set('trust proxy', 1)
 
   app.use(helmet())
-  app.use(cors({
-    origin: env.FRONTEND_URL,
-    credentials: true,
-  }))
+  app.use(corsMiddleware)
 
   app.use(
     pinoHttp({
@@ -64,6 +62,7 @@ export const createApp = (): Express => {
   app.use('/api/', limiter)
   app.use('/api/auth/login', authLimiter)
   app.use('/api/auth/register', authLimiter)
+  app.use('/api', apiSecurityMiddleware)
 
   app.get('/health', async (_req, res) => {
     try {

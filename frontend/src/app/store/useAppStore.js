@@ -1,9 +1,8 @@
 import Cookies from 'js-cookie';
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+
 const initialState = {
     user: null,
-    token: null,
     isAuthenticated: false,
     isLoading: false,
     error: null,
@@ -11,40 +10,60 @@ const initialState = {
     githubUsername: null,
     selectedPlan: null,
 };
-export const useAppStore = create()(persist((set) => ({
+const SESSION_INVALIDATION_KEY = 'ai-codeguard-session-invalidated';
+const SESSION_CHANNEL_NAME = 'ai-codeguard-session';
+
+if (typeof window !== 'undefined') {
+    try {
+        window.localStorage.removeItem('app-store');
+        window.localStorage.removeItem('auth-store');
+    }
+    catch {
+        console.warn('Unable to clear legacy authentication state from browser storage');
+    }
+    try {
+        const cookieOptions = { secure: window.location.protocol === 'https:' };
+        Cookies.remove('token', cookieOptions);
+        Cookies.remove('token', { ...cookieOptions, path: '/' });
+    }
+    catch {
+        console.warn('Unable to clear the legacy readable authentication cookie');
+    }
+}
+
+export const useAppStore = create((set) => ({
     ...initialState,
     setSelectedPlan: (selectedPlan) => set({ selectedPlan }),
     setUser: (user) => set({ user, isAuthenticated: !!user }),
-    setToken: (token) => {
-        if (token) {
-            Cookies.set('token', token, {
-                expires: 7,
-                secure: window.location.protocol === 'https:',
-                sameSite: 'strict',
-            });
-        }
-        else {
-            Cookies.remove('token');
-        }
-        set({ token });
-    },
     setIsLoading: (isLoading) => set({ isLoading }),
     setError: (error) => set({ error }),
     setGitHubConnected: (githubConnected) => set({ githubConnected }),
     setGitHubUsername: (githubUsername) => set({ githubUsername }),
     logout: () => {
-        Cookies.remove('token');
         set(initialState);
+        if (typeof BroadcastChannel !== 'undefined') {
+            const channel = new BroadcastChannel(SESSION_CHANNEL_NAME);
+            channel.postMessage('invalidated');
+            channel.close();
+        }
+        try {
+            window.localStorage.setItem(SESSION_INVALIDATION_KEY, String(Date.now()));
+        }
+        catch {
+            // BroadcastChannel still synchronizes tabs when storage is unavailable.
+        }
     },
     reset: () => set(initialState),
-}), {
-    name: 'app-store',
-    partialize: (state) => ({
-        user: state.user,
-        token: state.token,
-        isAuthenticated: state.isAuthenticated,
-        githubConnected: state.githubConnected,
-        githubUsername: state.githubUsername,
-        selectedPlan: state.selectedPlan,
-    }),
 }));
+
+if (typeof window !== 'undefined') {
+    if (typeof BroadcastChannel !== 'undefined') {
+        const channel = new BroadcastChannel(SESSION_CHANNEL_NAME);
+        channel.onmessage = (event) => {
+            if (event.data === 'invalidated') useAppStore.setState(initialState);
+        };
+    }
+    window.addEventListener('storage', (event) => {
+        if (event.key === SESSION_INVALIDATION_KEY) useAppStore.setState(initialState);
+    });
+}

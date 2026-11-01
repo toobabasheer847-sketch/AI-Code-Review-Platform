@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 
 import { useAppStore } from '@/app/store/useAppStore'
+import { queryClient } from '@/lib/queryClient'
 
 import { authApi } from '../api/authApi'
 
@@ -81,6 +82,8 @@ export const AccountActionPage = ({
         const result = await authApi.resetPassword(token, password)
         setMessage(result.message)
         if (result.message.startsWith('Password reset successfully')) {
+          useAppStore.getState().logout()
+          queryClient.clear()
           navigate('/login', { replace: true })
         }
       }

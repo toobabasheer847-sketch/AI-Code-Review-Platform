@@ -361,8 +361,18 @@ Email verification is required to sign in. If the code does not arrive, use
 the sign-in page's resend option to queue a replacement code. Queue acceptance
 does not prove that SMTP delivered it.
 `POST /api/auth/logout` increments the user's token version, invalidating
-existing bearer tokens; middleware checks that version and account existence on
-each authenticated request. Password reset also invalidates existing tokens.
+server-managed HttpOnly session cookies; middleware verifies the JWT expiry,
+token version, and account existence on each authenticated request. The browser
+does not receive or persist the JWT. `CSRF_SECRET` must be a unique random
+secret of at least 32 characters in production. Unsafe API requests require an
+exact `Origin` match for `FRONTEND_URL` and a signed CSRF token returned by
+`GET /api/auth/csrf`; signed GitHub and Stripe webhooks retain their provider
+signature checks. Cookies use `AUTH_COOKIE_SAME_SITE=lax` by default, which
+supports the current same-site frontend/API deployment (including sibling
+subdomains). If frontend and API are on different sites, set
+`AUTH_COOKIE_SAME_SITE=none`; production cookies are then Secure and HTTPS is
+required. CORS only trusts the single exact `FRONTEND_URL` origin. Password
+reset also invalidates all existing sessions by incrementing `tokenVersion`.
 
 `POST /api/auth/github/disconnect` removes the locally stored GitHub credential
 and attempts provider revocation using `GITHUB_CLIENT_ID` and

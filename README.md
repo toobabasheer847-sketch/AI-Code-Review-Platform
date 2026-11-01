@@ -17,7 +17,7 @@ AI-CodeGuard is a full-stack application for AI-assisted code review with GitHub
 - **Background Jobs**: BullMQ for async processing of reviews and emails
 - **Automation MVP**: Approval-gated plans with persisted task status and safe text-draft execution
 - **Real-time Analytics**: Dashboard with comprehensive insights
-- **Security controls**: JWT authentication, encrypted provider credentials, CORS, and Helmet
+- **Security controls**: server-managed HttpOnly JWT sessions, signed CSRF tokens, encrypted provider credentials, explicit-origin CORS, and Helmet
 - **Multi-language Support**: Support for various programming languages
 - **Email Notifications**: Nodemailer integration for alerts and notifications
 - **Redis Caching**: High-performance caching layer

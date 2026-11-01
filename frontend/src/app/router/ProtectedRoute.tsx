@@ -15,7 +15,7 @@ interface ProtectedRouteProps {
 }
 
 export const ProtectedRoute = ({ children }: ProtectedRouteProps): JSX.Element => {
-  const { isAuthenticated, isLoading, token, user, logout } = useAppStore()
+  const { isAuthenticated, isLoading, user, logout } = useAppStore()
   const { isLoading: isCheckingSession, error: sessionError } = useMe()
   const location = useLocation()
   const sessionStatus = isAxiosError(sessionError) ? sessionError.response?.status : undefined
@@ -27,7 +27,7 @@ export const ProtectedRoute = ({ children }: ProtectedRouteProps): JSX.Element =
     }
   }, [logout, sessionStatus])
 
-  if (isLoading || (isAuthenticated && token && isCheckingSession)) {
+  if (isLoading || isCheckingSession) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-950">
         <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-indigo-500"></div>
@@ -45,7 +45,7 @@ export const ProtectedRoute = ({ children }: ProtectedRouteProps): JSX.Element =
     return <Navigate to={`/login?returnUrl=${returnUrl}`} replace />
   }
 
-  if (!isAuthenticated || !token) {
+  if (!isAuthenticated) {
     const returnUrl = encodeURIComponent(location.pathname + location.search)
     return <Navigate to={`/login?returnUrl=${returnUrl}`} replace />
   }

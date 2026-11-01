@@ -13,7 +13,7 @@ user-owned and has no organization, workspace, membership, or role models.
 | Priority | Finding | Required release action |
 | --- | --- | --- |
 | Blocker | There is no organization/workspace membership or role-based access model. Ownership is by individual `userId`; there is no tenant administrator or member lifecycle. | Decide the intended tenancy model, then implement and test tenant-scoped access across APIs, database relations, jobs, approvals, schedules, files, billing, and provider credentials before selling team/organization plans. |
-| High | Authentication tokens are exposed to browser JavaScript (the client persists the bearer token and also writes a JavaScript-readable cookie). | Migrate to a server-set `HttpOnly`, `Secure`, appropriately `SameSite` session cookie or document and independently validate a compensating threat model before launch. Assess CSRF and cross-origin behavior as part of that change. |
+| High | Browser-readable JWT storage was identified in the pre-redesign audit. The application now uses an HttpOnly session cookie, signed CSRF token, and exact-origin validation in source. | Verify production `CSRF_SECRET`, cookie SameSite/HTTPS settings, deployed frontend/API origins, OAuth callbacks, and browser behavior in staging before launch. |
 | High | Express rate limits use process-local memory stores. Limits do not aggregate across replicas or survive restarts. `trust proxy` is fixed to one hop. | Put a shared rate-limit store or enforce equivalent limits at a trusted gateway/WAF. Verify the exact proxy chain and spoofed forwarding-header behavior in the deployment topology. |
 | High | The latest full-tree `npm audit` reports 51 advisories: 41 high and 10 moderate (0 critical); it exits nonzero. Some proposed remediations require major upgrades (notably Nodemailer, React Router, Vite, Tailwind, Jest, and ESLint tooling). Nodemailer's proposed fix requires Node 20, while the backend package still advertises Node 18 support. | Review current `npm audit` output, prioritize reachable production packages, align the supported Node version, upgrade with compatibility tests, and record any temporary risk acceptance. CI currently fails the audit gate only for critical advisories. |
 | High | The scheduler, API, and BullMQ workers are started by the same server process. Production multi-replica behavior, Redis persistence/HA, queue recovery, and graceful drain have not been independently validated. | Define the supported replica topology, Redis durability/monitoring, worker shutdown policy, and recovery SLOs; conduct restart, failover, and duplicate-side-effect tests in a staging environment. |
@@ -63,11 +63,13 @@ Required production backend settings:
 | `DATABASE_URL` | Managed PostgreSQL URL; use TLS and a least-privilege application role. |
 | `REDIS_URL` | Managed Redis URL; use TLS (`rediss://`) and persistence/availability appropriate to the queue recovery policy. |
 | `JWT_SECRET` | Unique random secret of at least 32 characters. Do not reuse the encryption key. |
+| `CSRF_SECRET` | Independent random secret of at least 32 characters; signs short-lived CSRF tokens. |
+| `AUTH_COOKIE_SAME_SITE` | `lax` for same-site frontend/API origins (default); use `none` only for cross-site HTTPS deployments. |
 | `GITHUB_TOKEN_ENCRYPTION_KEY` | Independent random secret of at least 32 characters. Preserve the previous key during a planned rotation until stored tokens have been re-encrypted. |
 | `OPENAI_API_KEY` | Server-side AI provider credential. |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_WEBHOOK_SECRET`, `GITHUB_CALLBACK_URL` | GitHub OAuth/webhook configuration. Register the callback URL exactly as deployed. |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRO_PRICE_ID` | Stripe credentials, signing secret, and allowed Pro price. Production startup validation requires all three. |
-| `FRONTEND_URL` | Public frontend origin only (no path, query, or fragment); used for CORS and redirects. |
+| `FRONTEND_URL` | Exact public frontend origin only (no path, query, or fragment); used as the sole trusted CORS and mutation Origin. |
 
 Email verification and notifications require a working SMTP setup:
 `MAIL_HOST`, `MAIL_PORT`, `MAIL_USER`, `MAIL_PASSWORD`, and `MAIL_FROM`.

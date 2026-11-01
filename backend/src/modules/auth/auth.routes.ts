@@ -21,6 +21,7 @@ export const verificationAttemptLimiter = rateLimit({
 })
 
 // Public routes
+router.get('/csrf', (req, res) => authController.getCsrfToken(req, res))
 router.post('/register', (req, res) => authController.register(req, res))
 router.post('/login', (req, res) => authController.login(req, res))
 router.post('/verification-email/request', accountActionLimiter, (req, res) =>

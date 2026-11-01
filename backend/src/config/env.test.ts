@@ -18,6 +18,9 @@ function productionConfiguration(): typeof env {
     PORT: 3001,
     DATABASE_URL: 'postgresql://app:password@db.example.test:5432/app',
     JWT_SECRET: 'j'.repeat(48),
+    CSRF_SECRET: 'c'.repeat(48),
+    AUTH_COOKIE_SAME_SITE: 'lax',
+    AUTH_SESSION_COOKIE_NAME: '__Host-ai-codeguard-session',
     GITHUB_TOKEN_ENCRYPTION_KEY: 'k'.repeat(48),
     GITHUB_TOKEN_ENCRYPTION_KEY_PREVIOUS: '',
     EMAIL_OTP_SECRET: 'm'.repeat(48),
@@ -39,6 +42,20 @@ function productionConfiguration(): typeof env {
 
 test('accepts production configuration with HTTPS origins and TLS Redis', () => {
   assert.doesNotThrow(() => validateEnvironment(productionConfiguration()))
+})
+
+test('requires an independent CSRF secret and explicit supported cookie SameSite policy', () => {
+  const sharedCsrfSecret = productionConfiguration()
+  sharedCsrfSecret.CSRF_SECRET = sharedCsrfSecret.JWT_SECRET
+  assert.throws(() => validateEnvironment(sharedCsrfSecret), /CSRF_SECRET must be an independent/)
+
+  const invalidSameSite = productionConfiguration()
+  invalidSameSite.AUTH_COOKIE_SAME_SITE = 'invalid'
+  assert.throws(() => validateEnvironment(invalidSameSite), /AUTH_COOKIE_SAME_SITE/)
+
+  const crossSiteDeployment = productionConfiguration()
+  crossSiteDeployment.AUTH_COOKIE_SAME_SITE = 'none'
+  assert.doesNotThrow(() => validateEnvironment(crossSiteDeployment))
 })
 
 test('requires a protected, bounded remote verification runner configuration', () => {

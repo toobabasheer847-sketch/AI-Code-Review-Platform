@@ -19,6 +19,26 @@ import {
   resetPasswordSchema,
   verifyEmailSchema,
 } from './auth.validation'
+import {
+  CSRF_TOKEN_TTL_MS,
+  clearSessionCookies,
+  createCsrfToken,
+  setSessionCookie,
+} from './auth-session'
+
+export type AuthControllerService = Pick<
+  AuthService,
+  | 'register'
+  | 'login'
+  | 'getCurrentUser'
+  | 'logout'
+  | 'resendVerificationEmail'
+  | 'requestEmailVerification'
+  | 'verifyEmail'
+  | 'requestPasswordReset'
+  | 'resetPassword'
+  | 'deleteAccount'
+>
 
 function statusFor(error: unknown): number {
   if (error instanceof ZodError) return 400
@@ -39,7 +59,13 @@ function statusFor(error: unknown): number {
 }
 
 export class AuthController {
-  constructor(private readonly authService = new AuthService()) {}
+  constructor(private readonly authService: AuthControllerService = new AuthService()) {}
+
+  getCsrfToken(_req: Request, res: Response): void {
+    const csrfToken = createCsrfToken()
+    res.setHeader('Cache-Control', 'no-store')
+    res.json({ csrfToken, expiresInMs: CSRF_TOKEN_TTL_MS })
+  }
 
   async register(req: Request, res: Response): Promise<void> {
     try {
@@ -63,7 +89,10 @@ export class AuthController {
   async login(req: Request, res: Response): Promise<void> {
     try {
       const input = loginSchema.parse(req.body)
-      res.json(await this.authService.login(input))
+      const result = await this.authService.login(input)
+      setSessionCookie(res, result.token)
+      res.setHeader('Cache-Control', 'no-store')
+      res.json({ user: result.user })
     } catch (error) {
       const status = statusFor(error)
       res.status(status).json({
@@ -123,6 +152,7 @@ export class AuthController {
     }
     try {
       await this.authService.logout(req.user.userId)
+      clearSessionCookies(res)
       res.json({ message: 'Logged out successfully. Existing sessions have been revoked.' })
     } catch {
       res.status(500).json({ error: 'Unable to revoke sessions' })
@@ -188,6 +218,7 @@ export class AuthController {
     try {
       const { token, password } = resetPasswordSchema.parse(req.body)
       const reset = await this.authService.resetPassword(token, password)
+      if (reset) clearSessionCookies(res)
       res.status(reset ? 200 : 400).json({
         message: reset ? 'Password reset successfully. Sign in again.' : 'Invalid or expired reset link.',
       })
@@ -208,6 +239,7 @@ export class AuthController {
         input.password,
         input.confirmation
       )
+      clearSessionCookies(res)
       res.json({
         message: 'Account deleted. Locally stored account data and provider credentials were removed.',
         providerRevoked: result.providerRevoked,

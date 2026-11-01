@@ -2,20 +2,22 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '@/app/store/useAppStore';
+import { useMe } from '@/features/auth/hooks/useAuth';
 import { getBillingErrorMessage } from '../api/billingApi';
 import { useCreateCheckout } from '../hooks/useBilling';
 export const UpgradeButton = ({ priceId, children }) => {
     const createCheckout = useCreateCheckout();
-    const token = useAppStore((s) => s.token);
+    const isAuthenticated = useAppStore((s) => s.isAuthenticated);
+    const { isLoading: isCheckingSession } = useMe();
     const navigate = useNavigate();
     const [errorMessage, setErrorMessage] = useState('');
-    const isDisabled = !priceId;
+    const isDisabled = !priceId || isCheckingSession || createCheckout.isPending;
     const handleClick = async () => {
         if (!priceId) {
             setErrorMessage('Pro checkout is not configured. Please contact support.');
             return;
         }
-        if (!token) {
+        if (!isAuthenticated) {
             navigate('/login?plan=pro&returnUrl=/pricing');
             return;
         }

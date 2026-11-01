@@ -17,7 +17,6 @@ export interface LoginPayload {
 }
 
 export interface AuthResponse {
-  token: string
   user: {
     id: string
     email: string
@@ -29,6 +28,11 @@ export interface AuthResponse {
     createdAt: string
     updatedAt: string
   }
+}
+
+export interface CsrfResponse {
+  csrfToken: string
+  expiresInMs: number
 }
 
 export interface RegisterResponse {
@@ -58,6 +62,11 @@ export interface VerifyEmailResponse {
 }
 
 export const authApi = {
+  getCsrfToken: async (): Promise<CsrfResponse> => {
+    const response = await axiosInstance.get<CsrfResponse>('/auth/csrf')
+    return response.data
+  },
+
   register: async (payload: RegisterPayload): Promise<RegisterResponse> => {
     const response = await axiosInstance.post<RegisterResponse>('/auth/register', payload)
     return response.data

@@ -10,7 +10,7 @@ import { encryptVerificationOtp } from '@/modules/email/verification-otp.crypto'
 import { getSafeMailErrorDetails } from '@/modules/email/mail.service'
 import { GitHubService } from '@/modules/github/github.service'
 import type { LoginInput, RegisterInput } from './auth.validation'
-import type { AuthResponse, UserResponse } from './auth.types'
+import type { LoginResult, UserResponse } from './auth.types'
 import {
   ActiveSubscriptionError,
   authStore,
@@ -232,7 +232,7 @@ export class AuthService {
     }
   }
 
-  async login(input: LoginInput): Promise<AuthResponse> {
+  async login(input: LoginInput): Promise<LoginResult> {
     const user = await this.store.findUserByEmail(input.email)
     if (!user || !(await comparePassword(input.password, user.passwordHash))) {
       throw new InvalidCredentialsError()

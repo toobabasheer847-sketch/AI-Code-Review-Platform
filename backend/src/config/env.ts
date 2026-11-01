@@ -15,6 +15,16 @@ const githubTokenEncryptionKey =
 const emailOtpSecret =
   process.env.EMAIL_OTP_SECRET ||
   (nodeEnv === 'production' ? '' : 'local-development-email-otp-secret')
+type AuthCookieSameSite = 'lax' | 'strict' | 'none'
+
+function isAuthCookieSameSite(value: string): value is AuthCookieSameSite {
+  return value === 'lax' || value === 'strict' || value === 'none'
+}
+
+const authCookieSameSite = (process.env.AUTH_COOKIE_SAME_SITE || 'lax').toLowerCase()
+if (!isAuthCookieSameSite(authCookieSameSite)) {
+  throw new Error('AUTH_COOKIE_SAME_SITE must be lax, strict, or none')
+}
 
 export function resolveRedisUrl(
   processEnvironmentUrl = process.env.REDIS_URL,
@@ -42,6 +52,12 @@ export const env = {
   DATABASE_URL: process.env.DATABASE_URL || '',
   JWT_SECRET: jwtSecret,
   JWT_EXPIRY: process.env.JWT_EXPIRY || '7d',
+  CSRF_SECRET:
+    process.env.CSRF_SECRET ||
+    (nodeEnv === 'production' ? '' : 'local-development-csrf-secret'),
+  AUTH_COOKIE_SAME_SITE: authCookieSameSite,
+  AUTH_SESSION_COOKIE_NAME:
+    nodeEnv === 'production' ? '__Host-ai-codeguard-session' : 'ai-codeguard-session',
   GITHUB_TOKEN_ENCRYPTION_KEY: githubTokenEncryptionKey,
   GITHUB_TOKEN_ENCRYPTION_KEY_PREVIOUS: process.env.GITHUB_TOKEN_ENCRYPTION_KEY_PREVIOUS || '',
   EMAIL_OTP_SECRET: emailOtpSecret,
@@ -146,8 +162,20 @@ export function validateEnvironment(configuration: typeof env): void {
   if (!/^postgres(?:ql)?:\/\//i.test(configuration.DATABASE_URL)) {
     configurationErrors.push('DATABASE_URL must be a PostgreSQL connection URL')
   }
+  if (!/^[1-9]\d*[smhdw]$/.test(configuration.JWT_EXPIRY)) {
+    configurationErrors.push('JWT_EXPIRY must be a positive duration such as 15m or 7d')
+  }
+  if (!isAuthCookieSameSite(configuration.AUTH_COOKIE_SAME_SITE)) {
+    configurationErrors.push('AUTH_COOKIE_SAME_SITE must be lax, strict, or none')
+  }
 
   if (configuration.NODE_ENV !== 'production') {
+    if (
+      configuration.AUTH_COOKIE_SAME_SITE === 'none' &&
+      configuration.NODE_ENV !== 'production'
+    ) {
+      configurationErrors.push('AUTH_COOKIE_SAME_SITE=none requires production Secure cookies')
+    }
     if (configurationErrors.length > 0) {
       throw new Error(`Invalid environment configuration: ${configurationErrors.join('; ')}`)
     }
@@ -228,6 +256,15 @@ export function validateEnvironment(configuration: typeof env): void {
 
   if (configuration.JWT_SECRET.length < 32 || isPlaceholderSecret(configuration.JWT_SECRET)) {
     configurationErrors.push('JWT_SECRET must be a unique, non-placeholder secret of at least 32 characters')
+  }
+  if (
+    configuration.CSRF_SECRET.length < 32 ||
+    configuration.CSRF_SECRET === configuration.JWT_SECRET ||
+    configuration.CSRF_SECRET === configuration.GITHUB_TOKEN_ENCRYPTION_KEY ||
+    configuration.CSRF_SECRET === configuration.EMAIL_OTP_SECRET ||
+    isPlaceholderSecret(configuration.CSRF_SECRET)
+  ) {
+    configurationErrors.push('CSRF_SECRET must be an independent, non-placeholder secret of at least 32 characters')
   }
 
   if (
