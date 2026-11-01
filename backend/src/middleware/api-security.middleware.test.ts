@@ -98,4 +98,8 @@ test('safe requests and signed provider webhook paths do not use browser CSRF ch
   assert.equal((await invoke({ method: 'GET' })).nextCalled, true)
   assert.equal((await invoke({ path: '/webhooks/github' })).nextCalled, true)
   assert.equal((await invoke({ path: '/billing/webhook' })).nextCalled, true)
+  assert.equal(
+    (await invoke({ path: '/reviews/internal/verification-callback' })).nextCalled,
+    true
+  )
 })

@@ -190,10 +190,25 @@ export const VerificationHistoryPage = (): JSX.Element => {
               <div>
                 <dt className="inline text-slate-500">Execution: </dt>
                 <dd className="inline">
-                  {run.executionDurationMs} ms
+                  {run.executionOccurred === false
+                    ? 'Did not run'
+                    : run.executionOccurred
+                      ? 'Ran'
+                      : 'Unknown'}
+                  {run.jobState ? ` · ${run.jobState.toLowerCase()}` : ''}
+                  {` · ${run.executionDurationMs} ms`}
                   {run.exitCode === null ? '' : ` · exit ${run.exitCode}`}
                 </dd>
               </div>
+              {run.runnerIdentity && (
+                <div>
+                  <dt className="inline text-slate-500">Runner: </dt>
+                  <dd className="inline">
+                    {run.runnerIdentity}
+                    {run.runnerVersion ? ` ${run.runnerVersion}` : ''}
+                  </dd>
+                </div>
+              )}
             </dl>
 
             {run.checkResults.length > 0 ? (

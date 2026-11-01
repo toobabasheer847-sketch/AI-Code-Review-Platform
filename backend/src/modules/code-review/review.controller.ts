@@ -4,6 +4,7 @@ import { ReviewNotFoundError, ReviewService } from './review.service'
 import { updateFindingStatusSchema } from './finding-lifecycle.domain'
 import { FindingLifecycleService } from './finding-lifecycle.service'
 import { FindingFeedbackService } from './finding-feedback.service'
+import { cancelOwnedVerification } from './fix-verification.job-store'
 import {
 	FixProposalService,
 	FixVerificationEvidenceService,
@@ -208,6 +209,23 @@ export class ReviewController {
 			res.json({ attempt })
 		} catch (error) {
 			respondWithError(error, res, 'Unable to verify this fix proposal.')
+		}
+	}
+
+	async cancelFixVerification(req: Request, res: Response): Promise<void> {
+		if (!req.user?.userId) {
+			res.status(401).json({ error: 'Unauthorized' })
+			return
+		}
+		try {
+			const attempt = await cancelOwnedVerification(req.user.userId, req.params.attemptId)
+			if (!attempt) {
+				res.status(404).json({ error: 'Verification attempt not found' })
+				return
+			}
+			res.json({ attempt })
+		} catch (error) {
+			respondWithError(error, res, 'Unable to cancel this verification.')
 		}
 	}
 

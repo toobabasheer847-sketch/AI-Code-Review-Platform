@@ -15,6 +15,7 @@ import { emailQueue } from '@/jobs/email.queue'
 import { automationQueue } from '@/modules/automation/automation.queue'
 import { getAutomationSchedulerHealth } from '@/modules/automation/automation.scheduler'
 import { socialQueue } from '@/modules/social/social.queue'
+import { fixVerificationQueue } from '@/jobs/fix-verification.queue'
 
 // Rate limiting middleware
 const limiter = rateLimit({
@@ -23,6 +24,8 @@ const limiter = rateLimit({
   message: 'Too many requests from this IP, please try again later',
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (request) =>
+    request.originalUrl.split('?')[0] === '/api/reviews/internal/verification-callback',
 })
 
 const authLimiter = rateLimit({
@@ -56,6 +59,10 @@ export const createApp = (): Express => {
   )
   app.use('/api/billing/webhook', express.raw({ type: 'application/json', limit: '1mb' }))
   app.use('/api/webhooks/github', express.raw({ type: 'application/json', limit: '1mb' }))
+  app.use(
+    '/api/reviews/internal/verification-callback',
+    express.raw({ type: 'application/json', limit: '128kb' })
+  )
   app.use(express.json({ limit: '10mb' }))
   app.use(express.urlencoded({ limit: '10mb', extended: true }))
 
@@ -68,12 +75,14 @@ export const createApp = (): Express => {
     try {
       await prisma.$queryRaw`SELECT 1`
       await redis.ping()
-      const [reviewJobs, emailJobs, automationJobs, socialJobs] = await Promise.all([
-        reviewQueue.getJobCounts('waiting', 'active', 'delayed', 'failed'),
-        emailQueue.getJobCounts('waiting', 'active', 'delayed', 'failed'),
-        automationQueue.getJobCounts('waiting', 'active', 'delayed', 'failed'),
-        socialQueue.getJobCounts('waiting', 'active', 'delayed', 'failed'),
-      ])
+      const [reviewJobs, emailJobs, automationJobs, socialJobs, verificationJobs] =
+        await Promise.all([
+          reviewQueue.getJobCounts('waiting', 'active', 'delayed', 'failed'),
+          emailQueue.getJobCounts('waiting', 'active', 'delayed', 'failed'),
+          automationQueue.getJobCounts('waiting', 'active', 'delayed', 'failed'),
+          socialQueue.getJobCounts('waiting', 'active', 'delayed', 'failed'),
+          fixVerificationQueue.getJobCounts('waiting', 'active', 'delayed', 'failed'),
+        ])
       const scheduler = getAutomationSchedulerHealth()
       const schedulerStatus = !scheduler.running
         ? 'starting'
@@ -98,6 +107,7 @@ export const createApp = (): Express => {
           email: emailJobs,
           automations: automationJobs,
           socialPublications: socialJobs,
+          fixVerification: verificationJobs,
         },
         scheduler,
       })

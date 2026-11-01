@@ -561,6 +561,7 @@ describe('finding lifecycle UI', () => {
       executionDurationMs: 0,
       exitCode: null,
       failureDetails: 'No isolated verification runner is configured.',
+      executionOccurred: false,
       humanReviewDecision: null,
       humanReviewNote: null,
       humanReviewedAt: null,
@@ -611,5 +612,6 @@ describe('finding lifecycle UI', () => {
     )
     expect(container.textContent).toContain('Needs review')
     expect(container.textContent).toContain('Tests not run')
+    expect(container.textContent).toContain('Repository tests were not executed.')
   })
 })

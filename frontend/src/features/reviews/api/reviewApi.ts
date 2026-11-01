@@ -77,6 +77,17 @@ export interface FixVerificationAttempt {
   startedAt: string
   completedAt: string | null
   sanitizedLogs: string | null
+  jobState?:
+    | 'QUEUED'
+    | 'RUNNING'
+    | 'PASSED'
+    | 'FAILED'
+    | 'TIMED_OUT'
+    | 'CANCELLED'
+    | 'NEEDS_REVIEW'
+  executionOccurred?: boolean
+  runnerIdentity?: string | null
+  runnerVersion?: string | null
 }
 
 export interface FixVerificationDashboardRun extends FixVerificationAttempt {
@@ -278,6 +289,15 @@ export const reviewApi = {
     const res = await axiosInstance.post<{ attempt: FixVerificationAttempt }>(
       `/reviews/fix-proposals/${proposalId}/verification-attempts`,
       input
+    )
+    return res.data
+  },
+
+  cancelFixVerification: async (
+    attemptId: string
+  ): Promise<{ attempt: FixVerificationAttempt }> => {
+    const res = await axiosInstance.post<{ attempt: FixVerificationAttempt }>(
+      `/reviews/fix-verification-attempts/${attemptId}/cancel`
     )
     return res.data
   },

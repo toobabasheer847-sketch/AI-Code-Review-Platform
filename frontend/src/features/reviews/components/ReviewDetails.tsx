@@ -113,6 +113,12 @@ function FindingLifecyclePanel({
       await queryClient.invalidateQueries({ queryKey: ['reviews', reviewId] })
     },
   })
+  const cancelVerification = useMutation({
+    mutationFn: (attemptId: string) => reviewApi.cancelFixVerification(attemptId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['reviews', reviewId] })
+    },
+  })
   const reviewVerification = useMutation({
     mutationFn: (attemptId: string) =>
       reviewApi.submitFixVerificationReview(attemptId, {
@@ -551,7 +557,27 @@ function FindingLifecyclePanel({
                       Proposal verification (does not mean applied):{' '}
                       {fixVerificationStatusLabels[attempt.status]} ·{' '}
                       {attempt.executionStatus}
+                      {attempt.jobState ? ` · job ${attempt.jobState.toLowerCase()}` : ''}
                     </p>
+                    {attempt.executionOccurred === false && (
+                      <p className="mt-1 text-amber-200">Repository tests were not executed.</p>
+                    )}
+                    {attempt.runnerIdentity && (
+                      <p className="mt-1 text-slate-500">
+                        Runner {attempt.runnerIdentity}
+                        {attempt.runnerVersion ? ` ${attempt.runnerVersion}` : ''}
+                      </p>
+                    )}
+                    {(attempt.jobState === 'QUEUED' || attempt.jobState === 'RUNNING') && (
+                      <button
+                        type="button"
+                        onClick={() => cancelVerification.mutate(attempt.id)}
+                        disabled={cancelVerification.isPending}
+                        className="mt-2 min-h-8 rounded-lg border border-slate-600 px-2 text-xs text-slate-300 hover:border-slate-500 disabled:opacity-50"
+                      >
+                        {cancelVerification.isPending ? 'Cancelling…' : 'Cancel verification'}
+                      </button>
+                    )}
                     <p className="mt-1 text-slate-400">
                       Tests{' '}
                       {attempt.testsPassed === null

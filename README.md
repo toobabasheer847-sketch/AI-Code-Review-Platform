@@ -424,9 +424,12 @@ secrets in frontend `VITE_*` variables.
 
 Fix verification execution is disabled unless `FIX_VERIFICATION_RUNNER_URL`
 and `FIX_VERIFICATION_RUNNER_TOKEN` point to a separately deployed isolated
-runner. Without it, attempts remain `NEEDS_REVIEW`; see
-[docs/fix-verification-engine.md](docs/fix-verification-engine.md) for the
-runner protocol and deployment safeguards.
+runner. The API enqueues that work and does not run repository code itself.
+Without a runner, attempts remain `NEEDS_REVIEW`. See
+[docs/fix-verification-engine.md](docs/fix-verification-engine.md) and
+[docs/verification-runner.md](docs/verification-runner.md). A queued or
+sandbox result is not a verified fix until the runner is deployed and the
+evidence rules pass.
 
 ### Stripe test-mode checkout and webhooks
 

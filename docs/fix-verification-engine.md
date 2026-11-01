@@ -53,8 +53,14 @@ idempotent `POST /v1/verification-runs` request with:
 - repository URL/name, branch, pull request number and expected commit SHA;
 - finding ID/title/severity/file and changed paths.
 
-The runner returns the result object directly, not an HTTP job descriptor. Its
-required fields have this shape:
+The API enqueues the attempt on the `fix-verification` BullMQ queue and returns
+the queued attempt. The worker dispatches `POST /v1/verification-runs` and
+accepts either a finished result or `202` with `executionOccurred: false`.
+Completion arrives through the signed callback or a poll of the same attempt.
+Deployment, isolation, and recovery are documented in
+[verification-runner.md](verification-runner.md).
+
+A finished result has this shape:
 
 ```json
 {
@@ -62,7 +68,7 @@ required fields have this shape:
   "attemptId": "<verification attempt ID>",
   "commitSha": "<checked-out commit SHA>",
   "executionStatus": "SUCCEEDED",
-  "testCommands": ["npm test"],
+  "testCommands": ["node --test"],
   "testsPassed": true,
   "originalIssueReproducedBefore": true,
   "originalIssueReproducedAfter": false,
@@ -70,7 +76,7 @@ required fields have this shape:
   "checkResults": [
     {
       "name": "TEST",
-      "command": "npm test",
+      "command": "node --test",
       "status": "PASSED",
       "exitCode": 0,
       "durationMs": 1200,
@@ -100,13 +106,13 @@ logs, and does not expose runner response bodies on errors. Do not point this
 configuration at an API process or a shared production host that executes
 repository scripts.
 
-The current API waits for the runner's single response, up to the configured
-timeout; it does not dispatch verification through BullMQ or expose cancellation.
-Configure the timeout below the API gateway's request deadline. If the API
-process stops mid-request, the persisted attempt can remain `RUNNING`; durable
-asynchronous dispatch/reconciliation is a remaining deployment limitation.
+The verification request returns after the job is queued. Cancellation is
+`POST /api/reviews/fix-verification-attempts/:attemptId/cancel`. A stale
+`RUNNING` attempt is reconciled to `NEEDS_REVIEW` unless the runner still has
+complete, bound evidence. Runner failures, timeouts, malformed responses, and
+`executionOccurred: false` do not become `VERIFIED`.
 
-Apply the additive Prisma migration with the existing deployment command:
+Apply the additive Prisma migrations with the existing deployment command:
 
 ```text
 npm run prisma:deploy --workspace=backend

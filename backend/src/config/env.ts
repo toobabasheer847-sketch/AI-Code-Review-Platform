@@ -72,6 +72,12 @@ export const env = {
   FIX_VERIFICATION_RUNNER_TIMEOUT_MS: process.env.FIX_VERIFICATION_RUNNER_TIMEOUT_MS
     ? Number(process.env.FIX_VERIFICATION_RUNNER_TIMEOUT_MS)
     : 300_000,
+  FIX_VERIFICATION_STALE_AFTER_MS: process.env.FIX_VERIFICATION_STALE_AFTER_MS
+    ? Number(process.env.FIX_VERIFICATION_STALE_AFTER_MS)
+    : 900_000,
+  FIX_VERIFICATION_MAX_DISPATCH_ATTEMPTS: process.env.FIX_VERIFICATION_MAX_DISPATCH_ATTEMPTS
+    ? Number(process.env.FIX_VERIFICATION_MAX_DISPATCH_ATTEMPTS)
+    : 3,
   LINKEDIN_CLIENT_ID: process.env.LINKEDIN_CLIENT_ID || '',
   LINKEDIN_CLIENT_SECRET: process.env.LINKEDIN_CLIENT_SECRET || '',
   LINKEDIN_CALLBACK_URL:
@@ -124,6 +130,22 @@ export function validateEnvironment(configuration: typeof env): void {
     configurationErrors.push(
       'FIX_VERIFICATION_RUNNER_TIMEOUT_MS must be between 1000 and 900000'
     )
+  }
+  if (
+    !Number.isSafeInteger(configuration.FIX_VERIFICATION_STALE_AFTER_MS) ||
+    configuration.FIX_VERIFICATION_STALE_AFTER_MS < 1_000 ||
+    configuration.FIX_VERIFICATION_STALE_AFTER_MS > 3_600_000
+  ) {
+    configurationErrors.push(
+      'FIX_VERIFICATION_STALE_AFTER_MS must be between 1000 and 3600000'
+    )
+  }
+  if (
+    !Number.isSafeInteger(configuration.FIX_VERIFICATION_MAX_DISPATCH_ATTEMPTS) ||
+    configuration.FIX_VERIFICATION_MAX_DISPATCH_ATTEMPTS < 1 ||
+    configuration.FIX_VERIFICATION_MAX_DISPATCH_ATTEMPTS > 5
+  ) {
+    configurationErrors.push('FIX_VERIFICATION_MAX_DISPATCH_ATTEMPTS must be between 1 and 5')
   }
   if (hasVerificationRunnerUrl) {
     let verificationRunnerUrl: URL | null = null

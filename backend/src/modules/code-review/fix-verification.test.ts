@@ -221,6 +221,14 @@ test('requires complete passing check evidence and issue-specific reproduction f
   )
   assert.equal(classifyVerificationResult(patchSha256, base.commitSha, base), 'VERIFIED')
   assert.equal(
+    classifyVerificationResult(patchSha256, base.commitSha, {
+      ...base,
+      executionOccurred: false,
+      testsPassed: true,
+    }),
+    'NEEDS_REVIEW'
+  )
+  assert.equal(
     classifyVerificationResult('different-patch-digest', base.commitSha, base),
     'NEEDS_REVIEW'
   )

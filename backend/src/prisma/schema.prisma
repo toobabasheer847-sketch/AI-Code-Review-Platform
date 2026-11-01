@@ -566,6 +566,16 @@ enum FixVerificationReviewDecision {
   NEEDS_MORE_EVIDENCE
 }
 
+enum FixVerificationJobState {
+  QUEUED
+  RUNNING
+  PASSED
+  FAILED
+  TIMED_OUT
+  CANCELLED
+  NEEDS_REVIEW
+}
+
 enum FindingVerificationStatus {
   AI_REPORTED
   VERIFIED
@@ -756,10 +766,19 @@ model FixVerificationAttempt {
   startedAt                     DateTime
   completedAt                   DateTime?
   sanitizedLogs                 String?                         @db.Text
+  jobState                      FixVerificationJobState         @default(NEEDS_REVIEW)
+  executionOccurred             Boolean                         @default(false)
+  runnerIdentity                String?
+  runnerVersion                 String?
+  retryCount                    Int                             @default(0)
+  cancelRequestedAt             DateTime?
+  runnerRunId                   String?
+  claimedAt                     DateTime?
   createdAt                     DateTime                        @default(now())
 
   @@unique([proposalId, requestKey])
   @@index([requestedById, createdAt])
+  @@index([jobState, claimedAt])
 }
 
 model ChatConversation {

@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { authMiddleware } from '@/middleware/auth.middleware'
+import { receiveVerificationCallback } from './fix-verification.callback'
 import { ReviewController } from './review.controller'
 import { ReviewAnalyticsController } from './review-analytics.controller'
 import { TestGenerationController } from './test-generation.controller'
@@ -28,6 +29,14 @@ router.post(
   authMiddleware,
   (req, res) => controller.submitFixVerificationReview(req, res)
 )
+router.post(
+  '/fix-verification-attempts/:attemptId/cancel',
+  authMiddleware,
+  (req, res) => controller.cancelFixVerification(req, res)
+)
+router.post('/internal/verification-callback', (req, res) => {
+  void receiveVerificationCallback(req, res)
+})
 router.post('/:id/findings/:findingId/test-suggestions', authMiddleware, (req, res) =>
   testGenerationController.generateForFinding(req, res)
 )

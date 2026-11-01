@@ -3,7 +3,11 @@ import { env } from '@/config/env'
 import { isValidCsrfToken } from '@/modules/auth/auth-session'
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
-const SIGNED_WEBHOOK_PATHS = new Set(['/billing/webhook', '/webhooks/github'])
+const SIGNED_WEBHOOK_PATHS = new Set([
+  '/billing/webhook',
+  '/webhooks/github',
+  '/reviews/internal/verification-callback',
+])
 const trustedOrigin = new URL(env.FRONTEND_URL).origin
 
 export function apiSecurityMiddleware(

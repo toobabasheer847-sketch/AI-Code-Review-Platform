@@ -44,6 +44,11 @@ export interface VerificationExecutionResult {
   durationMs?: number
   exitCode?: number | null
   failureDetails?: string | null
+  executionOccurred?: boolean
+  runnerIdentity?: string
+  runnerVersion?: string
+  startedAt?: string
+  completedAt?: string
 }
 
 export const verificationCheckResultSchema = z
@@ -73,6 +78,11 @@ export const verificationExecutionResultSchema = z
     durationMs: z.number().int().nonnegative().optional(),
     exitCode: z.number().int().nullable().optional(),
     failureDetails: z.string().max(10_000).nullable().optional(),
+    executionOccurred: z.boolean().optional(),
+    runnerIdentity: z.string().min(1).max(128).optional(),
+    runnerVersion: z.string().min(1).max(64).optional(),
+    startedAt: z.string().datetime().optional(),
+    completedAt: z.string().datetime().optional(),
   })
   .strict()
 
@@ -133,6 +143,10 @@ export function classifyVerificationResult(
     !expectedCommitSha ||
     result.commitSha !== expectedCommitSha
   ) {
+    return 'NEEDS_REVIEW'
+  }
+  if (result.executionOccurred === false) return 'NEEDS_REVIEW'
+  if (result.executionOccurred === true && (!result.runnerIdentity || !result.runnerVersion)) {
     return 'NEEDS_REVIEW'
   }
   if (

@@ -7,6 +7,7 @@ import {
   VerificationRunnerUnavailableError,
   type VerificationRunnerHttpClient,
 } from './fix-verification.runner'
+import { verifyVerificationSignature } from './fix-verification.signature'
 
 const passedResult: VerificationExecutionResult = {
   attemptId: 'attempt-1',
@@ -93,6 +94,16 @@ test('sends an idempotent, bounded request to the configured isolated runner', a
   )
   assert.equal(headers.authorization, `Bearer ${'r'.repeat(48)}`)
   assert.equal(headers['idempotency-key'], runnerInput.attemptId)
+  assert.equal(
+    verifyVerificationSignature({
+      secret: 'r'.repeat(48),
+      timestamp: String(headers['x-codeguard-timestamp']),
+      signature: String(headers['x-codeguard-signature']),
+      body: JSON.stringify(request.data),
+      now: Number(headers['x-codeguard-timestamp']),
+    }),
+    true
+  )
 })
 
 test('rejects malformed or incomplete evidence from the isolated runner', async () => {

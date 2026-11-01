@@ -1,23 +1,25 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/config/database'
 import {
-  classifyVerificationResult,
   createFixProposalSchema,
   FixProposalValidationError,
   getChangedFilesFromPatch,
   hashFixPatch,
-  sanitizeVerificationLogs,
   validateFixPatch,
   verificationCheckResultSchema,
   type VerificationExecutionResult,
   type VerificationCheckResult,
   type FixVerificationStatus,
-  MAX_VERIFICATION_LOG_BYTES,
 } from './fix-verification.domain'
 import {
-  getConfiguredFixVerificationRunner,
-  VerificationRunnerTimeoutError,
-} from './fix-verification.runner'
+  buildAttemptCompletion,
+  type FixVerificationJobState,
+  type VerificationJobDispatcher,
+} from './fix-verification.lifecycle'
+import {
+  fixVerificationQueueDispatcher,
+} from '@/jobs/fix-verification.queue'
+import { getConfiguredFixVerificationRunner } from './fix-verification.runner'
 import { z } from 'zod'
 
 export const MAX_FIX_PROPOSALS_PER_FINDING = 10
@@ -25,7 +27,6 @@ export const MAX_VERIFICATION_ATTEMPTS_PER_PROPOSAL = 5
 export const MAX_VERIFICATION_DASHBOARD_RUNS = 100
 export const MAX_VERIFICATION_CHECKS = 10
 export const MAX_VERIFICATION_COMMANDS = 10
-const MAX_VERIFICATION_COMMAND_BYTES = 500
 
 export const verificationDashboardFilterSchema = z
   .object({
@@ -95,6 +96,12 @@ export interface FixVerificationDashboardRun {
   startedAt: Date
   completedAt: Date | null
   sanitizedLogs: string | null
+  jobState?: FixVerificationJobState
+  executionOccurred?: boolean
+  runnerIdentity?: string | null
+  runnerVersion?: string | null
+  retryCount?: number
+  runnerRunId?: string | null
 }
 
 export interface FixVerificationDashboard {
@@ -191,6 +198,14 @@ export interface FixProposalRecord {
     completedAt: Date | null
     sanitizedLogs: string | null
     createdAt: Date
+    jobState?: FixVerificationJobState
+    executionOccurred?: boolean
+    runnerIdentity?: string | null
+    runnerVersion?: string | null
+    retryCount?: number
+    cancelRequestedAt?: Date | null
+    runnerRunId?: string | null
+    claimedAt?: Date | null
   }>
 }
 
@@ -251,13 +266,6 @@ function parseVerificationCommands(value: Prisma.JsonValue): string[] {
   const parsed = verificationCommandsSchema.safeParse(value)
   if (!parsed.success) throw new Error('Stored verification commands are malformed.')
   return parsed.data
-}
-
-function truncateUtf8(value: string, maximumBytes: number): string {
-  return Buffer.from(value, 'utf8')
-    .subarray(0, Math.max(0, maximumBytes))
-    .toString('utf8')
-    .replace(/\uFFFD$/, '')
 }
 
 export class FixProposalService {
@@ -343,6 +351,11 @@ export interface TrustedVerificationStore {
     failureDetails: string | null
     completedAt: Date
     sanitizedLogs: string
+    jobState?: FixVerificationJobState
+    executionOccurred?: boolean
+    runnerIdentity?: string | null
+    runnerVersion?: string | null
+    runnerRunId?: string | null
   }): Promise<FixProposalRecord['attempts'][number]>
 }
 
@@ -411,7 +424,9 @@ const prismaTrustedVerificationStore: TrustedVerificationStore = {
             ...attemptInput,
             ...snapshot,
             status: 'RUNNING',
-            executionStatus: 'BLOCKED',
+            executionStatus: 'NOT_RUN',
+            jobState: 'QUEUED',
+            executionOccurred: false,
             testCommands: [],
             checkResults: [],
           },
@@ -445,6 +460,11 @@ const prismaTrustedVerificationStore: TrustedVerificationStore = {
         failureDetails: input.failureDetails,
         completedAt: input.completedAt,
         sanitizedLogs: input.sanitizedLogs,
+        jobState: input.jobState ?? 'NEEDS_REVIEW',
+        executionOccurred: input.executionOccurred ?? false,
+        runnerIdentity: input.runnerIdentity ?? null,
+        runnerVersion: input.runnerVersion ?? null,
+        runnerRunId: input.runnerRunId ?? null,
       },
     })
   },
@@ -474,12 +494,23 @@ export interface TrustedVerificationRunner {
 }
 
 export class FixVerificationService {
+  private readonly runner: TrustedVerificationRunner | null
+  private readonly dispatcher: VerificationJobDispatcher | null
+
   constructor(
     private readonly store: TrustedVerificationStore = prismaTrustedVerificationStore,
-    private readonly runner: TrustedVerificationRunner | null =
-      getConfiguredFixVerificationRunner(),
-    private readonly now: () => Date = () => new Date()
-  ) {}
+    runner?: TrustedVerificationRunner | null,
+    private readonly now: () => Date = () => new Date(),
+    dispatcher?: VerificationJobDispatcher | null
+  ) {
+    this.runner = runner === undefined ? getConfiguredFixVerificationRunner() : runner
+    this.dispatcher =
+      dispatcher !== undefined
+        ? dispatcher
+        : runner === undefined && this.runner
+          ? fixVerificationQueueDispatcher
+          : null
+  }
 
   async verifyProposal(
     userId: string,
@@ -530,6 +561,26 @@ export class FixVerificationService {
       throw error
     }
 
+    if (this.dispatcher) {
+      try {
+        await this.dispatcher.enqueue(attempt.id)
+        return attempt
+      } catch {
+        return this.store.completeAttempt(
+          buildAttemptCompletion({
+            attemptId: attempt.id,
+            expectedPatchSha256: proposal.patchSha256,
+            expectedCommitSha: proposal.commitSha,
+            result: null,
+            runnerConfigured: true,
+            queueFailure: true,
+            startedAt,
+            completedAt: this.now(),
+          })
+        )
+      }
+    }
+
     let result: VerificationExecutionResult | null = null
     let runnerFailure: unknown
     if (this.runner) {
@@ -558,86 +609,18 @@ export class FixVerificationService {
         runnerFailure = error
       }
     }
-    const completedAt = this.now()
-    if (!result) {
-      const runnerTimedOut = runnerFailure instanceof VerificationRunnerTimeoutError
-      return this.store.completeAttempt({
-        id: attempt.id,
-        status: 'NEEDS_REVIEW',
-        executionStatus: runnerTimedOut ? 'TIMED_OUT' : 'BLOCKED',
-        testCommands: [],
-        testsPassed: null,
-        originalIssueReproducedBefore: null,
-        originalIssueReproducedAfter: null,
-        checkResults: [],
-        executionDurationMs: Math.max(0, completedAt.getTime() - startedAt.getTime()),
-        exitCode: null,
-        failureDetails: this.runner
-          ? runnerTimedOut
-            ? 'The isolated verification runner exceeded its configured timeout; no verification result was accepted.'
-            : 'The isolated verification runner did not return valid evidence; no verification result was accepted.'
-          : 'No isolated verification runner is configured; no repository code was executed.',
-        completedAt,
-        sanitizedLogs: this.runner
-          ? sanitizeVerificationLogs(
-              runnerTimedOut
-                ? 'The isolated verification runner timed out; the outcome is inconclusive.'
-                : `The isolated verification runner did not return valid evidence (${runnerFailure instanceof Error ? runnerFailure.name : 'unknown error'}); outcome is inconclusive.`
-            )
-          : 'No isolated verification runner is configured; the patch was not executed.',
+    return this.store.completeAttempt(
+      buildAttemptCompletion({
+        attemptId: attempt.id,
+        expectedPatchSha256: proposal.patchSha256,
+        expectedCommitSha: proposal.commitSha,
+        result,
+        runnerConfigured: Boolean(this.runner),
+        runnerFailure,
+        startedAt,
+        completedAt: this.now(),
       })
-    }
-
-    const reportedChecks = result.checkResults ?? []
-    let remainingCheckLogBytes = MAX_VERIFICATION_LOG_BYTES
-    const storedChecks = reportedChecks.slice(0, MAX_VERIFICATION_CHECKS)
-    const validChecks = verificationCheckResultsSchema.safeParse(storedChecks)
-    const checkResults = (validChecks.success ? validChecks.data : []).map((check) => ({
-      ...check,
-      command: truncateUtf8(
-        sanitizeVerificationLogs(check.command),
-        MAX_VERIFICATION_COMMAND_BYTES
-      ),
-      logs: (() => {
-        const output = truncateUtf8(sanitizeVerificationLogs(check.logs), remainingCheckLogBytes)
-        remainingCheckLogBytes -= Buffer.byteLength(output, 'utf8')
-        return output
-      })(),
-      failureDetails: check.failureDetails
-        ? sanitizeVerificationLogs(check.failureDetails).slice(0, 2_000)
-        : null,
-    }))
-    const status =
-      result.attemptId !== attempt.id ||
-      reportedChecks.length > MAX_VERIFICATION_CHECKS ||
-      !validChecks.success ||
-      result.testCommands.length > MAX_VERIFICATION_COMMANDS ||
-      result.testCommands.some((command) => command.length > 20_000)
-        ? 'NEEDS_REVIEW'
-        : classifyVerificationResult(proposal.patchSha256, proposal.commitSha, result)
-    const durationMs = result.durationMs ?? completedAt.getTime() - startedAt.getTime()
-    return this.store.completeAttempt({
-      id: attempt.id,
-      status,
-      executionStatus: result.executionStatus,
-      testCommands: result.testCommands
-        .slice(0, MAX_VERIFICATION_COMMANDS)
-        .filter((command) => typeof command === 'string')
-        .map((command) =>
-          truncateUtf8(sanitizeVerificationLogs(command), MAX_VERIFICATION_COMMAND_BYTES)
-        ),
-      testsPassed: result.testsPassed,
-      originalIssueReproducedBefore: result.originalIssueReproducedBefore,
-      originalIssueReproducedAfter: result.originalIssueReproducedAfter,
-      checkResults,
-      executionDurationMs: Math.max(0, Number.isFinite(durationMs) ? Math.floor(durationMs) : 0),
-      exitCode: result.exitCode ?? null,
-      failureDetails: result.failureDetails
-        ? sanitizeVerificationLogs(result.failureDetails).slice(0, 2_000)
-        : null,
-      completedAt,
-      sanitizedLogs: sanitizeVerificationLogs(result.sanitizedLogs),
-    })
+    )
   }
 }
 
@@ -783,6 +766,12 @@ const prismaFixVerificationEvidenceStore: FixVerificationEvidenceStore = {
         startedAt: attempt.startedAt,
         completedAt: attempt.completedAt,
         sanitizedLogs: attempt.sanitizedLogs,
+        jobState: attempt.jobState,
+        executionOccurred: attempt.executionOccurred,
+        runnerIdentity: attempt.runnerIdentity,
+        runnerVersion: attempt.runnerVersion,
+        retryCount: attempt.retryCount,
+        runnerRunId: attempt.runnerRunId,
       })),
     }
   },

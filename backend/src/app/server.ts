@@ -19,6 +19,11 @@ import {
 import { closeSocialQueue } from '@/modules/social/social.queue'
 import { MailConfigurationError } from '@/modules/email/mail.service'
 import { startSocialWorker, stopSocialWorker } from '@/modules/social/social.worker'
+import { closeFixVerificationQueue } from '@/jobs/fix-verification.queue'
+import {
+  startFixVerificationWorker,
+  stopFixVerificationWorker,
+} from '@/jobs/fix-verification.worker'
 import type { Server } from 'node:http'
 
 const app = createApp()
@@ -36,6 +41,7 @@ async function bootstrap(): Promise<void> {
     await startAutomationWorker()
     startAutomationScheduler()
     await startSocialWorker()
+    await startFixVerificationWorker()
 
     httpServer = app.listen(env.PORT, () => {
       logger.info(`Server running on port ${env.PORT} in ${env.NODE_ENV} mode`)
@@ -86,6 +92,8 @@ async function shutdown(signal: string): Promise<void> {
     await stopAutomationScheduler()
     await stopAutomationWorker()
     await stopSocialWorker()
+    await stopFixVerificationWorker()
+    await closeFixVerificationQueue()
     await closeReviewQueue()
     await closeAutomationQueue()
     await closeSocialQueue()

@@ -41,6 +41,7 @@ test('mounts protected API routes and rejects requests without a valid token', a
       '/reviews/fix-verification-attempts/attempt-1/review-decision',
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' },
     ],
+    ['/reviews/fix-verification-attempts/attempt-1/cancel', { method: 'POST' }],
     ['/reviews/findings/not-owned/status', { method: 'PATCH' }],
     ['/reviews/findings/not-owned/verification-requests', { method: 'POST' }],
     ['/reviews/findings/not-owned/verification-requests/request-1', { method: 'GET' }],
