@@ -3,16 +3,23 @@ import { authMiddleware } from '@/middleware/auth.middleware'
 import { receiveVerificationCallback } from './fix-verification.callback'
 import { ReviewController } from './review.controller'
 import { ReviewAnalyticsController } from './review-analytics.controller'
+import { FeedbackAnalyticsController } from './feedback-analytics.controller'
+import { DuplicateCandidateController } from './duplicate-candidates.controller'
 import { TestGenerationController } from './test-generation.controller'
 
 const router = Router()
 const controller = new ReviewController()
 const analyticsController = new ReviewAnalyticsController()
+const feedbackAnalyticsController = new FeedbackAnalyticsController()
+const duplicateCandidateController = new DuplicateCandidateController()
 const testGenerationController = new TestGenerationController()
 
 router.get('/', authMiddleware, (req, res) => controller.listReviews(req, res))
 router.get('/analytics', authMiddleware, (req, res) =>
   analyticsController.get(req, res)
+)
+router.get('/feedback-analytics', authMiddleware, (req, res) =>
+  feedbackAnalyticsController.get(req, res)
 )
 router.post('/start', authMiddleware, (req, res) => controller.startReview(req, res))
 router.post('/findings/:findingId/feedback', authMiddleware, (req, res) =>
@@ -58,6 +65,9 @@ router.get(
   '/findings/:findingId/verification-requests/:requestKey',
   authMiddleware,
   (req, res) => controller.getFindingVerification(req, res)
+)
+router.get('/:id/duplicate-candidates', authMiddleware, (req, res) =>
+  duplicateCandidateController.list(req, res)
 )
 router.get('/:id', authMiddleware, (req, res) => controller.getReview(req, res))
 router.delete('/:id', authMiddleware, (req, res) => controller.deleteReview(req, res))

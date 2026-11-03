@@ -358,4 +358,115 @@ export const reviewApi = {
     )
     return res.data
   },
+
+  getFeedbackAnalytics: async (filters: {
+    repositoryId: string
+    from?: string
+    to?: string
+  }): Promise<FeedbackAnalytics> => {
+    const res = await axiosInstance.get<FeedbackAnalytics>('/reviews/feedback-analytics', {
+      params: filters,
+    })
+    return res.data
+  },
+}
+
+export interface FeedbackAssessmentCounts {
+  truePositive: number
+  falsePositive: number
+  alreadyFixed: number
+  needsReview: number
+  unassessed: number
+  total?: number
+  key?: string
+}
+
+export interface FeedbackRates {
+  denominator: 'userAssessedFindings'
+  sampleSize: number
+  minimumSampleSize: number
+  truePositive: number
+  falsePositive: number
+  alreadyFixed: number
+  needsReview: number
+}
+
+export interface FeedbackAnalytics {
+  filters: { from: string | null; to: string | null; repositoryId: string | null }
+  distinctions: {
+    userAssessments: string
+    objectiveVerification: string
+    unassessedFindings: string
+    verificationFailure: string
+    verifiedFix: string
+    duplicateCandidates: string
+  }
+  findings: {
+    total: number
+    userAssessedTruePositives: number
+    userAssessedFalsePositives: number
+    alreadyFixed: number
+    needsReview: number
+    unassessed: number
+  }
+  rates: FeedbackRates | null
+  ratesWithheldReason: string | null
+  objectiveVerification: {
+    verified: number
+    verificationFailed: number
+    inconclusive: number
+    aiReportedOnly: number
+    independentlyVerifiedFixes: number
+    unreviewedAiFindingsAreConfirmed: false
+  }
+  distributionBySeverity: Array<FeedbackAssessmentCounts & { key: string; total: number }>
+  distributionByCategory: Array<FeedbackAssessmentCounts & { key: string; total: number }>
+  trends: {
+    basis: 'assessment_events'
+    note: string
+    points: Array<{
+      date: string
+      truePositive: number
+      falsePositive: number
+      alreadyFixed: number
+      needsReview: number
+    }>
+  }
+  reviewTrends: Array<{
+    reviewId: string
+    createdAt: string
+    qualityScore: number | null
+    totalFindings: number
+    userAssessedTruePositives: number
+    userAssessedFalsePositives: number
+    alreadyFixed: number
+    needsReview: number
+    unassessed: number
+    objectivelyVerified: number
+    rates: FeedbackRates | null
+    ratesWithheldReason: string | null
+  }>
+  repositoryTrend: {
+    reviewCount: number
+    scoredReviewCount: number
+    qualityScoreAverage: number | null
+    qualityScoreAverageWithheldReason: string | null
+    totalFindings: number
+    rates: FeedbackRates | null
+    ratesWithheldReason: string | null
+  }
+  duplicateCandidates: Array<{
+    findingId: string
+    reviewId: string
+    matchedFindingId: string
+    matchedReviewId: string
+    category: string
+    file: string
+    line: number
+    priorUserAssessment: string | null
+    reason: string
+    suppressed: false
+    requiresHumanReview: true
+  }>
+  ruleSuggestions: Array<{ category: string; message: string; autoApplied: false }>
 }

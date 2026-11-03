@@ -58,6 +58,16 @@ const WorkMemoryPage = lazy(() =>
 const ReviewsPage = lazy(() =>
   import('@features/reviews/pages/ReviewsPage').then((m) => ({ default: m.ReviewsPage }))
 );
+const FeedbackAnalyticsPage = lazy(() =>
+  import('@features/analytics/pages/FeedbackAnalyticsPage').then((m) => ({
+    default: m.FeedbackAnalyticsPage,
+  }))
+);
+const RepositoryRulesPage = lazy(() =>
+  import('@features/repositories/pages/RepositoryRulesPage').then((m) => ({
+    default: m.RepositoryRulesPage,
+  }))
+);
 const ReviewByIdPage = lazy(() =>
   import('@features/reviews/pages/ReviewByIdPage').then((m) => ({ default: m.ReviewByIdPage }))
 );
@@ -264,6 +274,36 @@ export const routes: RouteObject[] = [
       <ProtectedRoute>
         <Suspense fallback={<LazyFallback />}>
           <ReviewByIdPage />
+        </Suspense>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/analytics',
+    element: (
+      <ProtectedRoute>
+        <Suspense fallback={<LazyFallback />}>
+          <FeedbackAnalyticsPage />
+        </Suspense>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/repository-rules/:repositoryId',
+    element: (
+      <ProtectedRoute>
+        <Suspense fallback={<LazyFallback />}>
+          <RepositoryRulesPage />
+        </Suspense>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/repository-rules',
+    element: (
+      <ProtectedRoute>
+        <Suspense fallback={<LazyFallback />}>
+          <RepositoryRulesPage />
         </Suspense>
       </ProtectedRoute>
     ),

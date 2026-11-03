@@ -7,7 +7,7 @@ export interface ReviewJobRecord {
   userId: string
   branch: string
   status: string
-  repository: { name: string }
+  repository: { name: string; id?: string }
   user: { email: string }
   source?: string
   pullRequestNumber?: number | null
@@ -49,7 +49,7 @@ export interface ReviewPipelineDependencies {
     branch: string,
     review?: ReviewJobRecord
   ): Promise<ReviewSourceFile[]>
-  analyze(files: ReviewSourceFile[]): Promise<ReviewAnalysis>
+  analyze(files: ReviewSourceFile[], review: ReviewJobRecord): Promise<ReviewAnalysis>
   notify(
     review: ReviewJobRecord,
     analysis?: ReviewAnalysis,
@@ -89,7 +89,7 @@ export async function processReview(
     ) {
       throw new Error('Pull request source revision changed before analysis')
     }
-    analysis = await dependencies.analyze(files)
+    analysis = await dependencies.analyze(files, review)
     await dependencies.store.complete(review, analysis, files)
   } catch (error) {
     const failureMessage =

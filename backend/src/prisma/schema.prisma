@@ -36,6 +36,8 @@ model User {
   workMemories        WorkMemory[]
   findingFeedback     FindingFeedback[]
   findingAssessmentFeedback FindingAssessmentFeedback[]
+  repositoryReviewRules RepositoryReviewRule[]
+  repositoryReviewRuleRevisions RepositoryReviewRuleRevision[]
   fixProposals        FixProposal[]
   fixVerificationAttempts FixVerificationAttempt[]
   fixVerificationReviews           FixVerificationAttempt[]          @relation("FixVerificationReviewer")
@@ -480,6 +482,7 @@ model Repository {
   reviews     CodeReview[]
   workMemories WorkMemory[]
   findingAssessmentFeedback FindingAssessmentFeedback[]
+  reviewRules RepositoryReviewRule[]
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
@@ -714,6 +717,63 @@ model FindingAssessmentFeedback {
   @@unique([findingId, userId, requestKey])
   @@index([repositoryId, category, createdAt])
   @@index([findingId, userId, createdAt])
+}
+
+enum RepositoryReviewRuleCategory {
+  BUG
+  SECURITY
+  PERFORMANCE
+  QUALITY
+  TESTING
+  GENERAL
+}
+
+enum RepositoryReviewRuleSeverity {
+  ERROR
+  WARNING
+  INFO
+  UNSPECIFIED
+}
+
+enum RepositoryReviewRuleRevisionAction {
+  CREATED
+  UPDATED
+}
+
+model RepositoryReviewRule {
+  id                 String                         @id @default(cuid())
+  repositoryId       String
+  repository         Repository                     @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  userId             String
+  user               User                           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title              String
+  description        String                         @db.VarChar(1000)
+  enabled            Boolean                        @default(true)
+  category           RepositoryReviewRuleCategory
+  severityPreference RepositoryReviewRuleSeverity   @default(UNSPECIFIED)
+  scope              String                         @db.VarChar(300)
+  filePatterns       String[]
+  instructions       String                         @db.VarChar(2000)
+  precedence         Int
+  revisions          RepositoryReviewRuleRevision[]
+  createdAt          DateTime                       @default(now())
+  updatedAt          DateTime                       @updatedAt
+
+  @@index([repositoryId, enabled, precedence])
+  @@index([userId])
+}
+
+model RepositoryReviewRuleRevision {
+  id        String                            @id @default(cuid())
+  ruleId    String
+  rule      RepositoryReviewRule              @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User                              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action    RepositoryReviewRuleRevisionAction
+  snapshot  Json
+  createdAt DateTime                          @default(now())
+
+  @@index([ruleId, createdAt])
 }
 
 model FixProposal {

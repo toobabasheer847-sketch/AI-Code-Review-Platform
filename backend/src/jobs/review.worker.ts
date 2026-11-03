@@ -4,7 +4,8 @@ import { env } from '@/config/env'
 import { createBullMqRedisConnection } from '@/config/redis-connection'
 import { prisma } from '@/config/database'
 import { emailQueue } from './email.queue'
-import { analyzeCode } from '@/modules/code-review/analyzer'
+import { analyzeCode, completeWithOpenAI } from '@/modules/code-review/analyzer'
+import { listEnabledRepositoryReviewRules } from '@/modules/repositories/repository-review-rules.service'
 import {
   processReview,
   type ReviewJobRecord,
@@ -26,7 +27,7 @@ const store: ReviewJobStore = {
     const review = await prisma.codeReview.findUnique({
       where: { id: reviewId },
       include: {
-        repository: { select: { name: true } },
+        repository: { select: { id: true, name: true } },
         user: { select: { email: true } },
         analytics: { select: { qualityScore: true, totalIssues: true } },
         findings: {
@@ -137,7 +138,18 @@ const worker = new Worker<ReviewJobData>(
               review.headSha
             )
           : githubService.fetchReviewFiles(userId, repository, branch),
-      analyze: analyzeCode,
+      analyze: async (files, currentReview) => {
+        const rules = currentReview.repository.id
+          ? await listEnabledRepositoryReviewRules(
+              currentReview.userId,
+              currentReview.repository.id
+            )
+          : []
+        return analyzeCode(files, completeWithOpenAI, undefined, {
+          rules,
+          reviewId: currentReview.id,
+        })
+      },
       async notify(review, analysis, files): Promise<void> {
         if (review.source === 'PULL_REQUEST') {
           await publishCompletedPullRequestReview(

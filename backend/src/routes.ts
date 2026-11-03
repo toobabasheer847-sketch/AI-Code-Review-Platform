@@ -9,6 +9,7 @@ import automationRoutes from '@/modules/automation/automation.routes'
 import socialRoutes from '@/modules/social/social.routes'
 import workMemoryRoutes from '@/modules/memory/memory.routes'
 import integrationsRoutes from '@/modules/integrations/integrations.routes'
+import repositoryRoutes from '@/modules/repositories/repository.routes'
 
 /**
  * Aggregates all API routes.
@@ -21,6 +22,7 @@ export const createApiRoutes = (): Router => {
   router.use('/github', githubRoutes)
   router.use('/auth/github', githubRoutes)
   router.use('/reviews', reviewRoutes)
+  router.use('/repositories', repositoryRoutes)
   router.use('/billing', billingRoutes)
   router.use('/chat', chatRoutes)
   router.use('/automations', automationRoutes)
