@@ -37,6 +37,7 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+      target: development
     container_name: ai-codeguard-backend
     env_file:
       - path: ./backend/.env
@@ -91,7 +92,7 @@ services:
       VITE_API_URL: http://localhost:3001/api
       VITE_APP_NAME: AI-CodeGuard
     ports:
-      - "3000:3000"
+      - "3000:8080"
     depends_on:
       backend:
         condition: service_healthy

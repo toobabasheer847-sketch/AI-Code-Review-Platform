@@ -3,6 +3,7 @@ import axios, { AxiosInstance, type AxiosError, type InternalAxiosRequestConfig 
 import { useAppStore } from '@/app/store/useAppStore'
 import type { CsrfResponse } from '@/features/auth/api/authApi'
 import { queryClient } from '@/lib/queryClient'
+import { reportFrontendError } from '@/lib/errorMonitoring'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
 const CSRF_REFRESH_MARGIN_MS = 30_000
@@ -88,6 +89,13 @@ axiosInstance.interceptors.response.use(
   },
   (error: AxiosError<{ code?: string }>) => {
     const config = error.config
+    if (!error.response || error.response.status >= 500) {
+      reportFrontendError(
+        error,
+        'api',
+        error.response ? 'server' : 'network'
+      )
+    }
     if (error.response?.status === 403 && error.response.data?.code === 'CSRF_INVALID') {
       clearCsrfToken()
     }

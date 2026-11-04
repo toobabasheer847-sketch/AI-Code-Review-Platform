@@ -5,7 +5,9 @@ import {
   AutomationStatus,
 } from '@prisma/client';
 import { prisma } from '@/config/database';
+import { redis } from '@/config/redis';
 import logger from '@/utils/logger';
+import { reportBackendError } from '@/utils/error-monitoring';
 import { automationQueue } from './automation.queue';
 import { AutomationService } from './automation.service';
 import { createDailyAutomationSummaries, createAutomationNotification, dispatchPendingAutomationNotifications } from './automation-notifications';
@@ -21,6 +23,7 @@ import {
 } from './schedule.domain';
 import { validatePlan } from './automation.domain';
 import type { VisualWorkflowDefinition } from './visual-workflow.domain';
+import { runWithSchedulerLease } from './scheduler-leader';
 
 const POLL_INTERVAL_MS = 15_000;
 const MAX_DUE_SCHEDULES_PER_TICK = 100;
@@ -41,6 +44,7 @@ function scheduleRunStatusForAutomation(status: AutomationStatus): AutomationSch
 
 let timer: NodeJS.Timeout | null = null;
 let activeTick: Promise<void> | null = null;
+let schedulerLeaseHeld = false;
 let lastSuccessfulTickAt: Date | null = null;
 let lastFailureAt: Date | null = null;
 let lastFailureType: string | null = null;
@@ -49,6 +53,7 @@ export function getAutomationSchedulerHealth() {
   return {
     running: timer !== null,
     tickInProgress: activeTick !== null,
+    leader: schedulerLeaseHeld,
     lastSuccessfulTickAt,
     lastFailureAt,
     lastFailureType,
@@ -438,19 +443,50 @@ export function runAutomationSchedulerTick(now = new Date()): Promise<void> {
   if (activeTick) return activeTick;
   activeTick = (async () => {
     try {
-      await claimDueSchedules(now);
-      await createPendingScheduleExecutions();
-      await syncCompletedScheduleExecutions();
-      await recoverQueuedWorkflows(now);
-      await createDailyAutomationSummaries(now);
-      await dispatchPendingAutomationNotifications(now);
-      lastSuccessfulTickAt = now;
-      lastFailureType = null;
+      const acquired = await runWithSchedulerLease(
+        redis,
+        async () => {
+          schedulerLeaseHeld = true;
+          try {
+            await claimDueSchedules(now);
+            await createPendingScheduleExecutions();
+            await syncCompletedScheduleExecutions();
+            await recoverQueuedWorkflows(now);
+            await createDailyAutomationSummaries(now);
+            await dispatchPendingAutomationNotifications(now);
+            lastSuccessfulTickAt = now;
+            lastFailureType = null;
+          } catch (error) {
+            lastFailureAt = now;
+            lastFailureType = 'SchedulerTickError';
+            reportBackendError(error, 'scheduler');
+            logger.error(
+              { errorType: error instanceof Error ? error.name : 'UnknownError' },
+              'Automation scheduler tick failed; persisted work will be retried'
+            );
+          } finally {
+            schedulerLeaseHeld = false;
+          }
+        },
+        (error) => {
+          lastFailureAt = new Date();
+          lastFailureType = 'SchedulerLeaseError';
+          reportBackendError(error, 'scheduler');
+          logger.error(
+            { errorType: error instanceof Error ? error.name : 'UnknownError' },
+            'Automation scheduler leadership lease could not be maintained'
+          );
+        }
+      );
+      if (!acquired) return;
     } catch (error) {
       lastFailureAt = now;
-      lastFailureType =
-        error instanceof Error ? error.name.replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 64) : 'UnknownError';
-      logger.error({ errorType: lastFailureType }, 'Automation scheduler tick failed; persisted work will be retried');
+      lastFailureType = 'SchedulerLeaseError';
+      reportBackendError(error, 'scheduler');
+      logger.error(
+        { errorType: error instanceof Error ? error.name : 'UnknownError' },
+        'Automation scheduler tick could not acquire leadership; persisted work will be retried'
+      );
     } finally {
       activeTick = null;
     }

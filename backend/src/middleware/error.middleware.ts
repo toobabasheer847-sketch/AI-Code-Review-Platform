@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express'
 import logger from '@/utils/logger'
+import { reportBackendError } from '@/utils/error-monitoring'
 
 export interface AppError extends Error {
   status?: number
@@ -25,6 +26,7 @@ export function errorMiddleware(
   const message = status >= 500 ? 'Internal Server Error' : error.message || 'Request failed'
 
   if (status >= 500) {
+    reportBackendError(error, 'api')
     logger.error(
       { errorType: error instanceof Error ? error.name : 'UnknownError' },
       'Unhandled API request error'

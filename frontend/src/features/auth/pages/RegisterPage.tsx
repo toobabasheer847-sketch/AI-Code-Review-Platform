@@ -128,7 +128,10 @@ export const RegisterPage = (): JSX.Element => {
           <p className="text-sm text-slate-400 mb-8">Sign up to get started</p>
 
           {error && (
-            <div className="mb-6 p-3 bg-destructive/10 border border-destructive/20 rounded-md text-sm text-destructive">
+            <div
+              role="alert"
+              className="mb-6 p-3 bg-destructive/10 border border-destructive/20 rounded-md text-sm text-destructive"
+            >
               {error}
             </div>
           )}
@@ -145,11 +148,15 @@ export const RegisterPage = (): JSX.Element => {
                 value={formData.email}
                 onChange={handleChange}
                 placeholder="your@email.com"
+                aria-invalid={Boolean(formErrors.email)}
+                aria-describedby={formErrors.email ? 'register-email-error' : undefined}
                 className="w-full px-4 py-2 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary"
                 disabled={isPending}
               />
               {formErrors.email && (
-                <p className="mt-1 text-sm text-destructive">{formErrors.email}</p>
+                <p id="register-email-error" role="alert" className="mt-1 text-sm text-destructive">
+                  {formErrors.email}
+                </p>
               )}
             </div>
 
@@ -164,11 +171,19 @@ export const RegisterPage = (): JSX.Element => {
                 value={formData.fullName}
                 onChange={handleChange}
                 placeholder="John Doe"
+                aria-invalid={Boolean(formErrors.fullName)}
+                aria-describedby={formErrors.fullName ? 'register-full-name-error' : undefined}
                 className="w-full px-4 py-2 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary"
                 disabled={isPending}
               />
               {formErrors.fullName && (
-                <p className="mt-1 text-sm text-destructive">{formErrors.fullName}</p>
+                <p
+                  id="register-full-name-error"
+                  role="alert"
+                  className="mt-1 text-sm text-destructive"
+                >
+                  {formErrors.fullName}
+                </p>
               )}
             </div>
 
@@ -183,18 +198,27 @@ export const RegisterPage = (): JSX.Element => {
                 value={formData.password}
                 onChange={handleChange}
                 placeholder="••••••••"
+                aria-invalid={Boolean(formErrors.password)}
+                aria-describedby={formErrors.password ? 'register-password-error' : undefined}
                 className="w-full px-4 py-2 rounded-md border border-slate-800 bg-[#0f172a] text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30"
                 disabled={isPending}
               />
               <button
                 type="button"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
                 onClick={() => setShowPassword((s) => !s)}
                 className="absolute right-2 top-9 p-1 text-muted-foreground"
               >
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
               {formErrors.password && (
-                <p className="mt-1 text-sm text-destructive">{formErrors.password}</p>
+                <p
+                  id="register-password-error"
+                  role="alert"
+                  className="mt-1 text-sm text-destructive"
+                >
+                  {formErrors.password}
+                </p>
               )}
             </div>
 
@@ -209,18 +233,29 @@ export const RegisterPage = (): JSX.Element => {
                 value={formData.confirmPassword}
                 onChange={handleChange}
                 placeholder="••••••••"
+                aria-invalid={Boolean(formErrors.confirmPassword)}
+                aria-describedby={
+                  formErrors.confirmPassword ? 'register-confirm-password-error' : undefined
+                }
                 className="w-full px-4 py-2 rounded-md border border-slate-800 bg-[#0f172a] text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30"
                 disabled={isPending}
               />
               <button
                 type="button"
+                aria-label={showConfirm ? 'Hide confirm password' : 'Show confirm password'}
                 onClick={() => setShowConfirm((s) => !s)}
                 className="absolute right-2 top-9 p-1 text-muted-foreground"
               >
                 {showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
               {formErrors.confirmPassword && (
-                <p className="mt-1 text-sm text-destructive">{formErrors.confirmPassword}</p>
+                <p
+                  id="register-confirm-password-error"
+                  role="alert"
+                  className="mt-1 text-sm text-destructive"
+                >
+                  {formErrors.confirmPassword}
+                </p>
               )}
             </div>
 

@@ -28,16 +28,24 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24.22.2
           cache: npm
       - run: npm ci
       # High and critical advisories fail this job. Moderate and low findings
       # are still printed. Do not lower this level to hide them.
       - run: npm audit --audit-level=high
+      - run: npm audit --omit=dev --audit-level=moderate
       - run: npm run prisma:generate --workspace=backend
       - run: npm run prisma:validate --workspace=backend
       - run: npm run prisma:deploy --workspace=backend
       - run: npm run lint
       - run: npm run type-check
+      - run: npm run type-check:e2e --workspace=frontend
       - run: npm test
+      - run: npm test --workspace=frontend
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e --workspace=frontend
       - run: npm run build
+      - run: docker build --file backend/Dockerfile --tag ai-codeguard-backend:ci .
+      - run: docker build --file backend/Dockerfile.runner --tag ai-codeguard-runner:ci .
+      - run: docker build --file frontend/Dockerfile --tag ai-codeguard-frontend:ci .

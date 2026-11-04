@@ -1,7 +1,7 @@
 # AI-CodeGuard - AI Code Review Platform
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Node.js](https://img.shields.io/badge/node.js-20%2B-green.svg)
+![Node.js](https://img.shields.io/badge/node.js-22%2B-green.svg)
 ![TypeScript](https://img.shields.io/badge/typescript-5.4%2B-blue.svg)
 
 AI-CodeGuard is a full-stack application for AI-assisted code review with GitHub integration, background processing, and optional subscription billing.
@@ -20,6 +20,7 @@ AI-CodeGuard is a full-stack application for AI-assisted code review with GitHub
 - **Security controls**: server-managed HttpOnly JWT sessions, signed CSRF tokens, encrypted provider credentials, explicit-origin CORS, Helmet, and Redis-backed rate limits shared by every API replica
 - **Multi-language Support**: Support for various programming languages
 - **Email Notifications**: Nodemailer integration for alerts and notifications
+- **Error Monitoring**: Optional privacy-scrubbed Sentry reporting; monitoring is disabled until a DSN is configured
 - **Redis**: Background queues and shared rate-limit storage
 
 ## 📁 Project Structure
@@ -80,7 +81,7 @@ AI-CodeGuard/
 
 ### Prerequisites
 
-- Node.js >= 20.0.0
+- Node.js >= 22.0.0
 - npm >= 10.0.0
 - PostgreSQL 15+
 - Redis 7+
@@ -128,7 +129,8 @@ npm run dev --workspace=frontend
 
 - Frontend: http://localhost:3000
 - Backend API: http://localhost:3001
-- Readiness check: http://localhost:3001/health
+- Liveness check: http://localhost:3001/health/live
+- Readiness check: http://localhost:3001/health/ready (also available at `/health`)
 
 ### Docker Setup
 
@@ -141,8 +143,9 @@ Compose is for local development and uses local-only database credentials. Do
 not use it as a production deployment template. Copy the root `.env.example`
 to `.env` for Compose interpolation and configure `backend/.env` for provider,
 mail, and other backend settings. Compose applies migrations before starting
-the backend. `GET /health` checks PostgreSQL, Redis, configured queues, and
-scheduler state.
+the backend. `GET /health/ready` (also `/health`) checks PostgreSQL, Redis, configured
+queues, and scheduler state. `GET /health/live` checks only that the API
+process is responding.
 
 See [SAAS-LAUNCH-READINESS.md](./SAAS-LAUNCH-READINESS.md) for production
 environment setup, release checks, deployment and rollback guidance, backup
@@ -497,11 +500,13 @@ npm test --workspace=frontend
 
 The root `npm test` command runs the backend Node test suite.
 `npm test --workspace=frontend` runs the frontend Vitest suite. CI currently
-runs `npm audit --audit-level=high`, Prisma generation/validation/migrations
-against PostgreSQL 15, lint, type-check, backend tests, and both workspace
-builds; it does not run the frontend Vitest suite. Provider OAuth, live
-webhooks, SMTP delivery, and production Redis/runner behavior require separate
-staging verification. Passing CI does not establish production readiness.
+runs the high-severity dependency audit gate, Prisma generation/validation and
+migrations against PostgreSQL 15, lint, type-check, backend and frontend unit
+tests, Chromium Playwright E2E tests with provider boundaries mocked, both
+workspace builds, and backend/runner/frontend Docker image builds. Provider
+OAuth, live webhooks, SMTP delivery, and production Redis/runner behavior
+require separate staging verification. Passing CI does not establish
+production readiness.
 
 ## 📝 Code Quality
 
@@ -516,12 +521,11 @@ npm run build
 ## 🔄 CI/CD
 
 GitHub Actions CI is configured in `.github/workflows/ci.yml`. The root and
-workspace manifests require Node.js 20+ and npm 10+; CI and the Docker images
-currently pin Node.js 20. CI runs `npm audit --audit-level=high`; the latest
-local audit on 2026-11-04 reported six moderate development-tooling findings
-and no high or critical findings. `npm audit --omit=dev` reported no production
-dependency vulnerabilities at that time. Audit results can change as the lock
-file and advisory database change.
+workspace manifests require Node.js 22+ and npm 10+; CI and Docker images pin
+Node.js 24.22.2. CI runs `npm audit --audit-level=high`; review its current
+output for development-tooling advisories and run
+`npm audit --omit=dev --audit-level=moderate` for the production dependency
+gate. Audit results change as the lockfile and advisory database change.
 
 ## 🤝 Contributing
 

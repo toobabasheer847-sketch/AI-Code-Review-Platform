@@ -18,6 +18,7 @@ import { GitHubService } from '@/modules/github/github.service'
 import { publishCompletedPullRequestReview } from '@/modules/github/pull-request-review-publisher'
 import type { ReviewJobData } from './review.queue'
 import logger from '@/utils/logger'
+import { reportBackendError } from '@/utils/error-monitoring'
 
 const connection = createBullMqRedisConnection()
 const githubService = new GitHubService()
@@ -206,10 +207,16 @@ const worker = new Worker<ReviewJobData>(
   { connection, autorun: false }
 )
 
-worker.on('failed', (job) => {
-  logger.error({ reviewId: job?.data.reviewId }, 'Code review job failed')
+worker.on('failed', (job, error) => {
+  const isTerminalFailure = Boolean(job && job.attemptsMade >= (job.opts.attempts ?? 1))
+  if (isTerminalFailure) reportBackendError(error, 'review-worker')
+  logger.error(
+    { errorType: error instanceof Error ? error.name : 'UnknownError' },
+    'Code review job failed'
+  )
 })
 worker.on('error', (error) => {
+  reportBackendError(error, 'review-worker')
   const errorCode =
     typeof error === 'object' &&
     error !== null &&
@@ -227,7 +234,8 @@ worker.on('error', (error) => {
 })
 
 export async function startReviewWorker(): Promise<void> {
-  void worker.run().catch(() => {
+  void worker.run().catch((error: unknown) => {
+    reportBackendError(error, 'review-worker')
     logger.error('Code review worker stopped unexpectedly')
   })
 }

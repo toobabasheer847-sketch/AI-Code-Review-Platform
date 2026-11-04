@@ -6,9 +6,9 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/app/server.ts",
-    "build": "tsc",
-    "start": "tsx src/app/server.ts",
-    "start:runner": "tsx src/runner/index.ts",
+    "build": "tsc && tsc-alias -p tsconfig.json --resolve-full-paths",
+    "start": "node dist/app/server.js",
+    "start:runner": "node dist/runner/index.js",
     "lint": "eslint src --ext ts",
     "lint:fix": "eslint src --ext ts --fix",
     "format": "prettier --write \"src/**/*.ts\"",
@@ -21,7 +21,7 @@
     "seed": "tsx src/prisma/seed.ts",
     "benchmark": "tsx src/modules/code-review/benchmark/benchmark.ts",
     "pretest": "npm run test:ai-usage",
-    "test": "tsx --test src/routes.test.ts src/middleware/auth.middleware.test.ts src/middleware/rate-limit.test.ts src/middleware/api-security.middleware.test.ts src/middleware/cors.middleware.test.ts src/middleware/error.middleware.test.ts src/modules/auth/auth.routes.test.ts src/modules/auth/auth.controller.test.ts src/modules/auth/auth.service.test.ts src/modules/code-review/analyzer.test.ts src/modules/code-review/quality-analyzer.test.ts src/modules/code-review/security-scanner.test.ts src/modules/code-review/test-generator.test.ts src/modules/code-review/test-generation.controller.test.ts src/modules/code-review/benchmark/benchmark.test.ts src/modules/code-review/finding-lifecycle.test.ts src/modules/code-review/finding-feedback.test.ts src/modules/code-review/finding-verification.test.ts src/modules/code-review/fix-verification.test.ts src/modules/code-review/fix-verification.runner.test.ts src/modules/code-review/fix-verification.lifecycle.test.ts src/runner/sandbox.test.ts src/runner/runner-app.test.ts src/modules/code-review/review-analytics.test.ts src/modules/code-review/feedback-analytics.test.ts src/modules/code-review/duplicate-candidates.test.ts src/modules/repositories/repository-review-rules.test.ts src/modules/code-review/review.pipeline.test.ts src/modules/chat/repository-qa.test.ts src/modules/billing/billing.mapping.test.ts src/modules/billing/stripe-service.test.ts src/modules/billing/stripe-event-claim.test.ts src/modules/billing/review-quota.test.ts src/config/env.test.ts src/config/redis-connection.test.ts src/modules/github/github-review-source.test.ts src/modules/github/github-development.test.ts src/modules/github/github-development.service.test.ts src/modules/github/pull-request-webhook.test.ts src/modules/github/pull-request-publish.test.ts src/modules/automation/automation.test.ts src/modules/automation/visual-workflow.test.ts src/modules/automation/schedule.domain.test.ts src/modules/memory/memory.test.ts src/modules/social/social.domain.test.ts src/modules/social/social.provider.test.ts src/modules/social/linkedin.service.test.ts src/modules/integrations/integrations.test.ts src/modules/integrations/oauth-state.test.ts",
+    "test": "tsx --test src/routes.test.ts src/middleware/auth.middleware.test.ts src/middleware/rate-limit.test.ts src/middleware/api-security.middleware.test.ts src/middleware/cors.middleware.test.ts src/middleware/error.middleware.test.ts src/modules/auth/auth.routes.test.ts src/modules/auth/auth.controller.test.ts src/modules/auth/auth.service.test.ts src/modules/code-review/analyzer.test.ts src/modules/code-review/quality-analyzer.test.ts src/modules/code-review/security-scanner.test.ts src/modules/code-review/test-generator.test.ts src/modules/code-review/test-generation.controller.test.ts src/modules/code-review/benchmark/benchmark.test.ts src/modules/code-review/finding-lifecycle.test.ts src/modules/code-review/finding-feedback.test.ts src/modules/code-review/finding-verification.test.ts src/modules/code-review/fix-verification.test.ts src/modules/code-review/fix-verification.runner.test.ts src/modules/code-review/fix-verification.lifecycle.test.ts src/runner/sandbox.test.ts src/runner/runner-app.test.ts src/modules/code-review/review-analytics.test.ts src/modules/code-review/feedback-analytics.test.ts src/modules/code-review/duplicate-candidates.test.ts src/modules/repositories/repository-review-rules.test.ts src/modules/code-review/review.pipeline.test.ts src/modules/chat/repository-qa.test.ts src/modules/billing/billing.mapping.test.ts src/modules/billing/stripe-service.test.ts src/modules/billing/stripe-event-claim.test.ts src/modules/billing/review-quota.test.ts src/config/env.test.ts src/config/redis-connection.test.ts src/modules/github/github-review-source.test.ts src/modules/github/github-development.test.ts src/modules/github/github-development.service.test.ts src/modules/github/pull-request-webhook.test.ts src/modules/github/pull-request-publish.test.ts src/modules/automation/automation.test.ts src/modules/automation/visual-workflow.test.ts src/modules/automation/schedule.domain.test.ts src/modules/automation/scheduler-leader.test.ts src/utils/error-monitoring.test.ts src/modules/memory/memory.test.ts src/modules/social/social.domain.test.ts src/modules/social/social.provider.test.ts src/modules/social/linkedin.service.test.ts src/modules/integrations/integrations.test.ts src/modules/integrations/oauth-state.test.ts",
     "test:ai-usage": "tsx --test src/modules/ai/usage.service.test.ts src/modules/ai/usage.analytics.test.ts",
     "test:ai-review:live": "tsx --test src/modules/code-review/analyzer.live.test.ts",
     "test:finding-lifecycle:integration": "tsx --test src/modules/code-review/finding-lifecycle.integration.test.ts",
@@ -29,6 +29,7 @@
   },
   "dependencies": {
     "@prisma/client": "^5.8.0",
+    "@sentry/node": "^10.78.0",
     "axios": "^1.21.0",
     "bcrypt": "^6.0.0",
     "bullmq": "^5.5.0",
@@ -64,10 +65,11 @@
     "pino-pretty": "^13.1.3",
     "prettier": "^3.1.0",
     "prisma": "^5.8.0",
+    "tsc-alias": "^1.8.16",
     "tsx": "^4.7.0"
   },
   "engines": {
-    "node": ">=20.0.0",
+    "node": ">=22.0.0",
     "npm": ">=10.0.0"
   }
 }

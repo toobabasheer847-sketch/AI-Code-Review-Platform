@@ -10,6 +10,7 @@ import {
   RetryableVerificationDispatchError,
 } from '@/modules/code-review/fix-verification.lifecycle'
 import logger from '@/utils/logger'
+import { reportBackendError } from '@/utils/error-monitoring'
 import {
   enqueueFixVerificationJob,
   isDuplicateJobError,
@@ -82,10 +83,14 @@ const worker = new Worker<FixVerificationJobData>(
 
 worker.on('failed', (job, error) => {
   if (error instanceof RetryableVerificationDispatchError || error instanceof DelayedError) return
+  if (job && job.attemptsMade >= (job.opts.attempts ?? 1)) {
+    reportBackendError(error, 'verification-worker')
+  }
   logger.error({ attemptId: job?.data.attemptId }, 'Fix verification job failed')
 })
 
 worker.on('error', (error) => {
+  reportBackendError(error, 'verification-worker')
   logger.error(
     { errorType: error instanceof Error ? error.name : 'UnknownError' },
     'Fix verification worker error'
@@ -94,11 +99,13 @@ worker.on('error', (error) => {
 
 export async function startFixVerificationWorker(): Promise<void> {
   await recoverFixVerificationJobs()
-  void worker.run().catch(() => {
+  void worker.run().catch((error: unknown) => {
+    reportBackendError(error, 'verification-worker')
     logger.error('Fix verification worker stopped unexpectedly')
   })
   reconcileTimer = setInterval(() => {
     void reconcile().catch((error: unknown) => {
+      reportBackendError(error, 'verification-worker')
       logger.error(
         { errorType: error instanceof Error ? error.name : 'UnknownError' },
         'Fix verification reconciliation failed'

@@ -2,6 +2,7 @@ import { createClient } from 'redis'
 import { env } from './env'
 import logger from '@/utils/logger'
 import { getRedisConnectionTarget } from './redis-connection'
+import { reportBackendError } from '@/utils/error-monitoring'
 
 const redisTarget = getRedisConnectionTarget()
 
@@ -10,6 +11,7 @@ export const redis = createClient({
 })
 
 redis.on('error', (error) => {
+  reportBackendError(error, 'redis')
   const errorCode =
     typeof error === 'object' &&
     error !== null &&

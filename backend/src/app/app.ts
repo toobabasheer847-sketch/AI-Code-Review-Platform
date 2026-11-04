@@ -62,7 +62,11 @@ export const createApp = (): Express => {
   app.use('/api/auth/register', loginRegistrationLimiter);
   app.use('/api', apiSecurityMiddleware);
 
-  app.get('/health', async (_req, res) => {
+  app.get('/health/live', (_req, res) => {
+    res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+
+  const readinessHandler = async (_req: express.Request, res: express.Response): Promise<void> => {
     try {
       await prisma.$queryRaw`SELECT 1`;
       await redis.ping();
@@ -77,11 +81,9 @@ export const createApp = (): Express => {
       const scheduler = getAutomationSchedulerHealth();
       const schedulerStatus = !scheduler.running
         ? 'starting'
-        : scheduler.lastSuccessfulTickAt && scheduler.lastFailureType === null
-          ? 'ok'
-          : scheduler.lastFailureType
-            ? 'degraded'
-            : 'starting';
+        : scheduler.lastFailureType
+          ? 'degraded'
+          : 'ok';
       res.json({
         status: schedulerStatus === 'degraded' ? 'degraded' : 'ok',
         timestamp: new Date().toISOString(),
@@ -112,7 +114,10 @@ export const createApp = (): Express => {
         dependencies: { database: 'unknown', redis: 'unknown', queues: 'unknown' },
       });
     }
-  });
+  };
+
+  app.get('/health/ready', readinessHandler);
+  app.get('/health', readinessHandler);
 
   app.use('/api', createApiRoutes());
 

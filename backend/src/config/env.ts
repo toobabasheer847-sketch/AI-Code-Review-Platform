@@ -90,6 +90,8 @@ export const env = {
   STRIPE_PRO_PRICE_ID: process.env.STRIPE_PRO_PRICE_ID || '',
   STRIPE_API_VERSION: process.env.STRIPE_API_VERSION || '2023-10-16',
   REDIS_URL: resolveRedisUrl(),
+  SENTRY_DSN: process.env.SENTRY_DSN?.trim() || '',
+  SENTRY_RELEASE: process.env.SENTRY_RELEASE?.trim() || '',
   MAIL_HOST: process.env.MAIL_HOST || 'smtp.gmail.com',
   MAIL_PORT: Number(process.env.MAIL_PORT || '587'),
   MAIL_USER: process.env.MAIL_USER || '',

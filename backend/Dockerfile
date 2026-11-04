@@ -1,4 +1,4 @@
-FROM node:20-alpine
+FROM node:24.22.2-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85 AS development
 
 WORKDIR /app
 
@@ -13,9 +13,23 @@ COPY backend ./backend
 
 WORKDIR /app/backend
 RUN npm run prisma:generate
+
+FROM development AS build
 RUN npm run build
+RUN npm prune --omit=dev
+
+FROM node:24.22.2-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85 AS runtime
+
+WORKDIR /app
 
 ENV NODE_ENV=production
+
+COPY --from=build --chown=node:node /app/node_modules ./node_modules
+COPY --from=build --chown=node:node /app/backend/package.json ./backend/package.json
+COPY --from=build --chown=node:node /app/backend/dist ./backend/dist
+
+WORKDIR /app/backend
+
 USER node
 
 EXPOSE 3001
@@ -23,4 +37,4 @@ EXPOSE 3001
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=5 \
   CMD node -e "fetch('http://127.0.0.1:3001/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
 
-CMD ["npm", "run", "start", "--workspace=backend"]
+CMD ["node", "dist/app/server.js"]

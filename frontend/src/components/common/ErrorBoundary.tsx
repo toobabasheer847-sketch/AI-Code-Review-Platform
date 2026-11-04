@@ -1,4 +1,5 @@
 import React, { type ReactNode } from 'react'
+import { reportFrontendError } from '@/lib/errorMonitoring'
 
 interface ErrorBoundaryProps {
   children: ReactNode
@@ -20,8 +21,8 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
     return { hasError: true, error }
   }
 
-  componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
-    console.error('ErrorBoundary caught an error:', error, errorInfo)
+  componentDidCatch(error: Error): void {
+    reportFrontendError(error, 'ui', 'render')
   }
 
   handleReset = (): void => {
@@ -37,12 +38,12 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
               <h2 className="text-xl font-semibold text-destructive mb-2">
                 Something went wrong
               </h2>
-              <p className="text-sm text-muted-foreground mb-4">
-                {this.state.error.message || 'An unexpected error occurred'}
+              <p className="text-sm text-muted-foreground mb-4" role="alert">
+                An unexpected error occurred. Please try again.
               </p>
               <button
                 onClick={this.handleReset}
-                className="px-4 py-2 bg-primary text-primary-foreground rounded hover:opacity-90 transition-opacity"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded hover:opacity-90 transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
               >
                 Try again
               </button>

@@ -25,10 +25,30 @@ import {
   stopFixVerificationWorker,
 } from '@/jobs/fix-verification.worker'
 import type { Server } from 'node:http'
+import {
+  flushErrorMonitoring,
+  initializeErrorMonitoring,
+  reportBackendError,
+} from '@/utils/error-monitoring'
 
 const app = createApp()
 let httpServer: Server | null = null
 let isShuttingDown = false
+initializeErrorMonitoring()
+
+async function closeResource(resource: string, cleanup: () => Promise<unknown>): Promise<boolean> {
+  try {
+    await cleanup()
+    return true
+  } catch (error) {
+    logger.error(
+      { resource, errorType: error instanceof Error ? error.name : 'UnknownError' },
+      'Shutdown cleanup failed'
+    )
+    if (resource !== 'errorMonitoring') reportBackendError(error, 'startup')
+    return false
+  }
+}
 
 async function bootstrap(): Promise<void> {
   try {
@@ -47,6 +67,7 @@ async function bootstrap(): Promise<void> {
       logger.info(`Server running on port ${env.PORT} in ${env.NODE_ENV} mode`)
     })
   } catch (error) {
+    reportBackendError(error, 'startup')
     logger.error(
       {
         errorType: error instanceof Error ? error.name : 'UnknownError',
@@ -57,57 +78,45 @@ async function bootstrap(): Promise<void> {
       },
       'Failed to start server'
     )
-    for (const [resource, cleanup] of [
-      ['emailQueue', closeEmailQueue],
-      ['redis', disconnectRedis],
-      ['database', () => prisma.$disconnect()],
-    ] as const) {
-      try {
-        await cleanup()
-      } catch (cleanupError) {
-        logger.error(
-          {
-            resource,
-            errorType: cleanupError instanceof Error ? cleanupError.name : 'UnknownError',
-          },
-          'Startup failure cleanup failed'
-        )
-      }
-    }
-    process.exitCode = 1
+    await shutdown('startup-failure', 1)
   }
 }
 
-async function shutdown(signal: string): Promise<void> {
+async function shutdown(signal: string, initialExitCode = 0): Promise<void> {
   if (isShuttingDown) return
   isShuttingDown = true
   logger.info({ signal }, 'Closing server')
-  try {
-    if (httpServer) {
-      await new Promise<void>((resolve, reject) => {
-        httpServer?.close((error) => (error ? reject(error) : resolve()))
-      })
-    }
-    await stopReviewWorker()
-    await stopAutomationScheduler()
-    await stopAutomationWorker()
-    await stopSocialWorker()
-    await stopFixVerificationWorker()
-    await closeFixVerificationQueue()
-    await closeReviewQueue()
-    await closeAutomationQueue()
-    await closeSocialQueue()
-    await closeEmailQueue()
-    await disconnectRedis()
-    await prisma.$disconnect()
-    process.exitCode = 0
-  } catch (error) {
-    logger.error(
-      { errorType: error instanceof Error ? error.name : 'UnknownError' },
-      'Graceful shutdown failed'
-    )
-    process.exitCode = 1
+  const cleanups: Array<[string, () => Promise<unknown>]> = [
+    [
+      'httpServer',
+      () =>
+        new Promise<void>((resolve, reject) => {
+          if (!httpServer) {
+            resolve()
+            return
+          }
+          httpServer.close((error) => (error ? reject(error) : resolve()))
+        }),
+    ],
+    ['automationScheduler', stopAutomationScheduler],
+    ['reviewWorker', stopReviewWorker],
+    ['automationWorker', stopAutomationWorker],
+    ['socialWorker', stopSocialWorker],
+    ['fixVerificationWorker', stopFixVerificationWorker],
+    ['fixVerificationQueue', closeFixVerificationQueue],
+    ['reviewQueue', closeReviewQueue],
+    ['automationQueue', closeAutomationQueue],
+    ['socialQueue', closeSocialQueue],
+    ['emailQueue', closeEmailQueue],
+    ['redis', disconnectRedis],
+    ['database', () => prisma.$disconnect()],
+  ]
+  let exitCode = initialExitCode
+  for (const [resource, cleanup] of cleanups) {
+    if (!(await closeResource(resource, cleanup))) exitCode = 1
   }
+  if (!(await closeResource('errorMonitoring', () => flushErrorMonitoring()))) exitCode = 1
+  process.exitCode = exitCode
 }
 
 process.on('SIGTERM', () => void shutdown('SIGTERM'))
