@@ -1,47 +1,38 @@
-import express, { Express } from 'express'
-import helmet from 'helmet'
-import pinoHttp from 'pino-http'
-import rateLimit from 'express-rate-limit'
-import { env } from '@/config/env'
-import logger from '@/utils/logger'
-import { errorMiddleware } from '@/middleware/error.middleware'
-import { apiSecurityMiddleware } from '@/middleware/api-security.middleware'
-import { corsMiddleware } from '@/middleware/cors.middleware'
-import { createApiRoutes } from '@/routes'
-import { prisma } from '@/config/database'
-import { redis } from '@/config/redis'
-import { reviewQueue } from '@/jobs/review.queue'
-import { emailQueue } from '@/jobs/email.queue'
-import { automationQueue } from '@/modules/automation/automation.queue'
-import { getAutomationSchedulerHealth } from '@/modules/automation/automation.scheduler'
-import { socialQueue } from '@/modules/social/social.queue'
-import { fixVerificationQueue } from '@/jobs/fix-verification.queue'
-
-// Rate limiting middleware
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
-  message: 'Too many requests from this IP, please try again later',
-  standardHeaders: true,
-  legacyHeaders: false,
-  skip: (request) =>
-    request.originalUrl.split('?')[0] === '/api/reviews/internal/verification-callback',
-})
-
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
-  message: 'Too many login attempts, please try again later',
-  skipSuccessfulRequests: true,
-})
+import express, { Express } from 'express';
+import helmet from 'helmet';
+import pinoHttp from 'pino-http';
+import { env } from '@/config/env';
+import {
+  apiLimiter,
+  loginRegistrationLimiter,
+  resolveTrustProxySetting,
+} from '@/middleware/rate-limit';
+import logger from '@/utils/logger';
+import { errorMiddleware } from '@/middleware/error.middleware';
+import { apiSecurityMiddleware } from '@/middleware/api-security.middleware';
+import { corsMiddleware } from '@/middleware/cors.middleware';
+import { createApiRoutes } from '@/routes';
+import { prisma } from '@/config/database';
+import { redis } from '@/config/redis';
+import { reviewQueue } from '@/jobs/review.queue';
+import { emailQueue } from '@/jobs/email.queue';
+import { automationQueue } from '@/modules/automation/automation.queue';
+import { getAutomationSchedulerHealth } from '@/modules/automation/automation.scheduler';
+import { socialQueue } from '@/modules/social/social.queue';
+import { fixVerificationQueue } from '@/jobs/fix-verification.queue';
 
 export const createApp = (): Express => {
-  const app = express()
+  const app = express();
+  const trustProxy = resolveTrustProxySetting();
+  app.set('trust proxy', trustProxy);
+  if (env.NODE_ENV === 'production' && trustProxy === false) {
+    logger.warn(
+      'TRUST_PROXY_HOPS is unset. X-Forwarded-For is ignored so a spoofed client address cannot bypass rate limits. Set TRUST_PROXY_HOPS to the exact number of trusted proxies in front of this process.'
+    );
+  }
 
-  app.set('trust proxy', 1)
-
-  app.use(helmet())
-  app.use(corsMiddleware)
+  app.use(helmet());
+  app.use(corsMiddleware);
 
   app.use(
     pinoHttp({
@@ -52,29 +43,29 @@ export const createApp = (): Express => {
             method: request.method,
             url: request.url?.split('?')[0],
             remoteAddress: request.remoteAddress,
-          }
+          };
         },
       },
     })
-  )
-  app.use('/api/billing/webhook', express.raw({ type: 'application/json', limit: '1mb' }))
-  app.use('/api/webhooks/github', express.raw({ type: 'application/json', limit: '1mb' }))
+  );
+  app.use('/api/billing/webhook', express.raw({ type: 'application/json', limit: '1mb' }));
+  app.use('/api/webhooks/github', express.raw({ type: 'application/json', limit: '1mb' }));
   app.use(
     '/api/reviews/internal/verification-callback',
     express.raw({ type: 'application/json', limit: '128kb' })
-  )
-  app.use(express.json({ limit: '10mb' }))
-  app.use(express.urlencoded({ limit: '10mb', extended: true }))
+  );
+  app.use(express.json({ limit: '10mb' }));
+  app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
-  app.use('/api/', limiter)
-  app.use('/api/auth/login', authLimiter)
-  app.use('/api/auth/register', authLimiter)
-  app.use('/api', apiSecurityMiddleware)
+  app.use('/api/', apiLimiter);
+  app.use('/api/auth/login', loginRegistrationLimiter);
+  app.use('/api/auth/register', loginRegistrationLimiter);
+  app.use('/api', apiSecurityMiddleware);
 
   app.get('/health', async (_req, res) => {
     try {
-      await prisma.$queryRaw`SELECT 1`
-      await redis.ping()
+      await prisma.$queryRaw`SELECT 1`;
+      await redis.ping();
       const [reviewJobs, emailJobs, automationJobs, socialJobs, verificationJobs] =
         await Promise.all([
           reviewQueue.getJobCounts('waiting', 'active', 'delayed', 'failed'),
@@ -82,16 +73,15 @@ export const createApp = (): Express => {
           automationQueue.getJobCounts('waiting', 'active', 'delayed', 'failed'),
           socialQueue.getJobCounts('waiting', 'active', 'delayed', 'failed'),
           fixVerificationQueue.getJobCounts('waiting', 'active', 'delayed', 'failed'),
-        ])
-      const scheduler = getAutomationSchedulerHealth()
+        ]);
+      const scheduler = getAutomationSchedulerHealth();
       const schedulerStatus = !scheduler.running
         ? 'starting'
-        : scheduler.lastSuccessfulTickAt &&
-            scheduler.lastFailureType === null
+        : scheduler.lastSuccessfulTickAt && scheduler.lastFailureType === null
           ? 'ok'
           : scheduler.lastFailureType
             ? 'degraded'
-            : 'starting'
+            : 'starting';
       res.json({
         status: schedulerStatus === 'degraded' ? 'degraded' : 'ok',
         timestamp: new Date().toISOString(),
@@ -110,23 +100,23 @@ export const createApp = (): Express => {
           fixVerification: verificationJobs,
         },
         scheduler,
-      })
+      });
     } catch (error) {
       logger.error(
         { errorType: error instanceof Error ? error.name : 'UnknownError' },
         'Readiness health check failed'
-      )
+      );
       res.status(503).json({
         status: 'error',
         timestamp: new Date().toISOString(),
         dependencies: { database: 'unknown', redis: 'unknown', queues: 'unknown' },
-      })
+      });
     }
-  })
+  });
 
-  app.use('/api', createApiRoutes())
+  app.use('/api', createApiRoutes());
 
-  app.use(errorMiddleware)
+  app.use(errorMiddleware);
 
-  return app
-}
+  return app;
+};

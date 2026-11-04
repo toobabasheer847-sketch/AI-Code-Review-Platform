@@ -20,7 +20,7 @@ const filePatternSchema = z
   .min(1)
   .max(180)
   .regex(
-    /^(?!\/)(?!.*\.\.)[A-Za-z0-9_.*?/\-]+$/,
+    /^(?!\/)(?!.*\.\.)[A-Za-z0-9_.*?/-]+$/,
     'File patterns must be relative globs without parent directory segments.'
   );
 

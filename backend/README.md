@@ -578,6 +578,34 @@ docker-compose up -d
 - BullMQ requires Redis 6.2 or newer; email worker startup reports an actionable diagnostic for older versions.
 - Inspect safe queue/worker error codes and SMTP response codes in backend logs. Never log OTPs or credentials.
 
+### Distributed rate limits
+
+Rate limits are stored in the same Redis database as the queues (`REDIS_URL`), through a separate Redis client from the BullMQ connection. Every API replica must use that Redis so the counters are shared. Restarting an API process does not clear the counters. Redis itself must have a durable AOF or RDB policy if the counters should survive a Redis restart; a flush or a memory-only Redis restart starts new windows.
+
+`TRUST_PROXY_HOPS` controls whether `X-Forwarded-For` is a client address:
+
+- Leave it unset, or set `false`, when the Node process is reached directly. Forwarded headers are ignored. A client cannot mint a new rate-limit bucket by sending a spoofed address.
+- Set it to the exact number of trusted reverse proxies between the client and this process, usually `1` for a single load balancer or ingress gateway. Only that many hops are trusted. Do not set `true` or `all`; the process rejects those values because they would trust a client-supplied address.
+- Count only proxies you operate. If Cloudflare or another gateway appends the connecting address, include that hop and do not add extra hops for headers the client can forge.
+
+The built-in ceilings cannot be raised with environment variables. A deployment may lower a maximum or lengthen a window. Unset variables use these limits:
+
+| Policy | Routes | Identity | Window | Maximum | Redis outage |
+| --- | --- | --- | --- | --- | --- |
+| API | `/api/*` except the internal verification callback | Client IP | 15 minutes | 100 | Fail open. Ordinary reads continue and the failure is logged. |
+| Login and registration | `POST /api/auth/login`, `POST /api/auth/register` | Client IP | 15 minutes | 5 failed requests | Fail closed with HTTP 503 and `Retry-After: 5`. Successful attempts are not counted. |
+| Password reset and verification email | Reset request/confirm, verification resend, account deletion | Client IP | 15 minutes | 5 | Fail closed. |
+| Email verification codes | `POST /api/auth/verify-email` | Client IP | 15 minutes | 10 | Fail closed. This counter is separate from the reset/resend counter. |
+| Manual code reviews | `POST /api/reviews/start` | Authenticated user | 15 minutes | 10 | Fail closed. |
+| Repository Q&A | `POST /api/chat/repository-message` | Authenticated user | 15 minutes | 20 | Fail closed. |
+| Automation planning and execution | Create, visual validation, schedules, execute, and retry | Client IP and authenticated user, both capped | 1 minute | 10 | Fail closed. |
+| Other AI generation | Review chat, test suggestions, social draft generation | Authenticated user | 15 minutes | 20 | Fail closed. |
+| GitHub, integrations, social publishing | Existing route groups | Client IP | 1 minute | 30, 20, and 20 | Fail open. |
+
+`GET /health` is not rate limited. A limited response is HTTP 429 with a JSON body `{ "error", "retryAfterSeconds" }` and a `Retry-After` header. Auth and AI routes reject work when Redis cannot apply their counter; they do not fall back to a process-local limit.
+
+Variable names are `RATE_LIMIT_<POLICY>_WINDOW_MS` and `RATE_LIMIT_<POLICY>_MAX`, using `API`, `LOGIN`, `ACCOUNT`, `VERIFICATION`, `REVIEW`, `REPOSITORY_QA`, `AUTOMATION`, `AI`, `GITHUB`, `INTEGRATION`, and `SOCIAL`. `RATE_LIMIT_AUTOMATION_*` applies to both the IP and per-user automation counters.
+
 ### Port already in use
 
 - Change PORT in .env or kill process using port 3001

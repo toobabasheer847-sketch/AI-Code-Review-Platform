@@ -14,7 +14,7 @@ user-owned and has no organization, workspace, membership, or role models.
 | --- | --- | --- |
 | Blocker | There is no organization/workspace membership or role-based access model. Ownership is by individual `userId`; there is no tenant administrator or member lifecycle. | Decide the intended tenancy model, then implement and test tenant-scoped access across APIs, database relations, jobs, approvals, schedules, files, billing, and provider credentials before selling team/organization plans. |
 | High | Browser-readable JWT storage was identified in the pre-redesign audit. The application now uses an HttpOnly session cookie, signed CSRF token, and exact-origin validation in source. | Verify production `CSRF_SECRET`, cookie SameSite/HTTPS settings, deployed frontend/API origins, OAuth callbacks, and browser behavior in staging before launch. |
-| High | Express rate limits use process-local memory stores. Limits do not aggregate across replicas or survive restarts. `trust proxy` is fixed to one hop. | Put a shared rate-limit store or enforce equivalent limits at a trusted gateway/WAF. Verify the exact proxy chain and spoofed forwarding-header behavior in the deployment topology. |
+| High | API rate limits now use shared Redis counters. `X-Forwarded-For` is ignored unless `TRUST_PROXY_HOPS` is the exact trusted hop count. | Set `TRUST_PROXY_HOPS` to the deployed proxy chain, point every replica at the same durable Redis, and confirm spoofed forwarded headers do not create new buckets in staging. |
 | Medium | After the 2026-11-01 dependency remediation, `npm audit` reports 18 moderate findings and no critical, high, or low findings. All 18 are the dev-only minimatch advisory GHSA-g3hv-75wg-m249 (`minimatch` < 11.0.1), reached through ESLint 8, typescript-eslint, glob 7, and rimraf 3. | Keep CI at `npm audit --audit-level=high` so critical and high advisories fail the build. Do not lower that level. The minimatch issue is not in the production runtime tree. Forcing minimatch 11 would break ESLint 8, and ESLint 10 still depends on minimatch 10.x, which remains inside the vulnerable range. Revisit when a compatible lint release depends on minimatch >= 11.0.1. |
 | High | The scheduler, API, and BullMQ workers are started by the same server process. Production multi-replica behavior, Redis persistence/HA, queue recovery, and graceful drain have not been independently validated. | Define the supported replica topology, Redis durability/monitoring, worker shutdown policy, and recovery SLOs; conduct restart, failover, and duplicate-side-effect tests in a staging environment. |
 | High | Browser accessibility, responsive behavior, onboarding, and user-visible failure states have not had an independent accessibility/browser audit. | Complete keyboard/screen-reader and responsive checks for auth, billing, integrations, automation, and error flows before release. |
@@ -184,9 +184,9 @@ recovery; those are deployment responsibilities.
   implemented.
 - Frontend auth persistence is accessible to browser JavaScript. No
   independently verified XSS assessment or HttpOnly session migration exists.
-- Rate limiting is in-process. Limits reset on restart and are not shared
-  between instances; the one-hop proxy trust setting must match the actual
-  ingress.
+- API rate limits use Redis and are shared across replicas. They survive an
+  API process restart, not a Redis flush. `TRUST_PROXY_HOPS` must match the
+  actual ingress or forwarded client addresses are ignored.
 - The backend starts HTTP, queue workers, and the automation scheduler in the
   same process. Separate API/worker deployments and production scaling/failover
   are not demonstrated.
