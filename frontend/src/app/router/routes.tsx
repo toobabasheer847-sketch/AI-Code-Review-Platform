@@ -68,6 +68,9 @@ const AIUsageAnalyticsPage = lazy(() =>
     default: m.AIUsageAnalyticsPage,
   }))
 );
+const AIChatPage = lazy(() =>
+  import('@features/chat/pages/AIChatPage').then((m) => ({ default: m.AIChatPage }))
+);
 const RepositoryRulesPage = lazy(() =>
   import('@features/repositories/pages/RepositoryRulesPage').then((m) => ({
     default: m.RepositoryRulesPage,
@@ -289,6 +292,16 @@ export const routes: RouteObject[] = [
       <ProtectedRoute>
         <Suspense fallback={<LazyFallback />}>
           <AIUsageAnalyticsPage />
+        </Suspense>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/chat',
+    element: (
+      <ProtectedRoute>
+        <Suspense fallback={<LazyFallback />}>
+          <AIChatPage />
         </Suspense>
       </ProtectedRoute>
     ),
