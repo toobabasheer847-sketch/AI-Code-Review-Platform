@@ -2,25 +2,25 @@
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Node.js](https://img.shields.io/badge/node.js-20%2B-green.svg)
-![TypeScript](https://img.shields.io/badge/typescript-5.3%2B-blue.svg)
+![TypeScript](https://img.shields.io/badge/typescript-5.4%2B-blue.svg)
 
 AI-CodeGuard is a full-stack application for AI-assisted code review with GitHub integration, background processing, and optional subscription billing.
 
 ## 🚀 Features
 
-- **AI-Powered Code Review**: Automated analysis using OpenAI GPT models. Findings are validated against supplied source (and available pull-request diff lines); displayed scores are heuristic indicators, not guarantees that code is safe or issue-free.
-- **Real-time Collaboration**: Socket.io powered chat and discussions
-- **GitHub Integration**: Seamless GitHub repository integration with OAuth
+- **AI-assisted Code Review**: An OpenAI-backed review path is implemented and requires a configured provider. Findings are validated against supplied source (and available pull-request diff lines); displayed scores are heuristic indicators, not guarantees that code is safe or issue-free.
+- **AI Chat**: Authenticated HTTP chat for owned reviews and authorized GitHub repositories
+- **GitHub Integration**: OAuth and repository-access flows are implemented; live provider access requires app setup and is not verified by the test suite
 - **GitHub Development Agent**: Evidence-backed repository and pull-request context with approval-gated issue and comment actions
-- **Social Publishing**: Evidence-backed LinkedIn drafts, approval inbox, and scheduled member text posts
-- **Subscription Billing**: Stripe integration for payment processing
+- **Social Publishing**: Evidence-backed LinkedIn drafts, approval inbox, and scheduled member text posts; actual publishing requires LinkedIn configuration and account authorization
+- **Subscription Billing**: Stripe checkout and webhook flows are implemented; live billing requires Stripe configuration and was not live-tested here
 - **Background Jobs**: BullMQ for async processing of reviews and emails
 - **Automation MVP**: Approval-gated plans with persisted task status and safe text-draft execution
-- **Real-time Analytics**: Dashboard with comprehensive insights
+- **Analytics**: Owner-scoped review feedback and AI usage reports
 - **Security controls**: server-managed HttpOnly JWT sessions, signed CSRF tokens, encrypted provider credentials, explicit-origin CORS, Helmet, and Redis-backed rate limits shared by every API replica
 - **Multi-language Support**: Support for various programming languages
 - **Email Notifications**: Nodemailer integration for alerts and notifications
-- **Redis Caching**: High-performance caching layer
+- **Redis**: Background queues and shared rate-limit storage
 
 ## 📁 Project Structure
 
@@ -54,7 +54,6 @@ AI-CodeGuard/
 - **TanStack Query** - Data fetching and caching
 - **React Router** - Client-side routing
 - **Tailwind CSS** - Utility-first CSS framework
-- **Shadcn UI** - Accessible component library
 - **Zustand** - Lightweight state management
 - **Framer Motion** - Animation library
 - **Recharts** - Data visualization
@@ -67,14 +66,15 @@ AI-CodeGuard/
 - **TypeScript** - Type safety
 - **Prisma ORM** - Database abstraction
 - **PostgreSQL** - Relational database
-- **Redis** - Caching and job queue storage
+- **Redis** - Background queues and shared rate-limit storage
 - **BullMQ** - Background job processing
 - **OpenAI API** - AI-powered code analysis
-- **Socket.io** - Real-time bidirectional communication
 - **JWT** - Authentication tokens
 - **Stripe** - Payment processing
 - **Nodemailer** - Email service
-- **GitHub OAuth** - Social authentication
+- **GitHub OAuth** - Repository access and development workflows
+- **LinkedIn OAuth** - Optional member text-post publishing
+- **SMTP** - Required email delivery for account and workflow notifications
 
 ## 🚀 Getting Started
 
@@ -95,17 +95,24 @@ git clone https://github.com/yourusername/ai-codeguard.git
 cd ai-codeguard
 ```
 
-2. **Setup Environment Variables**
+2. **Set up environment files**
 
 ```bash
-copy .env.example .env
-# Configure backend values in backend/.env or export them in your shell
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env
 ```
 
-3. **Install and configure**
+On Windows PowerShell, use `Copy-Item backend\.env.example backend\.env` and
+`Copy-Item frontend\.env.example frontend\.env`. Configure valid SMTP
+credentials in `backend/.env`; the email worker validates mail settings during
+server startup. Set provider credentials only for integrations you intend to
+exercise. For local services, PostgreSQL defaults to port `5432`; the backend
+Redis default is port `6380` (change `REDIS_URL` if your Redis listens elsewhere).
+
+3. **Install dependencies and apply migrations**
 
 ```bash
-npm install
+npm ci
 npm run prisma:generate --workspace=backend
 npm run prisma:deploy --workspace=backend
 ```
@@ -121,24 +128,21 @@ npm run dev --workspace=frontend
 
 - Frontend: http://localhost:3000
 - Backend API: http://localhost:3001
-- API Documentation: http://localhost:3001/api/docs
+- Readiness check: http://localhost:3001/health
 
 ### Docker Setup
 
 ```bash
 # Build and run with Docker Compose
 docker-compose up -d
-
-# Apply pending migrations (Compose also does this before starting the local backend)
-docker-compose exec backend npm run prisma:deploy
-
-# Seed database
-docker-compose exec backend npm run seed
 ```
 
 Compose is for local development and uses local-only database credentials. Do
-not use it as a production deployment template. `GET /health` checks PostgreSQL,
-Redis, the configured job queues, and scheduler state.
+not use it as a production deployment template. Copy the root `.env.example`
+to `.env` for Compose interpolation and configure `backend/.env` for provider,
+mail, and other backend settings. Compose applies migrations before starting
+the backend. `GET /health` checks PostgreSQL, Redis, configured queues, and
+scheduler state.
 
 See [SAAS-LAUNCH-READINESS.md](./SAAS-LAUNCH-READINESS.md) for production
 environment setup, release checks, deployment and rollback guidance, backup
@@ -147,70 +151,84 @@ been independently verified in a production deployment.
 
 ## 📚 API Documentation
 
-### Authentication Endpoints
+The following inventory is based on the Express routers mounted by
+`backend/src/routes.ts`. Most product routes require an authenticated session;
+public callbacks and webhooks are identified below. The route-wiring tests check that protected product paths reject
+unauthenticated requests and that selected public callbacks/webhooks are
+mounted when given incomplete requests. These are route-availability checks;
+provider-backed calls are not live-tested by the unit suite.
+In each table row, abbreviated paths inherit that row's API prefix (for
+example, `/login` in Authentication means `/api/auth/login`). Session
+authentication is required except for the explicitly public auth flows,
+provider callbacks, and signed webhooks.
 
-- `POST /api/auth/register` - Register new user
-- `POST /api/auth/login` - User login
-- `POST /api/auth/logout` - User logout
-- `GET /api/auth/github/callback` - GitHub OAuth callback
+| Area | Mounted routes |
+| --- | --- |
+| Health | `GET /health` |
+| Authentication | `GET /api/auth/csrf`, `/api/auth/me`; `POST /api/auth/register`, `/login`, `/logout`, `/verification-email/request`, `/verification-email`, `/verify-email`, `/password-reset/request`, `/password-reset/confirm`; `DELETE /api/auth/account` |
+| GitHub | `GET /api/github/connect`, `/callback`, `/repos`, `/repos/:owner/:repo/files`, `/repos/:repoName/files`, `/file`, `/development/templates`; `POST /api/github/development/workflows`; `DELETE /api/github/disconnect` |
+| Reviews | `GET /api/reviews`, `/analytics`, `/feedback-analytics`, `/:id`, `/:id/duplicate-candidates`, `/fix-verification-attempts`, `/fix-verification-attempts/:attemptId`, `/findings/:findingId/verification-requests/:requestKey`; `POST /api/reviews/start`, `/findings/:findingId/feedback`, `/findings/:findingId/fix-proposals`, `/findings/:findingId/verification-requests`, `/fix-proposals/:proposalId/verification-attempts`, `/fix-verification-attempts/:attemptId/review-decision`, `/fix-verification-attempts/:attemptId/cancel`, `/:id/findings/:findingId/test-suggestions`, `/internal/verification-callback`; `PATCH /api/reviews/findings/:findingId/status`; `DELETE /api/reviews/:id` |
+| Repository records and rules | `GET /api/repositories`, `/api/repositories/:repositoryId/review-rules`; `POST /api/repositories/:repositoryId/review-rules`; `PATCH /api/repositories/:repositoryId/review-rules/:ruleId`; `DELETE /api/repositories/:repositoryId/review-rules/:ruleId` |
+| Chat | `POST /api/chat/message`, `/api/chat/repository-message` |
+| AI usage | `GET /api/ai-usage` |
+| Billing | `POST /api/billing/create-checkout`, `/cancel-subscription`, `/webhook`; `GET /api/billing/subscription`, `/usage` |
+| Automations | `GET /api/automations`, `/:id`, `/schedules`, `/notification-preferences`; `POST /api/automations`, `/visual`, `/visual/validate`, `/:id/execute-draft`, `/:id/approve`, `/:id/reject`, `/:id/cancel`, `/:id/retry`, `/schedules`, `/schedules/:id/pause`, `/schedules/:id/resume`; `PATCH /api/automations/schedules/:id`, `/notification-preferences`; `DELETE /api/automations/schedules/:id` |
+| Social publishing | `GET /api/social/linkedin/callback`, `/status`, `/posts`; `POST /api/social/linkedin/connect`, `/drafts/generate`, `/drafts`, `/posts/:postId/request-approval`, `/posts/:postId/approve`, `/posts/:postId/reject`, `/posts/:postId/cancel`, `/posts/:postId/retry`; `PATCH /api/social/posts/:postId`; `DELETE /api/social/accounts/:accountId` |
+| Integrations | `GET /api/integrations`; `POST /api/integrations/:provider/check` |
+| Work memory | `GET /api/memory`, `/settings`, `/projects`; `POST /api/memory`; `PATCH /api/memory/:id`, `/settings`; `DELETE /api/memory/:id` |
+| GitHub pull-request webhook | `POST /api/webhooks/github` |
 
-### Code Review Endpoints
+GitHub OAuth callback is mounted at `GET /api/auth/github/callback` (the
+configured callback URL) and is also reachable at `GET /api/github/callback`.
+The GitHub router is additionally mounted under `/api/auth/github`.
+`GET /api/github/repos` lists repositories accessible to the authenticated
+GitHub account and supplies connected repositories for selection.
+`GET /api/repositories` is different: it lists persisted,
+owner-scoped repository records and does not connect or disconnect GitHub
+repositories. Only review-rule management is mounted under that prefix.
 
-- `GET /api/reviews` - List reviews
-- `POST /api/reviews` - Create new review
-- `GET /api/reviews/:id` - Get review details
-- `PATCH /api/reviews/findings/:findingId/status` - Update an owned finding's status and record optional feedback
-- `POST /api/reviews/findings/:findingId/feedback` - Submit idempotent True Positive, False Positive, Already Fixed, or Needs Review assessment feedback
-- `POST /api/reviews/findings/:findingId/fix-proposals` - Save an owned finding's unified-diff fix proposal
-- `POST /api/reviews/fix-proposals/:proposalId/verification-attempts` - Record an idempotent fix verification attempt
-- `GET /api/reviews/fix-verification-attempts` and `GET /api/reviews/fix-verification-attempts/:attemptId` - List or retrieve owner-scoped verification evidence
-- `POST /api/reviews/fix-verification-attempts/:attemptId/review-decision` - Record a separate human review decision
-- `PUT /api/reviews/:id` - Update review
-- `DELETE /api/reviews/:id` - Delete review
-
-Fix verification history and dashboard behavior, status rules, and remote
-isolated-runner setup are documented in
+Review creation is `POST /api/reviews/start` with a repository and optional
+branch; deletion is `DELETE /api/reviews/:id`. There is no mounted
+`POST /api/reviews` or `PUT /api/reviews/:id`. Fix verification history and
+remote isolated-runner setup are documented in
 [docs/fix-verification-engine.md](docs/fix-verification-engine.md).
-Finding assessment feedback is stored separately from lifecycle changes and AI
-findings. Analytics, project preferences, and duplicate-detection rules are
-planned follow-up phases; a single false-positive report does not suppress
-findings or security alerts.
 
-### Repository Endpoints
+Chat is HTTP request/response, not streaming or Socket.IO. Review chat uses
+`POST /api/chat/message` and is attached to an owned review; saved messages
+appear in that review's detail response. Repository Q&amp;A uses
+`POST /api/chat/repository-message`, returns bounded source evidence, and has
+no conversation-history endpoint. The repository has Socket.IO dependencies
+and placeholder files, but the HTTP server does not attach a Socket.IO runtime.
 
-- `GET /api/repositories` - List repositories
-- `POST /api/repositories` - Connect repository
-- `GET /api/repositories/:id` - Get repository details
-- `DELETE /api/repositories/:id` - Disconnect repository
+The following README/API assumptions are **not implemented**: `/api/docs`,
+`/api/ai/analyze`, `/api/ai/chat`, repository create/detail/delete routes under
+`/api/repositories`, review update via `PUT`, a `/api/users` router, and
+real-time chat. The route-wiring test asserts that `/api/docs`,
+`/api/ai/analyze`, `/api/ai/chat`, and `/api/users` return 404. The absence of
+the other paths follows from the mounted route definitions above; they are not
+aliases for mounted APIs and must not be used as API contracts. No OpenAPI UI
+is currently served.
 
-### AI Endpoints
+### Implemented, conditional, and planned scope
 
-- `POST /api/ai/analyze` - Analyze code with AI
-- `POST /api/ai/chat` - Chat about code review
+- **Implemented in this checkout:** authenticated review, analytics,
+  repository-rule, chat, automation, memory, integration-catalog, and usage
+  APIs described above. Owner checks are enforced by the relevant services.
+- **Partially/configuration-dependent:** OpenAI analysis and drafting require a
+  valid provider key; GitHub repository access requires a connected account and
+  its permissions; LinkedIn publishing requires app/account access and explicit
+  approval; Stripe billing requires complete Stripe configuration and verified
+  webhooks; email delivery requires reachable SMTP. Source and automated tests
+  do not prove any external provider is currently available or authorized.
+- **Fix verification:** the API does not execute repository code. Execution
+  needs the separate runner described in
+  [docs/verification-runner.md](docs/verification-runner.md); without it,
+  attempts remain unverified/`NEEDS_REVIEW`.
+- **Planned, not present as APIs:** team/workspace collaboration, IDE plugins,
+  mobile and CLI clients, and additional AI providers. The aspirational items
+  below are not API contracts.
 
-### Automation MVP
-
-- `POST /api/automations` - Create and validate an automation plan (authenticated)
-- `GET /api/automations` and `GET /api/automations/:id` - List or retrieve owned workflows
-- `POST /api/automations/:id/approve` - Approve an unchanged, unexpired plan and queue it
-- `POST /api/automations/:id/reject` - Reject a pending plan without executing tasks
-- `POST /api/automations/:id/cancel` - Cancel a draft or active workflow
-- `POST /api/automations/:id/retry` - Retry a failed workflow
-- `GET /api/automations/schedules` and `POST /api/automations/schedules` - List and create owned daily or weekly workflow schedules
-- `PATCH /api/automations/schedules/:id` - Update the schedule's local time, timezone, or recurrence
-- `POST /api/automations/schedules/:id/pause` and `/resume`; `DELETE /api/automations/schedules/:id` - Manage schedule state
-- `GET /api/automations/notification-preferences` and `PUT /api/automations/notification-preferences` - Configure failure alerts and daily summaries
-- `GET /api/github/development/templates` - List supported GitHub workflow templates (authenticated)
-- `POST /api/github/development/workflows` - Create an owned, approval-required GitHub workflow (authenticated)
-- `GET /api/social/status` and `GET /api/social/posts` - Read the authenticated user's provider configuration, accounts, drafts, approvals, calendar, and publication history
-- `GET /api/integrations` - List supported integrations, owner-scoped connection status, granted permissions, setup steps, capabilities, limitations, and workflow action contracts
-- `POST /api/integrations/:provider/check` - Verify the authenticated owner's GitHub or LinkedIn account against the provider and record the last successful check
-- `POST /api/social/linkedin/connect` - Begin LinkedIn OAuth (requires LinkedIn app configuration)
-- `POST /api/social/drafts/generate` - Draft a post from user instructions and one owned, completed review
-- `POST /api/social/drafts` and `PATCH /api/social/posts/:postId` - Create or edit a LinkedIn text draft
-- `POST /api/social/posts/:postId/request-approval` - Request approval for the exact account, content, and schedule
-- `POST /api/social/posts/:postId/approve` and `/reject` - Decide the approval request
-- `POST /api/social/posts/:postId/retry` - Retry only provider-confirmed non-publication failures
+### Automation and integrations
 
 The command center's supported end-to-end workflow reads up to five of the
 authenticated user's latest completed code-review records, then generates an
@@ -414,22 +432,44 @@ sanitized scheduler state; it does not include credentials or raw error text.
 
 ## 🔐 Environment Variables
 
-See `.env.example` for variable names and safe placeholders. Production
-requires PostgreSQL `DATABASE_URL`, Redis `REDIS_URL`, independent random
-`JWT_SECRET` and `GITHUB_TOKEN_ENCRYPTION_KEY` values (32+ characters),
-`OPENAI_API_KEY`, GitHub OAuth credentials and webhook secret, all three Stripe
-settings (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRO_PRICE_ID`),
-and `FRONTEND_URL`. Configure mail variables to send account emails. Never put
-secrets in frontend `VITE_*` variables.
+The checked-in examples are templates, not working credentials:
+[`backend/.env.example`](backend/.env.example) is loaded by the backend, while
+[`frontend/.env.example`](frontend/.env.example) configures Vite. Root
+`.env.example` supplies Docker Compose substitutions. Never put secrets in
+frontend `VITE_*` variables; only public settings such as the API URL and
+Stripe price ID belong there.
+
+| Dependency | Variables and behavior |
+| --- | --- |
+| PostgreSQL | `DATABASE_URL` must be a PostgreSQL connection URL. Run committed Prisma migrations before serving requests. |
+| Redis | `REDIS_URL` backs BullMQ queues and shared rate limits. Local default is `redis://127.0.0.1:6380`; production configuration requires a remote TLS `rediss://` URL. |
+| Session/security | Set independent random `JWT_SECRET`, `CSRF_SECRET`, `GITHUB_TOKEN_ENCRYPTION_KEY`, and `EMAIL_OTP_SECRET` values (at least 32 characters) in production. `GITHUB_TOKEN_ENCRYPTION_KEY_PREVIOUS` is optional during key rotation. Configure `FRONTEND_URL`, `AUTH_COOKIE_SAME_SITE`, and, behind a proxy, the exact `TRUST_PROXY_HOPS`. |
+| OpenAI | `OPENAI_API_KEY` and optional `OPENAI_MODEL` (defaults to `gpt-4o-mini`) enable AI features. `AI_PRICING_CONFIG` and `AI_PRICING_VERSION` are optional; without configured rates, estimated cost remains unknown. |
+| GitHub OAuth/webhooks | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_CALLBACK_URL`, `GITHUB_WEBHOOK_SECRET`, and `GITHUB_TOKEN_ENCRYPTION_KEY` configure OAuth and signed pull-request webhook handling. OAuth access also depends on the connected account's permissions. |
+| Stripe | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PRO_PRICE_ID` must be configured together. They are optional for local startup, but required by production environment validation. The frontend `VITE_STRIPE_PRO_PRICE_ID` is a public display/checkout setting, not a secret. |
+| LinkedIn | `LINKEDIN_CLIENT_ID` and `LINKEDIN_CLIENT_SECRET` are optional, but must be set together. Configure `LINKEDIN_CALLBACK_URL` and `LINKEDIN_API_VERSION` for this integration. No LinkedIn account or provider availability is implied by these settings. |
+| SMTP | `MAIL_HOST`, `MAIL_PORT`, `MAIL_USER`, `MAIL_PASSWORD`, and `MAIL_FROM` must be valid: the server constructs the mail service while starting the email worker, so placeholder SMTP credentials prevent startup. |
+| Fix-verification runner | `FIX_VERIFICATION_RUNNER_URL` and `FIX_VERIFICATION_RUNNER_TOKEN` are optional, but must be set together. Runner execution is disabled when absent. See the security boundary below and [docs/verification-runner.md](docs/verification-runner.md). |
+| Frontend | `VITE_API_URL` defaults to `http://localhost:3001/api`; `VITE_APP_NAME` and `VITE_STRIPE_PRO_PRICE_ID` are public frontend configuration. |
+
+Production validation additionally requires OpenAI, GitHub OAuth and webhook
+credentials and all three Stripe settings; use public HTTPS origins/callbacks
+and non-placeholder secrets. Provider credentials are configuration
+requirements only and do not establish that the external provider has been
+connected or tested.
 
 Fix verification execution is disabled unless `FIX_VERIFICATION_RUNNER_URL`
 and `FIX_VERIFICATION_RUNNER_TOKEN` point to a separately deployed isolated
-runner. The API enqueues that work and does not run repository code itself.
-Without a runner, attempts remain `NEEDS_REVIEW`. See
+runner. The API enqueues work and does not run repository code itself. The API
+container must not receive the Docker socket or execute untrusted repository
+code. The separate runner's sandbox removes network access, drops privileges
+and capabilities, and applies resource limits; its control plane still needs
+careful isolation. Without a configured and exercised runner, attempts remain
+`NEEDS_REVIEW` and are not verified. See
 [docs/fix-verification-engine.md](docs/fix-verification-engine.md) and
-[docs/verification-runner.md](docs/verification-runner.md). A queued or
-sandbox result is not a verified fix until the runner is deployed and the
-evidence rules pass.
+[docs/verification-runner.md](docs/verification-runner.md) for deployment
+requirements, callback authentication, allowed fetch behavior, and sandbox
+boundaries.
 
 ### Stripe test-mode checkout and webhooks
 
@@ -452,13 +492,16 @@ storage and do not contact Stripe, GitHub, or OpenAI.
 
 ```bash
 npm test
+npm test --workspace=frontend
 ```
 
-The current test command runs backend tests; no dedicated frontend test runner
-is configured. CI runs install, Prisma generation, lint, type-check, backend
-tests, and both builds. Stripe-hosted checkout, live provider webhooks, and
-real database/Redis operation still require manual staging verification.
-Passing CI does not establish production readiness.
+The root `npm test` command runs the backend Node test suite.
+`npm test --workspace=frontend` runs the frontend Vitest suite. CI currently
+runs `npm audit --audit-level=high`, Prisma generation/validation/migrations
+against PostgreSQL 15, lint, type-check, backend tests, and both workspace
+builds; it does not run the frontend Vitest suite. Provider OAuth, live
+webhooks, SMTP delivery, and production Redis/runner behavior require separate
+staging verification. Passing CI does not establish production readiness.
 
 ## 📝 Code Quality
 
@@ -472,7 +515,13 @@ npm run build
 
 ## 🔄 CI/CD
 
-GitHub Actions CI is configured in `.github/workflows/ci.yml`.
+GitHub Actions CI is configured in `.github/workflows/ci.yml`. The root and
+workspace manifests require Node.js 20+ and npm 10+; CI and the Docker images
+currently pin Node.js 20. CI runs `npm audit --audit-level=high`; the latest
+local audit on 2026-11-04 reported six moderate development-tooling findings
+and no high or critical findings. `npm audit --omit=dev` reported no production
+dependency vulnerabilities at that time. Audit results can change as the lock
+file and advisory database change.
 
 ## 🤝 Contributing
 
@@ -503,14 +552,12 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 For support, email support@ai-codeguard.com or open an issue on GitHub.
 
-## 🗺️ Roadmap
+## 🗺️ Planned (not implemented)
 
-- [ ] Advanced AI model support
+- [ ] Additional AI providers beyond the current OpenAI integration
 - [ ] Team collaboration features
 - [ ] IDE plugins (VS Code, JetBrains)
-- [ ] Custom AI models training
 - [ ] API rate limiting dashboard
-- [ ] Multi-language support
 - [ ] Mobile app (React Native)
 - [ ] CLI tool for local analysis
 

@@ -15,7 +15,7 @@ user-owned and has no organization, workspace, membership, or role models.
 | Blocker | There is no organization/workspace membership or role-based access model. Ownership is by individual `userId`; there is no tenant administrator or member lifecycle. | Decide the intended tenancy model, then implement and test tenant-scoped access across APIs, database relations, jobs, approvals, schedules, files, billing, and provider credentials before selling team/organization plans. |
 | High | Browser-readable JWT storage was identified in the pre-redesign audit. The application now uses an HttpOnly session cookie, signed CSRF token, and exact-origin validation in source. | Verify production `CSRF_SECRET`, cookie SameSite/HTTPS settings, deployed frontend/API origins, OAuth callbacks, and browser behavior in staging before launch. |
 | High | API rate limits now use shared Redis counters. `X-Forwarded-For` is ignored unless `TRUST_PROXY_HOPS` is the exact trusted hop count. | Set `TRUST_PROXY_HOPS` to the deployed proxy chain, point every replica at the same durable Redis, and confirm spoofed forwarded headers do not create new buckets in staging. |
-| Medium | After the 2026-11-01 dependency remediation, `npm audit` reports 18 moderate findings and no critical, high, or low findings. All 18 are the dev-only minimatch advisory GHSA-g3hv-75wg-m249 (`minimatch` < 11.0.1), reached through ESLint 8, typescript-eslint, glob 7, and rimraf 3. | Keep CI at `npm audit --audit-level=high` so critical and high advisories fail the build. Do not lower that level. The minimatch issue is not in the production runtime tree. Forcing minimatch 11 would break ESLint 8, and ESLint 10 still depends on minimatch 10.x, which remains inside the vulnerable range. Revisit when a compatible lint release depends on minimatch >= 11.0.1. |
+| Medium | The 2026-11-04 dependency audit reports 6 moderate findings for GHSA-g3hv-75wg-m249 in the development lint/type-check dependency tree; no high or critical findings were reported, and `npm audit --omit=dev` reports no production dependency vulnerabilities. | Keep CI at `npm audit --audit-level=high` so critical and high advisories fail the build. Do not lower that level. The advisory affects minimatch versions in the development toolchain. Revisit when compatible lint/type-check dependencies can use a fixed minimatch version without a breaking toolchain change. |
 | High | The scheduler, API, and BullMQ workers are started by the same server process. Production multi-replica behavior, Redis persistence/HA, queue recovery, and graceful drain have not been independently validated. | Define the supported replica topology, Redis durability/monitoring, worker shutdown policy, and recovery SLOs; conduct restart, failover, and duplicate-side-effect tests in a staging environment. |
 | High | Browser accessibility, responsive behavior, onboarding, and user-visible failure states have not had an independent accessibility/browser audit. | Complete keyboard/screen-reader and responsive checks for auth, billing, integrations, automation, and error flows before release. |
 | Medium | Billing and quota rules are per individual user. The free tier has a monthly code-review count; scheduled automation has a separate active-schedule cap. There is no general AI/token/execution-credit budget. | Define the commercial usage policy and add server-side metering and enforcement for any promised limits. |
@@ -199,18 +199,17 @@ recovery; those are deployment responsibilities.
   production services.
 - Accessibility, responsive layouts, and all onboarding/error paths require a
   dedicated browser and assistive-technology test pass.
-- Dependency audit on 2026-11-01, before this remediation, reported 2 critical,
-  7 high, 44 moderate, and 4 low findings. Critical Vitest/Tinypool and the
-  high-severity production packages were upgraded or removed from the tree.
-  The supported runtime is Node.js 20 or newer; CI and the Docker images run
-  Node.js 20. The remaining `npm audit` result is 18 moderate findings, all
-  instances of GHSA-g3hv-75wg-m249 in dev-only minimatch 3.1.5 and 9.0.9.
-  Reachability is the lint toolchain, whose glob patterns come from repository
-  configuration rather than API input. Impact is CPU exhaustion if an
-  untrusted glob were passed to minimatch. Mitigation is to keep untrusted
-  input out of lint globs and to upgrade when ESLint can consume minimatch
-  >= 11.0.1 without a broken major migration. Do not treat this as a cleared
-  production vulnerability, and do not hide it by lowering the CI audit level.
+- Dependency audit on 2026-11-01, before the remediation, reported 2 critical,
+  7 high, 44 moderate, and 4 low findings. The refreshed audit on 2026-11-04
+  reports 6 moderate findings for GHSA-g3hv-75wg-m249 in the development
+  lint/type-check dependency tree, with no high or critical findings;
+  `npm audit --omit=dev` reports no production dependency vulnerabilities.
+  The supported runtime is Node.js 20 or newer; CI and Docker currently use
+  Node.js 20. Keep untrusted glob patterns out of development tooling and
+  revisit the advisory when compatible dependencies can use a fixed minimatch
+  release. Do not treat the development-tree finding as resolved, and do not
+  hide it by lowering the CI audit level. These audit counts are time-sensitive
+  and should be refreshed after dependency or lockfile changes.
 
 ## Validation and CI
 

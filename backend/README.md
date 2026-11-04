@@ -1,13 +1,22 @@
 # Backend Setup Guide
 
-## Installation
+## Installation and development
 
 ```bash
-npm install
-npm run prisma:generate
+# Run from the repository root
+npm ci
+cp backend/.env.example backend/.env
+npm run prisma:generate --workspace=backend
+npm run prisma:deploy --workspace=backend
+npm run dev --workspace=backend
 ```
 
-## Development
+On Windows PowerShell, copy the environment file with
+`Copy-Item backend\.env.example backend\.env`. Start PostgreSQL and Redis before
+the API; configure valid `MAIL_*` SMTP values because the email worker validates
+them during startup. The root README documents provider-specific variables and
+local frontend setup. From the backend directory, the workspace scripts below
+can also be run without the `--workspace=backend` suffix.
 
 ```bash
 npm run dev
@@ -74,14 +83,15 @@ existing queue, active-automation limit, task permissions, and audit events.
 The workflow graph is included in the approval fingerprint and revalidated by
 the worker before execution.
 
-Only manual triggers are supported: this project has no workflow scheduler or
-generic GitHub-event workflow trigger. The approval node must immediately follow
-the manual trigger and represents the existing workflow-level owner approval;
-mid-run approval pauses are not supported. Conditions use only predefined
-review-count and GitHub result checks. Merge/join paths and arbitrary
-expressions or user code are rejected. Graph actions are limited to existing
-automation operations. Apply the `20261017150000_add_visual_workflows` migration
-before deploying this feature.
+Visual workflow graphs currently support a manual trigger node; saved drafts
+can also be launched by the separate daily/weekly schedule feature. Generic
+GitHub-event workflow triggers are not supported. The approval node must
+immediately follow the manual trigger and represents the workflow-level owner
+approval; mid-run approval pauses are not supported. Conditions use only
+predefined review-count and GitHub result checks. Merge/join paths and
+arbitrary expressions or user code are rejected. Graph actions are limited to
+existing automation operations. Apply the
+`20261017150000_add_visual_workflows` migration before deploying this feature.
 
 ### Review processing
 
