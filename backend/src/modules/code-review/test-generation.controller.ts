@@ -48,9 +48,25 @@ export class TestGenerationController {
         ? await this.generate(
             review.fileContent,
             { ...finding, findingId: finding.id },
-            this.provider
+            this.provider,
+            undefined,
+            {
+              userId,
+              feature: 'test_suggestions',
+              reviewId: req.params.id,
+            }
           )
-        : await this.generate(review.fileContent, { ...finding, findingId: finding.id })
+        : await this.generate(
+            review.fileContent,
+            { ...finding, findingId: finding.id },
+            undefined,
+            undefined,
+            {
+              userId,
+              feature: 'test_suggestions',
+              reviewId: req.params.id,
+            }
+          )
       res.json({ result })
     } catch (error) {
       if (error instanceof ReviewNotFoundError) {

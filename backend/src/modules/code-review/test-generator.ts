@@ -4,6 +4,12 @@ import { z } from 'zod'
 import { env, hasUsableOpenAIKey } from '@/config/env'
 import type { ReviewSourceFile } from '@/modules/github/github.service'
 import { redactCredentialSource } from './security-scanner'
+import {
+  getConfiguredAIModel,
+  recordAIRequestFailure,
+  trackedChatCompletion,
+  type AIUsageContext,
+} from '@/modules/ai/usage.service'
 
 export const MAX_TEST_GENERATION_CONTEXT_CHARS = 24_000
 export const MAX_TEST_SUGGESTIONS = 3
@@ -53,7 +59,8 @@ export interface TestGenerationInput {
 
 export type TestGenerationProvider = (
   prompt: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  usageContext?: AIUsageContext
 ) => Promise<string | null>
 
 export class TestGenerationError extends Error {
@@ -245,22 +252,31 @@ function extractTestCases(
   return tests
 }
 
-async function completeWithOpenAI(prompt: string, signal?: AbortSignal): Promise<string | null> {
-  if (!hasUsableOpenAIKey()) throw new TestGenerationError('provider_failure')
+async function completeWithOpenAI(
+  prompt: string,
+  signal?: AbortSignal,
+  usageContext?: AIUsageContext
+): Promise<string | null> {
+  if (!hasUsableOpenAIKey()) {
+    if (usageContext) {
+      await recordAIRequestFailure(usageContext, getConfiguredAIModel(), { status: 503 })
+    }
+    throw new TestGenerationError('provider_failure')
+  }
   const client = new OpenAI({ apiKey: env.OPENAI_API_KEY, timeout: 30_000, maxRetries: 0 })
-  const completion = await client.chat.completions.create(
-    {
-      model: env.OPENAI_MODEL,
-      temperature: 0.1,
-      max_tokens: 4_000,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: 'You generate conservative, reviewable tests for code changes.' },
-        { role: 'user', content: prompt },
-      ],
-    },
-    { signal }
-  )
+  const request = {
+    model: getConfiguredAIModel(),
+    temperature: 0.1,
+    max_tokens: 4_000,
+    response_format: { type: 'json_object' as const },
+    messages: [
+      { role: 'system' as const, content: 'You generate conservative, reviewable tests for code changes.' },
+      { role: 'user' as const, content: prompt },
+    ],
+  }
+  const completion = usageContext
+    ? await trackedChatCompletion(client, request, usageContext, signal)
+    : await client.chat.completions.create(request, { signal })
   return completion.choices[0]?.message.content ?? null
 }
 
@@ -268,7 +284,8 @@ export async function generateTestSuggestions(
   snapshot: string,
   finding: TestGenerationInput,
   provider: TestGenerationProvider = completeWithOpenAI,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  usageContext?: AIUsageContext
 ): Promise<TestSuggestionResult> {
   if (!supportedExtensions.has(extensionOf(finding.file))) {
     throw new TestGenerationError('unsupported_language')
@@ -288,7 +305,8 @@ export async function generateTestSuggestions(
   try {
     response = await provider(
       buildPrompt(sanitizedSource, finding, existingTestFiles, framework),
-      signal
+      signal,
+      usageContext
     )
   } catch (error) {
     if (

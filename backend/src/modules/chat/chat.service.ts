@@ -67,7 +67,13 @@ export class ChatService {
     })
 
     const allMessages = [...previousMessages, { role: ChatMessageRole.USER, content: message } as any]
-    const answer = await this.aiService.generateAnswer(context, message, allMessages)
+    const answer = await this.aiService.generateAnswer(
+      context,
+      message,
+      allMessages,
+      userId,
+      conversation.id
+    )
 
     await prisma.chatMessage.create({
       data: {

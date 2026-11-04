@@ -34,6 +34,7 @@ const navigation = [
   { to: '/integrations', label: 'Integrations', icon: Cable },
   { to: '/reviews', label: 'Code reviews', icon: FileSearch },
   { to: '/analytics', label: 'Feedback analytics', icon: BarChart3 },
+  { to: '/ai-usage', label: 'AI usage', icon: BarChart3 },
   { to: '/repository-rules', label: 'Review rules', icon: ListChecks },
   { to: '/verifications', label: 'Fix verification', icon: ShieldCheck },
   { to: '/github/repos', label: 'Repositories', icon: Github },

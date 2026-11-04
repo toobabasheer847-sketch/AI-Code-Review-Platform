@@ -63,6 +63,11 @@ const FeedbackAnalyticsPage = lazy(() =>
     default: m.FeedbackAnalyticsPage,
   }))
 );
+const AIUsageAnalyticsPage = lazy(() =>
+  import('@features/analytics/pages/AIUsageAnalyticsPage').then((m) => ({
+    default: m.AIUsageAnalyticsPage,
+  }))
+);
 const RepositoryRulesPage = lazy(() =>
   import('@features/repositories/pages/RepositoryRulesPage').then((m) => ({
     default: m.RepositoryRulesPage,
@@ -274,6 +279,16 @@ export const routes: RouteObject[] = [
       <ProtectedRoute>
         <Suspense fallback={<LazyFallback />}>
           <ReviewByIdPage />
+        </Suspense>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/ai-usage',
+    element: (
+      <ProtectedRoute>
+        <Suspense fallback={<LazyFallback />}>
+          <AIUsageAnalyticsPage />
         </Suspense>
       </ProtectedRoute>
     ),

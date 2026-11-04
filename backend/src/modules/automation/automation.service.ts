@@ -75,7 +75,14 @@ export class AutomationService {
       (await createAutomationPlan(
         input.goal,
         undefined,
-        await this.workMemory.contextForPlan(userId, input.goal)
+        await this.workMemory.contextForPlan(userId, input.goal),
+        {
+          userId,
+          feature: 'automation_planning',
+          ...(input.idempotencyKey
+            ? { requestKey: `automation-plan:${input.idempotencyKey}` }
+            : {}),
+        }
       ));
     const approvalPayload = createApprovalPayload({
       goal: input.goal,

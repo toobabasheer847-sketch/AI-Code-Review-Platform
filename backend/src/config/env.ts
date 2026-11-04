@@ -63,6 +63,8 @@ export const env = {
   EMAIL_OTP_SECRET: emailOtpSecret,
   OPENAI_API_KEY: process.env.OPENAI_API_KEY || '',
   OPENAI_MODEL: process.env.OPENAI_MODEL?.trim() || 'gpt-4o-mini',
+  AI_PRICING_VERSION: process.env.AI_PRICING_VERSION?.trim() || '',
+  AI_PRICING_CONFIG: process.env.AI_PRICING_CONFIG?.trim() || '',
   GITHUB_CLIENT_ID: process.env.GITHUB_CLIENT_ID || '',
   GITHUB_CLIENT_SECRET: process.env.GITHUB_CLIENT_SECRET || '',
   GITHUB_WEBHOOK_SECRET: process.env.GITHUB_WEBHOOK_SECRET || '',

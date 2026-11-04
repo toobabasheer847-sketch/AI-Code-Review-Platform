@@ -6,6 +6,7 @@ import {
 } from '@/modules/code-review/analyzer';
 import { redactCredentialSource } from '@/modules/code-review/security-scanner';
 import type { ReviewSourceFile } from '@/modules/github/github.service';
+import type { AIUsageContext } from '@/modules/ai/usage.service'
 
 export const MAX_REPOSITORY_QA_EVIDENCE = 6;
 export const MAX_REPOSITORY_QA_CONTEXT_CHARS = 12_000;
@@ -128,7 +129,8 @@ export type RepositorySourceProvider = (
 
 export type RepositoryAnswerProvider = (
   messages: ReviewChatMessage[],
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  usageContext?: AIUsageContext
 ) => Promise<string | null>;
 
 export class RepositoryQAError extends Error {
@@ -347,7 +349,8 @@ export class RepositoryQAService {
             ].join('\n\n'),
           },
         ],
-        signal
+        signal,
+        { userId, feature: 'repository_qa' }
       );
     } catch (error) {
       throw new RepositoryQAError(getProviderErrorKind(error));

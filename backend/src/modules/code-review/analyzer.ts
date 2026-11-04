@@ -11,6 +11,12 @@ import {
   type DuplicateSubject,
 } from './duplicate-candidates'
 import { buildRepositoryRulePrompt, type PromptReviewRule } from '@/modules/repositories/repository-review-rules.prompt'
+import {
+  getConfiguredAIModel,
+  recordAIRequestFailure,
+  trackedChatCompletion,
+  type AIUsageContext,
+} from '@/modules/ai/usage.service'
 
 export type FindingSource = 'AI_REVIEW' | 'STATIC_ANALYSIS'
 
@@ -39,6 +45,7 @@ export interface FalsePositiveFeedbackHint {
 }
 
 export interface AnalyzeCodeOptions {
+  userId?: string
   rules?: PromptReviewRule[]
   priorFindings?: DuplicateSubject[]
   falsePositiveFeedback?: FalsePositiveFeedbackHint[]
@@ -77,7 +84,8 @@ export interface ReviewChatMessage {
 
 export type ReviewProvider = (
   messages: ReviewChatMessage[],
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  usageContext?: AIUsageContext
 ) => Promise<string | null>
 
 export type ReviewProviderFailureKind =
@@ -298,9 +306,15 @@ export function validateAnalysis(
 
 export async function completeWithOpenAI(
   messages: ReviewChatMessage[],
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  usageContext?: AIUsageContext
 ): Promise<string | null> {
   if (!hasUsableOpenAIKey()) {
+    if (usageContext) {
+      await recordAIRequestFailure(usageContext, getConfiguredAIModel(), {
+        status: 503,
+      })
+    }
     throw new ReviewProviderError('missing_credentials')
   }
   const client = new OpenAI({
@@ -308,16 +322,16 @@ export async function completeWithOpenAI(
     timeout: 60_000,
     maxRetries: 2,
   })
-  const completion = await client.chat.completions.create(
-    {
-      model: env.OPENAI_MODEL,
-      temperature: 0.1,
-      max_tokens: 6_000,
-      response_format: { type: 'json_object' },
-      messages,
-    },
-    { signal }
-  )
+  const request = {
+    model: getConfiguredAIModel(),
+    temperature: 0.1,
+    max_tokens: 6_000,
+    response_format: { type: 'json_object' as const },
+    messages,
+  }
+  const completion = usageContext
+    ? await trackedChatCompletion(client, request, usageContext, signal)
+    : await client.chat.completions.create(request, { signal })
   return completion.choices[0]?.message.content ?? null
 }
 
@@ -358,7 +372,19 @@ export async function analyzeCode(
   })
   let content: string | null
   try {
-    content = await provider(messages, signal)
+    content = await provider(
+      messages,
+      signal,
+      options.userId
+        ? {
+            userId: options.userId,
+            feature: 'code_review',
+            ...(options.reviewId
+              ? { reviewId: options.reviewId, requestKey: `code-review:${options.reviewId}` }
+              : {}),
+          }
+        : undefined
+    )
   } catch (error) {
     throw new ReviewProviderError(getProviderFailureKind(error, signal))
   }

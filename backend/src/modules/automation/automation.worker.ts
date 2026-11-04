@@ -350,11 +350,13 @@ async function processAutomation(job: Job<AutomationJobData>): Promise<void> {
 
       const output = await actions.execute(task.action, {
         userId: automation.userId,
+        automationId: automation.id,
         goal: automation.goal,
         title: task.title,
         description: task.description,
         actionInput: task.input,
         taskId: task.id,
+        attemptNumber,
         dependencyOutputs: claim.map(({ key, output: dependencyOutput }) => ({
           key,
           output: dependencyOutput,

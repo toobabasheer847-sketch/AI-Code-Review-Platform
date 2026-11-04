@@ -148,6 +148,7 @@ const worker = new Worker<ReviewJobData>(
         return analyzeCode(files, completeWithOpenAI, undefined, {
           rules,
           reviewId: currentReview.id,
+          userId: currentReview.userId,
         })
       },
       async notify(review, analysis, files): Promise<void> {

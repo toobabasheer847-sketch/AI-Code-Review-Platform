@@ -1,6 +1,10 @@
 import OpenAI from 'openai'
 import { env } from '@/config/env'
 import { ChatMessageRole, type ChatMessage } from './chat.types'
+import {
+  getConfiguredAIModel,
+  trackedChatCompletion,
+} from '@/modules/ai/usage.service'
 
 export class AIChatService {
   private readonly client = new OpenAI({
@@ -15,20 +19,26 @@ export class AIChatService {
       .join('\n')
   }
 
-  public async generateAnswer(context: string, userMessage: string, history: ChatMessage[]): Promise<string> {
+  public async generateAnswer(
+    context: string,
+    userMessage: string,
+    history: ChatMessage[],
+    userId: string,
+    conversationId: string
+  ): Promise<string> {
     const chatHistory = this.buildHistory(history)
 
     const prompt = `You are AI-CodeGuard, an AI assistant for code review. Use the context below to answer clearly and include why an issue exists, how to fix it, and any security or quality guidance.\n\n${context}\n\nPrevious chat history:\n${chatHistory}\n\nUser question:\n${userMessage}`
 
-    const completion = await this.client.chat.completions.create({
-      model: 'gpt-4o-mini',
+    const completion = await trackedChatCompletion(this.client, {
+      model: getConfiguredAIModel(),
       messages: [
         { role: 'system', content: 'You are a helpful code review assistant.' },
         { role: 'user', content: prompt },
       ],
       temperature: 0.2,
       max_tokens: 1000,
-    })
+    }, { userId, feature: 'chat', conversationId })
 
     return completion.choices?.[0]?.message?.content?.trim() || 'I could not generate a response for that request.'
   }

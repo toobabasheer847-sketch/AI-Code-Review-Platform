@@ -26,6 +26,7 @@ model User {
   reviews             CodeReview[]
   chatConversations   ChatConversation[]
   usages              Usage[]
+  aiRequestUsages     AiRequestUsage[]
   reviewAnalytics     ReviewAnalytics[]
   accountTokens       AccountToken[]
   automations         Automation[]
@@ -468,6 +469,41 @@ model Usage {
 
   @@unique([userId, month, year])
   @@index([userId])
+}
+
+enum AIRequestStatus {
+  SUCCEEDED
+  FAILED
+}
+
+model AiRequestUsage {
+  id                String          @id @default(cuid())
+  userId            String
+  user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  feature           String
+  provider          String
+  modelName         String
+  modelVersion      String?
+  inputTokens       Int?
+  outputTokens      Int?
+  totalTokens       Int?
+  estimatedCostUsd  Float?
+  pricingVersion    String?
+  durationMs        Int
+  status            AIRequestStatus
+  errorCategory     String?
+  reviewId          String?
+  conversationId    String?
+  automationId      String?
+  idempotencyKey    String
+  createdAt         DateTime        @default(now())
+
+  @@unique([userId, idempotencyKey])
+  @@index([userId, createdAt])
+  @@index([userId, feature, createdAt])
+  @@index([userId, modelName, createdAt])
+  @@index([userId, status, createdAt])
+  @@map("AIRequestUsage")
 }
 
 model Repository {

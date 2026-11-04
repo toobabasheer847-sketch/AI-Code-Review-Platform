@@ -106,6 +106,24 @@ files, the completed review displays that limitation instead of implying full
 coverage. Findings retain optional title, evidence, and end-line fields so older
 stored reviews remain compatible.
 
+### AI usage reporting
+
+OpenAI-backed user requests for code review, test suggestions, repository Q&A,
+chat, automation planning/drafting, and LinkedIn drafting are recorded in the
+owner-scoped `AIRequestUsage` ledger. Records contain provider-reported token
+counts only; missing token counts remain null. Prompt text, repository source,
+and provider error bodies are not stored. Requests with a supplied stable
+operation key are upserted by user and key so worker/provider retries do not
+create duplicate rows.
+
+The authenticated `GET /api/ai-usage` endpoint reports only the current user's
+usage and supports `from`, `to`, `page`, and `pageSize` query parameters.
+Estimated costs remain unavailable unless `AI_PRICING_CONFIG` and
+`AI_PRICING_VERSION` are explicitly set. Configure rates as JSON keyed by model,
+with `inputUsdPerMillion` and `outputUsdPerMillion` numeric values; increment
+the pricing version whenever rates change. Usage reporting does not enforce
+quotas, modify subscription entitlements, or initiate charges.
+
 The configured `OPENAI_API_KEY` authenticates review requests. `OPENAI_MODEL`
 selects the model and defaults to `gpt-4o-mini`. Missing credentials, rate
 limits, provider timeouts, and malformed or schema-invalid responses fail the
@@ -393,6 +411,12 @@ Create `.env` in the backend directory with database connection:
 DATABASE_URL=postgresql://user:password@localhost:5432/ai_codeguard
 REDIS_URL=redis://127.0.0.1:6380
 ```
+
+Set `OPENAI_MODEL` to the validated model identifier you intend to use.
+Optional AI cost reporting requires `AI_PRICING_VERSION` and
+`AI_PRICING_CONFIG`, a JSON object keyed by model with `inputUsdPerMillion`
+and `outputUsdPerMillion` rates. Leave both empty if rates are unknown; token
+usage will still be reported and estimated cost will remain unavailable.
 
 Production must provide independent, randomly generated `JWT_SECRET` and
 `GITHUB_TOKEN_ENCRYPTION_KEY` values, each at least 32 characters long. The
