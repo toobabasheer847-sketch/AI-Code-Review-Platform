@@ -70,7 +70,7 @@ same way as the other signed webhooks. The API also polls
 | `VERIFICATION_ALLOW_FETCH` | `true` checks out the exact commit before the sandbox runs. Default false. |
 | `VERIFICATION_ALLOWED_GIT_HOSTS` | Comma-separated HTTPS hosts. Default `github.com`. |
 | `VERIFICATION_CALLBACK_URL` | API callback URL. Polling still works if this is empty. |
-| `VERIFICATION_SANDBOX_IMAGE` | Default `node:20-alpine`. |
+| `VERIFICATION_SANDBOX_IMAGE` | Defaults to the digest-pinned Node.js 24.22.2 Alpine image used by the API/runner build. Override only with a reviewed, digest-pinned image. |
 | `VERIFICATION_SANDBOX_CPUS` | Default `1`. |
 | `VERIFICATION_SANDBOX_MEMORY` | Default `512m`. Swap is pinned to the same value. |
 | `VERIFICATION_SANDBOX_PIDS` | Default 64. |

@@ -3,6 +3,9 @@ import { mkdtemp, readdir, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+export const DEFAULT_SANDBOX_IMAGE =
+  'node:24.22.2-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85'
+
 export interface SandboxLimits {
   cpus: string
   memory: string

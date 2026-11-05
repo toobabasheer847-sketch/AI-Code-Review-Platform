@@ -167,7 +167,7 @@ provider callbacks, and signed webhooks.
 
 | Area | Mounted routes |
 | --- | --- |
-| Health | `GET /health` |
+| Health | `GET /health/live`, `/health/ready`, `/health` (readiness alias) |
 | Authentication | `GET /api/auth/csrf`, `/api/auth/me`; `POST /api/auth/register`, `/login`, `/logout`, `/verification-email/request`, `/verification-email`, `/verify-email`, `/password-reset/request`, `/password-reset/confirm`; `DELETE /api/auth/account` |
 | GitHub | `GET /api/github/connect`, `/callback`, `/repos`, `/repos/:owner/:repo/files`, `/repos/:repoName/files`, `/file`, `/development/templates`; `POST /api/github/development/workflows`; `DELETE /api/github/disconnect` |
 | Reviews | `GET /api/reviews`, `/analytics`, `/feedback-analytics`, `/:id`, `/:id/duplicate-candidates`, `/fix-verification-attempts`, `/fix-verification-attempts/:attemptId`, `/findings/:findingId/verification-requests/:requestKey`; `POST /api/reviews/start`, `/findings/:findingId/feedback`, `/findings/:findingId/fix-proposals`, `/findings/:findingId/verification-requests`, `/fix-proposals/:proposalId/verification-attempts`, `/fix-verification-attempts/:attemptId/review-decision`, `/fix-verification-attempts/:attemptId/cancel`, `/:id/findings/:findingId/test-suggestions`, `/internal/verification-callback`; `PATCH /api/reviews/findings/:findingId/status`; `DELETE /api/reviews/:id` |

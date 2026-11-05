@@ -2,8 +2,8 @@ import axios, { AxiosInstance, type AxiosError, type InternalAxiosRequestConfig 
 
 import { useAppStore } from '@/app/store/useAppStore'
 import type { CsrfResponse } from '@/features/auth/api/authApi'
-import { queryClient } from '@/lib/queryClient'
 import { reportFrontendError } from '@/lib/errorMonitoring'
+import { queryClient } from '@/lib/queryClient'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
 const CSRF_REFRESH_MARGIN_MS = 30_000

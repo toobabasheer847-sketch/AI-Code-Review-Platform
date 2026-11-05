@@ -3,6 +3,7 @@ import test from 'node:test'
 import {
   assertPublicGitTarget,
   buildDockerRunArguments,
+  DEFAULT_SANDBOX_IMAGE,
   planSandboxExecution,
   type SandboxLimits,
 } from './sandbox'
@@ -27,7 +28,7 @@ const hostilePatch = [
 test('sandbox plans ignore hostile repository scripts and lock down the container', () => {
   const plan = planSandboxExecution({
     patch: hostilePatch,
-    image: 'node:20-alpine',
+    image: DEFAULT_SANDBOX_IMAGE,
     workspaceDir: '/tmp/codeguard-workspace',
     containerName: 'cgvattempt',
     limits,
@@ -73,7 +74,7 @@ test('refuses a sandbox command that tries to mount the Docker socket', () => {
   assert.throws(
     () =>
       buildDockerRunArguments({
-        image: 'node:20-alpine',
+        image: DEFAULT_SANDBOX_IMAGE,
         workspaceDir: '/tmp/codeguard-workspace',
         containerName: 'cgvattempt',
         command: ['node', '/var/run/docker.sock'],

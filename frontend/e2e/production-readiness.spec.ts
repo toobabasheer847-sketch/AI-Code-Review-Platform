@@ -13,6 +13,10 @@ const user = {
   createdAt: '2026-11-04T00:00:00.000Z',
   updatedAt: '2026-11-04T00:00:00.000Z',
 }
+type MockUser = Omit<typeof user, 'githubConnected' | 'githubUsername'> & {
+  githubConnected: boolean
+  githubUsername: string | null
+}
 
 function json(body: unknown, status = 200, headers?: Record<string, string>): MockResponse {
   return { body, status, headers }
@@ -103,7 +107,7 @@ test('requests and completes the password reset flow without a real mail provide
 test('mocks GitHub OAuth, starts a review, and handles finding feedback and verification', async ({
   page,
 }) => {
-  let connectedUser = { ...user, githubConnected: false, githubUsername: null }
+  let connectedUser: MockUser = { ...user, githubConnected: false, githubUsername: null }
   let reviewStarted = false
   let findingStatus = 'UNREVIEWED'
   let proposalSaved = false
@@ -160,7 +164,7 @@ test('mocks GitHub OAuth, starts a review, and handles finding feedback and veri
     createdAt: now,
     attempts: verificationRequested ? [attempt] : [],
   }
-  const review = () => ({
+  const review = (): Record<string, unknown> => ({
     id: 'review-e2e',
     repository: {
       name: 'sample/project',

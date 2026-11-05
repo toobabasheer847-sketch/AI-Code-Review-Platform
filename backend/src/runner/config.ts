@@ -1,3 +1,5 @@
+import { DEFAULT_SANDBOX_IMAGE } from './sandbox'
+
 export interface VerificationRunnerConfig {
   port: number
   token: string
@@ -35,7 +37,7 @@ export function loadRunnerConfig(
     version: (environment.VERIFICATION_RUNNER_VERSION ?? '1').slice(0, 64),
     sandboxMode,
     allowFetch: environment.VERIFICATION_ALLOW_FETCH === 'true',
-    image: environment.VERIFICATION_SANDBOX_IMAGE?.trim() || 'node:20-alpine',
+    image: environment.VERIFICATION_SANDBOX_IMAGE?.trim() || DEFAULT_SANDBOX_IMAGE,
     callbackUrl: environment.VERIFICATION_CALLBACK_URL?.trim() ?? '',
     allowedGitHosts: (environment.VERIFICATION_ALLOWED_GIT_HOSTS ?? 'github.com')
       .split(',')

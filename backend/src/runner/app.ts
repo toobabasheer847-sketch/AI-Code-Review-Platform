@@ -10,7 +10,12 @@ import {
   signVerificationPayload,
   verifyVerificationSignature,
 } from '@/modules/code-review/fix-verification.signature'
-import { planSandboxExecution, type SandboxExecutionOutput, type SandboxLimits } from './sandbox'
+import {
+  DEFAULT_SANDBOX_IMAGE,
+  planSandboxExecution,
+  type SandboxExecutionOutput,
+  type SandboxLimits,
+} from './sandbox'
 
 const requestSchema = z
   .object({
@@ -163,7 +168,7 @@ export function createVerificationRunnerApp(options: {
     }
     const plan = planSandboxExecution({
       patch: parsed.data.patch,
-      image: options.image ?? 'node:20-alpine',
+      image: options.image ?? DEFAULT_SANDBOX_IMAGE,
       workspaceDir: '/workspace',
       containerName: `cgv${parsed.data.attemptId.replace(/[^A-Za-z0-9]/g, '').slice(0, 40)}`,
       limits: options.limits,

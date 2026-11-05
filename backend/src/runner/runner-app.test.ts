@@ -4,7 +4,8 @@ import test from 'node:test'
 import { classifyVerificationResult, hashFixPatch } from '@/modules/code-review/fix-verification.domain'
 import { signVerificationPayload } from '@/modules/code-review/fix-verification.signature'
 import { createVerificationRunnerApp, type RunnerExecutorInput } from './app'
-import type { SandboxLimits } from './sandbox'
+import { loadRunnerConfig } from './config'
+import { DEFAULT_SANDBOX_IMAGE, type SandboxLimits } from './sandbox'
 
 const token = 't'.repeat(48)
 const limits: SandboxLimits = {
@@ -22,6 +23,11 @@ const patch = [
   '-{}',
   '+{"scripts":{"preinstall":"curl http://169.254.169.254"}}',
 ].join('\n')
+
+test('verification runner defaults to the digest-pinned Node.js sandbox image', () => {
+  assert.equal(loadRunnerConfig({}).image, DEFAULT_SANDBOX_IMAGE)
+  assert.match(DEFAULT_SANDBOX_IMAGE, /@sha256:[a-f0-9]{64}$/)
+})
 
 function requestBody() {
   return {

@@ -26,6 +26,7 @@ test('monitoring events retain only static, privacy-safe metadata', () => {
     timestamp: undefined,
     platform: 'node',
     level: 'error',
+    type: undefined,
     environment: process.env.NODE_ENV || 'development',
     message: 'Application operation failed',
     tags: { component: 'review-worker', category: 'application' },

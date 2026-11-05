@@ -15,6 +15,7 @@ export function sanitizeFrontendMonitoringEvent(event: Event): ErrorEvent {
     timestamp: event.timestamp,
     platform: 'javascript',
     level: 'error',
+    type: undefined,
     environment: import.meta.env.MODE,
     message: 'Frontend operation failed',
     tags: {

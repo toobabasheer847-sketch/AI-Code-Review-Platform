@@ -28,6 +28,7 @@ export function sanitizeMonitoringEvent(event: Event): ErrorEvent {
     timestamp: event.timestamp,
     platform: 'node',
     level: 'error',
+    type: undefined,
     environment: env.NODE_ENV,
     message: 'Application operation failed',
     tags: {
