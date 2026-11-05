@@ -1,5 +1,6 @@
 import { FindingFeedbackCategory, Prisma } from '@prisma/client'
 import { prisma } from '@/config/database'
+import { getPersonalWorkspaceId } from '@/modules/workspaces/workspace.service'
 import {
   submitFindingFeedbackSchema,
   type FindingFeedbackAssessment,
@@ -55,17 +56,22 @@ export interface FindingFeedbackStore {
 
 const prismaFindingFeedbackStore: FindingFeedbackStore = {
   async findOwnedFinding(userId, findingId) {
+    const workspaceId = await getPersonalWorkspaceId(userId)
     const finding = await prisma.finding.findFirst({
-      where: { id: findingId, review: { is: { userId } } },
+      where: { id: findingId, review: { is: { userId, workspaceId } } },
       select: { id: true, review: { select: { repositoryId: true } } },
     })
     return finding ? { id: finding.id, repositoryId: finding.review.repositoryId } : null
   },
 
   async findByRequestKey(findingId, userId, requestKey) {
-    return prisma.findingAssessmentFeedback.findUnique({
+    const workspaceId = await getPersonalWorkspaceId(userId)
+    return prisma.findingAssessmentFeedback.findFirst({
       where: {
-        findingId_userId_requestKey: { findingId, userId, requestKey },
+        findingId,
+        userId,
+        requestKey,
+        finding: { is: { review: { is: { userId, workspaceId } } } },
       },
       include: { user: { select: { fullName: true } } },
     })

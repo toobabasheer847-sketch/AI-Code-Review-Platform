@@ -2,6 +2,7 @@ import { prisma } from '@/config/database'
 import { AIChatService } from './ai.chat.service'
 import { buildChatContext } from './context.builder'
 import { ChatMessageRole } from './chat.types'
+import { getPersonalWorkspaceId } from '@/modules/workspaces/workspace.service'
 
 export class ChatReviewNotFoundError extends Error {
   readonly statusCode = 404
@@ -20,8 +21,9 @@ export class ChatService {
   }
 
   public async sendMessage(userId: string, reviewId: string, message: string): Promise<{ answer: string; conversationId: string }> {
-    const review = await prisma.codeReview.findUnique({
-      where: { id: reviewId, userId },
+    const workspaceId = await getPersonalWorkspaceId(userId)
+    const review = await prisma.codeReview.findFirst({
+      where: { id: reviewId, userId, workspaceId },
       include: {
         repository: { select: { name: true } },
         findings: true,

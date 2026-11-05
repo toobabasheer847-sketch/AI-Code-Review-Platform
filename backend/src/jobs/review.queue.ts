@@ -3,6 +3,7 @@ import { createBullMqRedisConnection } from '@/config/redis-connection'
 
 export interface ReviewJobData {
   reviewId: string
+  workspaceId?: string
 }
 
 let connection: ReturnType<typeof createBullMqRedisConnection> | null = null

@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import { prisma } from '@/config/database';
+import { getPersonalWorkspaceId } from '@/modules/workspaces/workspace.service';
 import logger from '@/utils/logger';
 import {
   InvalidRepositoryReviewRuleError,
@@ -28,12 +29,21 @@ export class RepositoryController {
       res.status(401).json({ error: 'Unauthorized' });
       return;
     }
-    const repositories = await prisma.repository.findMany({
-      where: { userId: req.user.userId },
-      select: { id: true, name: true, url: true, language: true, createdAt: true },
-      orderBy: { name: 'asc' },
-    });
-    res.json({ repositories });
+    try {
+      const workspaceId = await getPersonalWorkspaceId(req.user.userId);
+      const repositories = await prisma.repository.findMany({
+        where: { userId: req.user.userId, workspaceId },
+        select: { id: true, name: true, url: true, language: true, createdAt: true },
+        orderBy: { name: 'asc' },
+      });
+      res.json({ repositories });
+    } catch (error) {
+      logger.error(
+        { errorType: error instanceof Error ? error.name : 'UnknownError' },
+        'Repository list failed'
+      );
+      res.status(500).json({ error: 'Unable to list repositories.' });
+    }
   }
 
   async listRules(req: Request, res: Response): Promise<void> {

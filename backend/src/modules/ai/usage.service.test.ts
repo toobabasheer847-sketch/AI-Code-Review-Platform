@@ -149,3 +149,27 @@ test('uses owner-scoped idempotency keys for retry upserts', () => {
   })
   assert.notDeepEqual(otherOwner.where, original.where)
 })
+
+test('scopes AI usage idempotency to the active workspace', () => {
+  const base: AIUsageWrite = {
+    context: { ...context, requestKey: 'same-request' },
+    provider: 'openai',
+    modelName: 'gpt-4o-mini',
+    modelVersion: null,
+    usage: {},
+    durationMs: 1,
+    status: AIRequestStatus.SUCCEEDED,
+    errorCategory: null,
+  }
+  const workspaceA = buildAIUsageUpsert({
+    ...base,
+    context: { ...base.context, workspaceId: 'workspace-a' },
+  })
+  const workspaceB = buildAIUsageUpsert({
+    ...base,
+    context: { ...base.context, workspaceId: 'workspace-b' },
+  })
+
+  assert.equal(workspaceA.create.workspaceId, 'workspace-a')
+  assert.notDeepEqual(workspaceA.where, workspaceB.where)
+})

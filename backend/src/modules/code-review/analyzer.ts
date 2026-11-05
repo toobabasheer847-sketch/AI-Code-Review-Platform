@@ -46,6 +46,7 @@ export interface FalsePositiveFeedbackHint {
 
 export interface AnalyzeCodeOptions {
   userId?: string
+  workspaceId?: string
   rules?: PromptReviewRule[]
   priorFindings?: DuplicateSubject[]
   falsePositiveFeedback?: FalsePositiveFeedbackHint[]
@@ -378,6 +379,7 @@ export async function analyzeCode(
       options.userId
         ? {
             userId: options.userId,
+          ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
             feature: 'code_review',
             ...(options.reviewId
               ? { reviewId: options.reviewId, requestKey: `code-review:${options.reviewId}` }

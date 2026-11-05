@@ -39,9 +39,17 @@ export const pullRequestWebhookStore: PullRequestWebhookStore = {
   },
 
   async findAuthorizedRepositories(repositoryUrl: string): Promise<AuthorizedRepository[]> {
+    const personalWorkspaces = await prisma.workspace.findMany({
+      where: { isPersonal: true },
+      select: { id: true },
+    })
+    if (personalWorkspaces.length === 0) return []
     return prisma.repository.findMany({
-      where: { url: { equals: repositoryUrl, mode: 'insensitive' } },
-      select: { id: true, userId: true, name: true, url: true },
+      where: {
+        workspaceId: { in: personalWorkspaces.map((workspace) => workspace.id) },
+        url: { equals: repositoryUrl, mode: 'insensitive' },
+      },
+      select: { id: true, userId: true, workspaceId: true, name: true, url: true },
       take: 10,
     })
   },
@@ -94,6 +102,7 @@ export const pullRequestWebhookStore: PullRequestWebhookStore = {
         const review = await transaction.codeReview.create({
           data: {
             userId: repository.userId,
+            workspaceId: repository.workspaceId ?? null,
             repositoryId: repository.id,
             title: `Pull request #${target.number}: ${target.fullName}`,
             description: `Automated review for pull request #${target.number}.`,

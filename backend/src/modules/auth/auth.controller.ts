@@ -9,6 +9,7 @@ import {
   EmailAlreadyRegisteredError,
   EmailVerificationRequiredError,
   InvalidCredentialsError,
+  OrganizationOwnershipError,
   UserNotFoundError,
 } from './auth.service'
 import {
@@ -250,6 +251,8 @@ export class AuthController {
         error:
           error instanceof ActiveSubscriptionError
             ? error.message
+            : error instanceof OrganizationOwnershipError
+              ? error.message
             : status === 400
               ? 'Account confirmation or credentials are invalid'
               : 'Unable to delete account',

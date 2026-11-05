@@ -11,6 +11,7 @@ import {
   type RepositoryReviewRuleSnapshot,
 } from './repository-review-rules.domain';
 import type { PromptReviewRule } from './repository-review-rules.prompt';
+import { getPersonalWorkspaceId } from '@/modules/workspaces/workspace.service';
 
 export class RepositoryNotFoundError extends Error {
   readonly statusCode = 404;
@@ -125,12 +126,14 @@ const ruleInclude = {
 
 const prismaRepositoryReviewRuleStore: RepositoryReviewRuleStore = {
   async ownsRepository(userId, repositoryId) {
-    return (await prisma.repository.count({ where: { id: repositoryId, userId } })) === 1;
+    const workspaceId = await getPersonalWorkspaceId(userId);
+    return (await prisma.repository.count({ where: { id: repositoryId, userId, workspaceId } })) === 1;
   },
 
   async list(userId, repositoryId) {
+    const workspaceId = await getPersonalWorkspaceId(userId);
     const rules = await prisma.repositoryReviewRule.findMany({
-      where: { repositoryId, repository: { is: { userId } } },
+      where: { repositoryId, repository: { is: { userId, workspaceId } } },
       include: ruleInclude,
     });
     return rules.map(mapRule).sort(compareRepositoryReviewRules);
@@ -141,8 +144,9 @@ const prismaRepositoryReviewRuleStore: RepositoryReviewRuleStore = {
   },
 
   async get(userId, repositoryId, ruleId) {
+    const workspaceId = await getPersonalWorkspaceId(userId);
     const rule = await prisma.repositoryReviewRule.findFirst({
-      where: { id: ruleId, repositoryId, repository: { is: { userId } } },
+      where: { id: ruleId, repositoryId, repository: { is: { userId, workspaceId } } },
       include: ruleInclude,
     });
     return rule ? mapRule(rule) : null;
@@ -181,11 +185,12 @@ const prismaRepositoryReviewRuleStore: RepositoryReviewRuleStore = {
   },
 
   async save(rule) {
+    const workspaceId = await getPersonalWorkspaceId(rule.userId);
     const existing = await prisma.repositoryReviewRule.findFirst({
       where: {
         id: rule.id,
         repositoryId: rule.repositoryId,
-        repository: { is: { userId: rule.userId } },
+        repository: { is: { userId: rule.userId, workspaceId } },
       },
       select: { id: true },
     });
@@ -219,8 +224,9 @@ const prismaRepositoryReviewRuleStore: RepositoryReviewRuleStore = {
   },
 
   async delete(userId, repositoryId, ruleId) {
+    const workspaceId = await getPersonalWorkspaceId(userId);
     const result = await prisma.repositoryReviewRule.deleteMany({
-      where: { id: ruleId, repositoryId, repository: { is: { userId } } },
+      where: { id: ruleId, repositoryId, repository: { is: { userId, workspaceId } } },
     });
     return result.count === 1;
   },

@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/config/database';
+import { getPersonalWorkspaceId } from '@/modules/workspaces/workspace.service';
 import {
   parseReviewAnalyticsFilter,
   summarizeReviewAnalytics,
@@ -23,16 +24,19 @@ export interface ReviewAnalyticsStore {
 
 const prismaReviewAnalyticsStore: ReviewAnalyticsStore = {
   async ownsRepository(userId, repositoryId) {
+    const workspaceId = await getPersonalWorkspaceId(userId);
     return (
       (await prisma.repository.count({
-        where: { id: repositoryId, userId },
+        where: { id: repositoryId, userId, workspaceId },
       })) === 1
     );
   },
 
   async readSnapshot(userId, filter) {
+    const workspaceId = await getPersonalWorkspaceId(userId);
     const reviewWhere: Prisma.CodeReviewWhereInput = {
       userId,
+      workspaceId,
       ...(filter.repositoryId ? { repositoryId: filter.repositoryId } : {}),
       ...(filter.from || filter.toExclusive
         ? {

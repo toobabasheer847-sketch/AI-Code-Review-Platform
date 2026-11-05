@@ -34,6 +34,7 @@ export interface PullRequestDeliveryInput {
 export interface AuthorizedRepository {
   id: string
   userId: string
+  workspaceId?: string | null
   name: string
   url: string
 }
@@ -63,7 +64,7 @@ export interface PullRequestWebhookStore {
 export interface PullRequestWebhookQueue {
   add(
     name: string,
-    data: { reviewId: string },
+    data: { reviewId: string; workspaceId?: string },
     options: { jobId: string }
   ): Promise<unknown>
   getJob(jobId: string): Promise<{
@@ -223,7 +224,12 @@ export class PullRequestWebhookService {
         }
         await this.dependencies.queue.add(
           'analyze',
-          { reviewId: reservation.reviewId },
+          {
+            reviewId: reservation.reviewId,
+            ...(authorized.repository.workspaceId
+              ? { workspaceId: authorized.repository.workspaceId }
+              : {}),
+          },
           { jobId }
         )
       } catch (error) {

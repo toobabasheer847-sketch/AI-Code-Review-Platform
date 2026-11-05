@@ -1,0 +1,105 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import type { NextFunction, Request, Response } from 'express'
+import {
+  createWorkspaceAccessMiddleware,
+  requireWorkspacePermission,
+  type WorkspaceAccessStore,
+} from './workspace-access.middleware'
+
+function responseHarness() {
+  let statusCode = 200
+  let body: unknown
+  const response = {
+    status(code: number) {
+      statusCode = code
+      return this
+    },
+    json(value: unknown) {
+      body = value
+      return this
+    },
+  } as unknown as Response
+  return { response, status: () => statusCode, body: () => body }
+}
+
+function requestHarness(workspaceId: string, userId = 'user-a') {
+  return {
+    user: { userId },
+    params: { workspaceId },
+  } as unknown as Request
+}
+
+test('workspace access middleware denies a different workspace without active membership', async () => {
+  const store: WorkspaceAccessStore = {
+    async findActiveMembership(workspaceId, userId) {
+      return workspaceId === 'workspace-a' && userId === 'user-a'
+        ? {
+            id: 'workspace-a',
+            organizationId: 'org-a',
+            organizationOwnerUserId: 'user-a',
+            isPersonal: false,
+            role: 'OWNER',
+          }
+        : null
+    },
+  }
+  const middleware = createWorkspaceAccessMiddleware(store)
+  const result = responseHarness()
+  let nextCalled = false
+
+  await middleware(requestHarness('workspace-b'), result.response, (() => {
+    nextCalled = true
+  }) as NextFunction)
+
+  assert.equal(result.status(), 404)
+  assert.equal(nextCalled, false)
+})
+
+test('active workspace membership is attached as trusted request context', async () => {
+  const store: WorkspaceAccessStore = {
+    async findActiveMembership(workspaceId, userId) {
+      assert.equal(workspaceId, 'workspace-a')
+      assert.equal(userId, 'user-a')
+      return {
+        id: workspaceId,
+        organizationId: 'org-a',
+        organizationOwnerUserId: 'user-a',
+        isPersonal: false,
+        role: 'DEVELOPER',
+      }
+    },
+  }
+  const middleware = createWorkspaceAccessMiddleware(store)
+  const request = requestHarness('workspace-a')
+  const result = responseHarness()
+  let nextCalled = false
+
+  await middleware(request, result.response, (() => {
+    nextCalled = true
+  }) as NextFunction)
+
+  assert.equal(nextCalled, true)
+  assert.equal(request.workspace?.role, 'DEVELOPER')
+})
+
+test('workspace permission middleware returns forbidden for disallowed mutations', () => {
+  const request = {
+    workspace: {
+      id: 'workspace-a',
+      organizationId: 'org-a',
+      organizationOwnerUserId: 'user-a',
+      isPersonal: false,
+      role: 'VIEWER',
+    },
+  } as unknown as Request
+  const result = responseHarness()
+  let nextCalled = false
+
+  requireWorkspacePermission('update_findings')(request, result.response, (() => {
+    nextCalled = true
+  }) as NextFunction)
+
+  assert.equal(result.status(), 403)
+  assert.equal(nextCalled, false)
+})

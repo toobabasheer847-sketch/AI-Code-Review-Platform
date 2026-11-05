@@ -4,6 +4,7 @@ import { reviewQueue } from '@/jobs/review.queue'
 import { GitHubService } from '@/modules/github/github.service'
 import { releaseReviewQuota, reserveReviewQuota } from '@/modules/billing/review-quota'
 import { summarizeFindingLifecycle } from './finding-lifecycle.domain'
+import { getPersonalWorkspaceId } from '@/modules/workspaces/workspace.service'
 
 export class ReviewNotFoundError extends Error {
 	public readonly statusCode = 404
@@ -47,15 +48,17 @@ const reviewRelations = {
 }
 
 async function findOwnedReview(userId: string, reviewId: string) {
+	const workspaceId = await getPersonalWorkspaceId(userId)
 	return prisma.codeReview.findFirst({
-		where: { id: reviewId, userId },
+		where: { id: reviewId, userId, workspaceId },
 		include: reviewRelations,
 	})
 }
 
 async function deleteOwnedReview(userId: string, reviewId: string): Promise<number> {
+	const workspaceId = await getPersonalWorkspaceId(userId)
 	const result = await prisma.codeReview.deleteMany({
-		where: { id: reviewId, userId },
+		where: { id: reviewId, userId, workspaceId },
 	})
 	return result.count
 }
@@ -87,8 +90,9 @@ export class ReviewService {
 	}
 
 	public async listReviews(userId: string) {
+		const workspaceId = await getPersonalWorkspaceId(userId)
 		const reviews = await prisma.codeReview.findMany({
-			where: { userId },
+			where: { userId, workspaceId },
 			include: {
 				repository: true,
 				findings: true,
@@ -120,17 +124,19 @@ export class ReviewService {
 			repositoryName,
 			branch
 		)
+		const workspaceId = await getPersonalWorkspaceId(userId)
 		const review = await prisma.$transaction(async (transaction) => {
 			await reserveReviewQuota(transaction, userId)
 			const repository = await transaction.repository.upsert({
 				where: { userId_url: { userId, url: target.htmlUrl } },
-				create: { userId, name: target.fullName, url: target.htmlUrl },
+				create: { userId, workspaceId, name: target.fullName, url: target.htmlUrl },
 				update: {},
 			})
 
 			return transaction.codeReview.create({
 				data: {
 					userId,
+					workspaceId,
 					repositoryId: repository.id,
 					title: `Code review: ${target.fullName} (${branch})`,
 					description: `Automated review for ${target.fullName} on branch ${branch}`,
@@ -144,7 +150,7 @@ export class ReviewService {
 		try {
 			await reviewQueue.add(
 				'analyze',
-				{ reviewId: review.id },
+				{ reviewId: review.id, workspaceId },
 				{ jobId: `review-${review.id}` }
 			)
 		} catch {

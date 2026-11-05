@@ -1,5 +1,6 @@
 import { AIRequestStatus, Prisma } from '@prisma/client'
 import { prisma } from '@/config/database'
+import { getPersonalWorkspaceId } from '@/modules/workspaces/workspace.service'
 
 export interface AIUsageFilters {
   from?: Date
@@ -10,10 +11,12 @@ export interface AIUsageFilters {
 
 export function ownedAIUsageWhere(
   userId: string,
-  filters: Pick<AIUsageFilters, 'from' | 'toExclusive'>
+  filters: Pick<AIUsageFilters, 'from' | 'toExclusive'>,
+  workspaceId?: string
 ): Prisma.AiRequestUsageWhereInput {
   return {
     userId,
+    ...(workspaceId ? { workspaceId } : {}),
     ...(filters.from || filters.toExclusive
       ? {
           createdAt: {
@@ -59,7 +62,8 @@ export function mapAIUsageGroups<
 }
 
 export async function getAIUsageAnalytics(userId: string, filters: AIUsageFilters) {
-  const where = ownedAIUsageWhere(userId, filters)
+  const workspaceId = await getPersonalWorkspaceId(userId)
+  const where = ownedAIUsageWhere(userId, filters, workspaceId)
   const [
     totals,
     failures,
@@ -127,6 +131,7 @@ export async function getAIUsageAnalytics(userId: string, filters: AIUsageFilter
         COUNT(*) FILTER (WHERE status = 'FAILED') AS "failedRequests"
       FROM "AIRequestUsage"
       WHERE "userId" = ${userId}
+        AND "workspaceId" = ${workspaceId}
         ${filters.from ? Prisma.sql`AND "createdAt" >= ${filters.from}` : Prisma.empty}
         ${filters.toExclusive ? Prisma.sql`AND "createdAt" < ${filters.toExclusive}` : Prisma.empty}
       GROUP BY date_trunc('day', "createdAt")

@@ -19,6 +19,10 @@ model User {
   avatar              String?
   githubId            String?              @unique
   githubAccount       GitHubAccount?
+  organizationsOwned  Organization[]       @relation("OrganizationOwner")
+  workspaceMemberships WorkspaceMembership[]
+  workspaceInvitationsSent WorkspaceInvitation[] @relation("WorkspaceInvitationInviter")
+  workspaceInvitationsAccepted WorkspaceInvitation[] @relation("WorkspaceInvitationAccepter")
   isVerified          Boolean              @default(false)
   tokenVersion        Int                  @default(0)
   subscription        Subscription?
@@ -49,6 +53,165 @@ model User {
   updatedAt           DateTime             @updatedAt
 
   @@index([email])
+}
+
+model Organization {
+  id          String                    @id @default(cuid())
+  name        String
+  slug        String                    @unique
+  isPersonal  Boolean                   @default(false)
+  ownerUserId String
+  owner       User                      @relation("OrganizationOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
+  workspaces  Workspace[]
+  billing     WorkspaceBillingAccount?
+  usage       WorkspaceUsage[]
+  createdAt   DateTime                  @default(now())
+  updatedAt   DateTime                  @updatedAt
+
+  @@index([ownerUserId])
+}
+
+model Workspace {
+  id            String               @id @default(cuid())
+  organizationId String
+  organization  Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name          String
+  slug          String
+  isPersonal    Boolean              @default(false)
+  memberships   WorkspaceMembership[]
+  invitations   WorkspaceInvitation[]
+  integrations  WorkspaceIntegration[]
+  repositories  Repository[]
+  reviews       CodeReview[]
+  automations   Automation[]
+  automationSchedules AutomationSchedule[]
+  socialAccounts SocialAccount[]
+  socialPosts   SocialPost[]
+  personalUsage Usage[]
+  aiRequestUsages AiRequestUsage[]
+  workMemories  WorkMemory[]
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+}
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  DEVELOPER
+  VIEWER
+}
+
+enum WorkspaceMemberStatus {
+  ACTIVE
+  SUSPENDED
+  REMOVED
+}
+
+enum WorkspaceInvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
+}
+
+model WorkspaceMembership {
+  id          String                @id @default(cuid())
+  workspaceId String
+  workspace   Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role        WorkspaceRole
+  status      WorkspaceMemberStatus @default(ACTIVE)
+  joinedAt    DateTime              @default(now())
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+
+  @@unique([workspaceId, userId])
+  @@index([userId, status])
+  @@index([workspaceId, status, role])
+}
+
+model WorkspaceInvitation {
+  id             String                    @id @default(cuid())
+  workspaceId    String
+  workspace      Workspace                 @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  email          String
+  role           WorkspaceRole
+  tokenHash      String                    @unique
+  invitedById    String?
+  invitedBy      User?                     @relation("WorkspaceInvitationInviter", fields: [invitedById], references: [id], onDelete: SetNull)
+  acceptedById   String?
+  acceptedBy     User?                     @relation("WorkspaceInvitationAccepter", fields: [acceptedById], references: [id], onDelete: SetNull)
+  status         WorkspaceInvitationStatus @default(PENDING)
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+
+  @@index([workspaceId, status, expiresAt])
+  @@index([email, status])
+}
+
+enum WorkspaceIntegrationProvider {
+  GITHUB
+  LINKEDIN
+}
+
+model WorkspaceIntegration {
+  id                  String                       @id @default(cuid())
+  workspaceId         String
+  workspace           Workspace                    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  provider            WorkspaceIntegrationProvider
+  externalAccountId   String
+  displayName         String
+  encryptedCredential String                       @db.Text
+  scopes              String[]                     @default([])
+  status              WorkspaceIntegrationStatus   @default(ACTIVE)
+  tokenExpiresAt      DateTime?
+  connectedAt         DateTime                     @default(now())
+  updatedAt           DateTime                     @updatedAt
+
+  @@unique([workspaceId, provider, externalAccountId])
+  @@index([workspaceId, provider, status])
+}
+
+enum WorkspaceIntegrationStatus {
+  ACTIVE
+  NEEDS_REAUTH
+  DISCONNECTED
+}
+
+model WorkspaceUsage {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  reviewCount    Int          @default(0)
+  month          Int
+  year           Int
+  createdAt      DateTime     @default(now())
+
+  @@unique([organizationId, month, year])
+  @@index([organizationId])
+}
+
+model WorkspaceBillingAccount {
+  id                       String             @id @default(cuid())
+  organizationId           String             @unique
+  organization             Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  stripeId                 String?            @unique
+  plan                     Plan               @default(FREE)
+  status                   SubscriptionStatus @default(ACTIVE)
+  priceId                  String?
+  currentPeriodStart       DateTime?
+  currentPeriodEnd         DateTime?
+  cancelledAt              DateTime?
+  lastStripeEventCreatedAt DateTime?
+  createdAt                DateTime           @default(now())
+  updatedAt                DateTime           @updatedAt
 }
 
 enum AutomationMode {
@@ -117,6 +280,8 @@ enum AutomationScheduleRunStatus {
 
 model Automation {
   id             String               @id @default(cuid())
+  workspaceId    String?
+  workspace      Workspace?           @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
   userId         String
   user           User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   goal           String
@@ -137,13 +302,17 @@ model Automation {
   updatedAt      DateTime             @updatedAt
 
   @@unique([userId, idempotencyKey])
+  @@unique([workspaceId, idempotencyKey])
   @@unique([scheduleId, scheduledFor])
   @@index([userId, createdAt])
+  @@index([workspaceId, createdAt])
   @@index([status, updatedAt])
 }
 
 model AutomationSchedule {
   id                 String                      @id @default(cuid())
+  workspaceId        String?
+  workspace          Workspace?                  @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
   userId             String
   user               User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
   sourceAutomationId String
@@ -169,6 +338,7 @@ model AutomationSchedule {
 
   @@index([status, nextRunAt])
   @@index([userId, status])
+  @@index([workspaceId, status])
 }
 
 model AutomationScheduleRun {
@@ -330,6 +500,8 @@ enum SocialPostStatus {
 
 model SocialAccount {
   id                String         @id @default(cuid())
+  workspaceId       String?
+  workspace         Workspace?    @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
   userId            String
   user              User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   provider          SocialProvider
@@ -345,10 +517,13 @@ model SocialAccount {
 
   @@unique([userId, provider, providerAccountId])
   @@index([userId, provider])
+  @@index([workspaceId, provider])
 }
 
 model SocialPost {
   id                   String           @id @default(cuid())
+  workspaceId          String?
+  workspace            Workspace?       @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
   userId               String
   user                 User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   accountId            String?
@@ -381,7 +556,9 @@ model SocialPost {
   updatedAt            DateTime         @updatedAt
 
   @@unique([userId, idempotencyKey])
+  @@unique([workspaceId, idempotencyKey])
   @@index([userId, status, scheduledAt])
+  @@index([workspaceId, status, scheduledAt])
   @@index([status, scheduledAt])
   @@index([accountId])
 }
@@ -460,6 +637,8 @@ enum SubscriptionStatus {
 
 model Usage {
   id          String   @id @default(cuid())
+  workspaceId String?
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   reviewCount Int      @default(0)
@@ -468,7 +647,9 @@ model Usage {
   createdAt   DateTime @default(now())
 
   @@unique([userId, month, year])
+  @@unique([workspaceId, month, year])
   @@index([userId])
+  @@index([workspaceId])
 }
 
 enum AIRequestStatus {
@@ -478,6 +659,8 @@ enum AIRequestStatus {
 
 model AiRequestUsage {
   id                String          @id @default(cuid())
+  workspaceId       String?
+  workspace         Workspace?      @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
   userId            String
   user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   feature           String
@@ -499,7 +682,9 @@ model AiRequestUsage {
   createdAt         DateTime        @default(now())
 
   @@unique([userId, idempotencyKey])
+  @@unique([workspaceId, idempotencyKey])
   @@index([userId, createdAt])
+  @@index([workspaceId, createdAt])
   @@index([userId, feature, createdAt])
   @@index([userId, modelName, createdAt])
   @@index([userId, status, createdAt])
@@ -508,6 +693,8 @@ model AiRequestUsage {
 
 model Repository {
   id          String       @id @default(cuid())
+  workspaceId String?
+  workspace   Workspace?  @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
   userId      String
   user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   name        String
@@ -523,7 +710,9 @@ model Repository {
   updatedAt   DateTime     @updatedAt
 
   @@unique([userId, url])
+  @@unique([workspaceId, url])
   @@index([userId])
+  @@index([workspaceId])
 }
 
 enum WorkMemoryType {
@@ -545,6 +734,8 @@ enum WorkMemorySource {
 
 model WorkMemory {
   id          String          @id @default(cuid())
+  workspaceId String?
+  workspace   Workspace?     @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
   userId      String
   user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   repositoryId String?
@@ -559,6 +750,7 @@ model WorkMemory {
   updatedAt   DateTime        @updatedAt
 
   @@index([userId, createdAt])
+  @@index([workspaceId, createdAt])
   @@index([userId, type])
   @@index([repositoryId])
 }
@@ -624,6 +816,8 @@ enum FindingVerificationStatus {
 
 model CodeReview {
   id                String                  @id @default(cuid())
+  workspaceId       String?
+  workspace         Workspace?              @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
   userId            String
   user              User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
   repositoryId      String
@@ -652,6 +846,7 @@ model CodeReview {
   @@unique([repositoryId, pullRequestNumber, headSha])
   @@index([userId])
   @@index([userId, createdAt])
+  @@index([workspaceId, createdAt])
   @@index([repositoryId])
   @@index([status])
 }

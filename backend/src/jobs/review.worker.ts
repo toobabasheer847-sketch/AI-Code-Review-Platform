@@ -19,15 +19,17 @@ import { publishCompletedPullRequestReview } from '@/modules/github/pull-request
 import type { ReviewJobData } from './review.queue'
 import logger from '@/utils/logger'
 import { reportBackendError } from '@/utils/error-monitoring'
+import { reviewWorkerScope } from './review.worker-domain'
 
 const connection = createBullMqRedisConnection()
 const githubService = new GitHubService()
 
 const store: ReviewJobStore = {
-  async findForProcessing(reviewId): Promise<ReviewJobRecord | null> {
-    const review = await prisma.codeReview.findUnique({
-      where: { id: reviewId },
+  async findForProcessing(reviewId, workspaceId): Promise<ReviewJobRecord | null> {
+    const review = await prisma.codeReview.findFirst({
+      where: reviewWorkerScope(reviewId, workspaceId),
       include: {
+        workspace: { select: { isPersonal: true } },
         repository: { select: { id: true, name: true } },
         user: { select: { email: true } },
         analytics: { select: { qualityScore: true, totalIssues: true } },
@@ -47,6 +49,18 @@ const store: ReviewJobStore = {
         },
       },
     })
+    if (!review || !review.workspaceId) return null
+    if (review.workspace && !review.workspace.isPersonal) {
+      const activeMembership = await prisma.workspaceMembership.findFirst({
+        where: {
+          workspaceId: review.workspaceId,
+          userId: review.userId,
+          status: 'ACTIVE',
+        },
+        select: { id: true },
+      })
+      if (!activeMembership) return null
+    }
     return review
   },
 
@@ -150,6 +164,7 @@ const worker = new Worker<ReviewJobData>(
           rules,
           reviewId: currentReview.id,
           userId: currentReview.userId,
+          ...(currentReview.workspaceId ? { workspaceId: currentReview.workspaceId } : {}),
         })
       },
       async notify(review, analysis, files): Promise<void> {
@@ -202,7 +217,7 @@ const worker = new Worker<ReviewJobData>(
           }
         )
       },
-    })
+    }, job.data.workspaceId)
   },
   { connection, autorun: false }
 )

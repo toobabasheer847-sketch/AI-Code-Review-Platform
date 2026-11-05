@@ -23,6 +23,7 @@ export interface AuthStore {
   findUserByEmail(email: string): Promise<StoredAuthUser | null>
   findUserById(userId: string): Promise<StoredAuthUser | null>
   createUser(data: { email: string; fullName: string; passwordHash: string }): Promise<StoredAuthUser>
+  assertCanDeleteUser?(userId: string): Promise<void>
   replaceToken(
     userId: string,
     type: AuthTokenType,
@@ -69,9 +70,34 @@ export const authStore: AuthStore = {
   },
 
   async createUser(data) {
-    return prisma.user.create({
-      data,
-      include: { githubAccount: { select: { username: true } } },
+    return prisma.$transaction(async (transaction) => {
+      const user = await transaction.user.create({
+        data,
+        select: { id: true, email: true, fullName: true, avatar: true, passwordHash: true,
+          isVerified: true, tokenVersion: true, createdAt: true, updatedAt: true },
+      })
+      await transaction.organization.create({
+        data: {
+          name: `${user.fullName}'s Organization`,
+          slug: `personal-${user.id}`,
+          isPersonal: true,
+          ownerUserId: user.id,
+          workspaces: {
+            create: {
+              name: 'Personal',
+              slug: 'personal',
+              isPersonal: true,
+              memberships: {
+                create: { userId: user.id, role: 'OWNER', status: 'ACTIVE' },
+              },
+            },
+          },
+        },
+      })
+      return transaction.user.findUniqueOrThrow({
+        where: { id: user.id },
+        include: { githubAccount: { select: { username: true } } },
+      })
     })
   },
 
@@ -210,8 +236,44 @@ export const authStore: AuthStore = {
     )
   },
 
+  async assertCanDeleteUser(userId) {
+    const [ownedOrganization, ownedWorkspace] = await Promise.all([
+      prisma.organization.findFirst({
+        where: { ownerUserId: userId, isPersonal: false },
+        select: { id: true },
+      }),
+      prisma.workspaceMembership.findFirst({
+        where: {
+          userId,
+          role: 'OWNER',
+          status: 'ACTIVE',
+          workspace: { is: { isPersonal: false } },
+        },
+        select: { id: true },
+      }),
+    ])
+    if (ownedOrganization || ownedWorkspace) throw new OrganizationOwnershipError()
+  },
+
   async deleteUser(userId) {
     await prisma.$transaction(async (transaction) => {
+      const [ownedOrganization, ownedWorkspace] = await Promise.all([
+        transaction.organization.findFirst({
+          where: { ownerUserId: userId, isPersonal: false },
+          select: { id: true },
+        }),
+        transaction.workspaceMembership.findFirst({
+          where: {
+            userId,
+            role: 'OWNER',
+            status: 'ACTIVE',
+            workspace: { is: { isPersonal: false } },
+          },
+          select: { id: true },
+        }),
+      ])
+      if (ownedOrganization || ownedWorkspace) throw new OrganizationOwnershipError()
+
       const subscription = await transaction.subscription.findUnique({
         where: { userId },
         select: { plan: true, status: true, currentPeriodEnd: true },
@@ -225,6 +287,9 @@ export const authStore: AuthStore = {
       ) {
         throw new ActiveSubscriptionError()
       }
+      await transaction.organization.deleteMany({
+        where: { ownerUserId: userId, isPersonal: true },
+      })
       await transaction.user.delete({ where: { id: userId } })
     })
   },
@@ -236,5 +301,14 @@ export class ActiveSubscriptionError extends Error {
   constructor() {
     super('Cancel the active subscription before deleting the account')
     this.name = 'ActiveSubscriptionError'
+  }
+}
+
+export class OrganizationOwnershipError extends Error {
+  readonly statusCode = 409
+
+  constructor() {
+    super('Transfer organization and workspace ownership before deleting this account')
+    this.name = 'OrganizationOwnershipError'
   }
 }

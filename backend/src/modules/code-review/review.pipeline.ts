@@ -5,6 +5,7 @@ import { resolveReviewSourceRevision } from './review.persistence'
 export interface ReviewJobRecord {
   id: string
   userId: string
+  workspaceId?: string | null
   branch: string
   status: string
   repository: { name: string; id?: string }
@@ -31,7 +32,7 @@ export interface ReviewJobRecord {
 }
 
 export interface ReviewJobStore {
-  findForProcessing(reviewId: string): Promise<ReviewJobRecord | null>
+  findForProcessing(reviewId: string, workspaceId?: string): Promise<ReviewJobRecord | null>
   markRunning(reviewId: string): Promise<void>
   complete(
     review: ReviewJobRecord,
@@ -59,9 +60,10 @@ export interface ReviewPipelineDependencies {
 
 export async function processReview(
   reviewId: string,
-  dependencies: ReviewPipelineDependencies
+  dependencies: ReviewPipelineDependencies,
+  workspaceId?: string
 ): Promise<void> {
-  const review = await dependencies.store.findForProcessing(reviewId)
+  const review = await dependencies.store.findForProcessing(reviewId, workspaceId)
   if (!review) {
     throw new Error(`Review ${reviewId} does not exist`)
   }

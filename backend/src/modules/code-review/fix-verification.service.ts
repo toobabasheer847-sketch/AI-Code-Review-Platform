@@ -21,6 +21,7 @@ import {
 } from '@/jobs/fix-verification.queue'
 import { getConfiguredFixVerificationRunner } from './fix-verification.runner'
 import { z } from 'zod'
+import { getPersonalWorkspaceId } from '@/modules/workspaces/workspace.service'
 
 export const MAX_FIX_PROPOSALS_PER_FINDING = 10
 export const MAX_VERIFICATION_ATTEMPTS_PER_PROPOSAL = 5
@@ -211,8 +212,9 @@ export interface FixProposalRecord {
 
 const prismaFixProposalStore: FixProposalStore = {
   async findOwnedFinding(userId, findingId) {
+    const workspaceId = await getPersonalWorkspaceId(userId)
     return prisma.finding.findFirst({
-      where: { id: findingId, review: { is: { userId } } },
+      where: { id: findingId, review: { is: { userId, workspaceId } } },
       select: { id: true },
     })
   },
@@ -361,8 +363,13 @@ export interface TrustedVerificationStore {
 
 const prismaTrustedVerificationStore: TrustedVerificationStore = {
   async findOwnedProposal(userId, proposalId) {
+    const workspaceId = await getPersonalWorkspaceId(userId)
     const proposal = await prisma.fixProposal.findFirst({
-      where: { id: proposalId, userId, finding: { review: { is: { userId } } } },
+      where: {
+        id: proposalId,
+        userId,
+        finding: { review: { is: { userId, workspaceId } } },
+      },
       select: {
         id: true,
         findingId: true,
@@ -660,13 +667,13 @@ export interface FixVerificationEvidenceStore {
   }): Promise<FixProposalRecord['attempts'][number]>
 }
 
-function buildOwnedAttemptWhere(userId: string, attemptId?: string) {
+function buildOwnedAttemptWhere(userId: string, workspaceId: string, attemptId?: string) {
   return {
     ...(attemptId ? { id: attemptId } : {}),
     proposal: {
       is: {
         userId,
-        finding: { is: { review: { is: { userId } } } },
+        finding: { is: { review: { is: { userId, workspaceId } } } },
       },
     },
   }
@@ -674,15 +681,20 @@ function buildOwnedAttemptWhere(userId: string, attemptId?: string) {
 
 const prismaFixVerificationEvidenceStore: FixVerificationEvidenceStore = {
   async listOwned(userId, filters) {
+    const workspaceId = await getPersonalWorkspaceId(userId)
     const where: Prisma.FixVerificationAttemptWhereInput = {
-      ...buildOwnedAttemptWhere(userId),
+      ...buildOwnedAttemptWhere(userId, workspaceId),
       ...(filters.status ? { status: filters.status } : {}),
       ...(filters.repositoryId
         ? {
             proposal: {
               is: {
                 userId,
-                finding: { is: { review: { is: { userId, repositoryId: filters.repositoryId } } } },
+                finding: {
+                  is: {
+                    review: { is: { userId, workspaceId, repositoryId: filters.repositoryId } },
+                  },
+                },
               },
             },
           }
@@ -725,7 +737,7 @@ const prismaFixVerificationEvidenceStore: FixVerificationEvidenceStore = {
         },
       }),
       prisma.repository.findMany({
-        where: { userId },
+        where: { userId, workspaceId },
         select: { id: true, name: true },
         orderBy: { name: 'asc' },
       }),
@@ -777,15 +789,17 @@ const prismaFixVerificationEvidenceStore: FixVerificationEvidenceStore = {
   },
 
   async findOwnedAttempt(userId, attemptId) {
+    const workspaceId = await getPersonalWorkspaceId(userId)
     return prisma.fixVerificationAttempt.findFirst({
-      where: buildOwnedAttemptWhere(userId, attemptId),
+      where: buildOwnedAttemptWhere(userId, workspaceId, attemptId),
     })
   },
 
   async recordHumanDecision(input) {
+    const workspaceId = await getPersonalWorkspaceId(input.userId)
     return prisma.$transaction(
       async (transaction) => {
-        const where = buildOwnedAttemptWhere(input.userId, input.attemptId)
+        const where = buildOwnedAttemptWhere(input.userId, workspaceId, input.attemptId)
         const attempt = await transaction.fixVerificationAttempt.findFirst({
           where,
           select: { id: true, status: true, humanReviewedAt: true },

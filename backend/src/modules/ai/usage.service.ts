@@ -3,6 +3,7 @@ import OpenAI from 'openai'
 import { AIRequestStatus, Prisma } from '@prisma/client'
 import { prisma } from '@/config/database'
 import { env } from '@/config/env'
+import { getPersonalWorkspaceId } from '@/modules/workspaces/workspace.service'
 
 export type AIUsageFeature =
   | 'code_review'
@@ -15,6 +16,7 @@ export type AIUsageFeature =
 
 export interface AIUsageContext {
   userId: string
+  workspaceId?: string
   feature: AIUsageFeature
   requestKey?: string
   reviewId?: string
@@ -154,15 +156,31 @@ function errorCategory(error: unknown): string {
 }
 
 export function buildAIUsageUpsert(write: AIUsageWrite): Prisma.AiRequestUsageUpsertArgs {
+  const rawRequestKey = write.context.requestKey ?? randomUUID()
   const requestKey = createHash('sha256')
-    .update(write.context.requestKey ?? randomUUID())
+    .update(
+      write.context.workspaceId
+        ? `${write.context.workspaceId}:${rawRequestKey}`
+        : rawRequestKey
+    )
     .digest('hex')
   return {
-    where: {
-      userId_idempotencyKey: { userId: write.context.userId, idempotencyKey: requestKey },
-    },
+    where: write.context.workspaceId
+      ? {
+          workspaceId_idempotencyKey: {
+            workspaceId: write.context.workspaceId,
+            idempotencyKey: requestKey,
+          },
+        }
+      : {
+          userId_idempotencyKey: {
+            userId: write.context.userId,
+            idempotencyKey: requestKey,
+          },
+        },
     create: {
       userId: write.context.userId,
+      workspaceId: write.context.workspaceId ?? null,
       feature: write.context.feature,
       provider: write.provider,
       modelName: write.modelName,
@@ -197,7 +215,10 @@ export function buildAIUsageUpsert(write: AIUsageWrite): Prisma.AiRequestUsageUp
 }
 
 export async function persistAIUsage(write: AIUsageWrite): Promise<void> {
-  await prisma.aiRequestUsage.upsert(buildAIUsageUpsert(write))
+  const workspaceId = write.context.workspaceId ?? await getPersonalWorkspaceId(write.context.userId)
+  await prisma.aiRequestUsage.upsert(
+    buildAIUsageUpsert({ ...write, context: { ...write.context, workspaceId } })
+  )
 }
 
 export async function runTrackedAIRequest<T>(

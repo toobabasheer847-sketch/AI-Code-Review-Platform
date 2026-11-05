@@ -1,5 +1,6 @@
 import { FindingStatus, Prisma } from '@prisma/client';
 import { prisma } from '@/config/database';
+import { getPersonalWorkspaceId } from '@/modules/workspaces/workspace.service';
 import {
   canTransitionFindingStatus,
   type FindingStatusValue,
@@ -50,10 +51,15 @@ export interface FindingFeedbackRecord {
 }
 
 export interface FindingLifecycleStore {
-  findOwnedFinding(userId: string, findingId: string): Promise<OwnedFindingStatus | null>;
+  findOwnedFinding(
+    userId: string,
+    findingId: string,
+    workspaceId?: string
+  ): Promise<OwnedFindingStatus | null>;
   persistStatusChange(input: {
     userId: string;
     findingId: string;
+    workspaceId?: string;
     previousStatus: FindingStatusValue;
     status: FindingStatusValue;
     reason: string | null;
@@ -61,27 +67,35 @@ export interface FindingLifecycleStore {
 }
 
 const prismaFindingLifecycleStore: FindingLifecycleStore = {
-  async findOwnedFinding(userId, findingId) {
+  async findOwnedFinding(userId, findingId, requestedWorkspaceId) {
+    const workspaceId = requestedWorkspaceId ?? await getPersonalWorkspaceId(userId);
     return prisma.finding.findFirst({
-      where: { id: findingId, review: { is: { userId } } },
+      where: {
+        id: findingId,
+        review: { is: requestedWorkspaceId ? { workspaceId } : { userId, workspaceId } },
+      },
       select: { id: true, status: true, independentlyVerifiedAt: true },
     });
   },
 
   async persistStatusChange(input) {
+    const workspaceId = input.workspaceId ?? await getPersonalWorkspaceId(input.userId);
+    const reviewScope = input.workspaceId
+      ? { workspaceId }
+      : { userId: input.userId, workspaceId };
     return prisma.$transaction(async (transaction) => {
       const changed = await transaction.finding.updateMany({
         where: {
           id: input.findingId,
           status: input.previousStatus,
-          review: { is: { userId: input.userId } },
+          review: { is: reviewScope },
         },
         data: { status: input.status },
       });
 
       if (changed.count !== 1) {
         const stillOwned = await transaction.finding.findFirst({
-          where: { id: input.findingId, review: { is: { userId: input.userId } } },
+          where: { id: input.findingId, review: { is: reviewScope } },
           select: { id: true },
         });
         if (!stillOwned) throw new FindingNotFoundError();
@@ -109,9 +123,10 @@ export class FindingLifecycleService {
     userId: string,
     findingId: string,
     status: FindingStatusValue,
-    reason?: string
+    reason?: string,
+    workspaceId?: string
   ): Promise<FindingFeedbackRecord> {
-    const finding = await this.store.findOwnedFinding(userId, findingId);
+    const finding = await this.store.findOwnedFinding(userId, findingId, workspaceId);
     if (!finding) throw new FindingNotFoundError();
     if (!canTransitionFindingStatus(finding.status, status)) {
       throw new InvalidFindingTransitionError(finding.status, status);
@@ -120,6 +135,7 @@ export class FindingLifecycleService {
     return this.store.persistStatusChange({
       userId,
       findingId,
+      ...(workspaceId ? { workspaceId } : {}),
       previousStatus: finding.status,
       status,
       reason: reason || null,

@@ -13,6 +13,7 @@ import type { LoginInput, RegisterInput } from './auth.validation'
 import type { LoginResult, UserResponse } from './auth.types'
 import {
   ActiveSubscriptionError,
+  OrganizationOwnershipError,
   authStore,
   type AuthStore,
   type EmailVerificationConsumption,
@@ -364,10 +365,11 @@ export class AuthService {
       throw new ActiveSubscriptionError()
     }
 
+    await this.store.assertCanDeleteUser?.(userId)
     const disconnect = await this.github.disconnectAccount(userId)
     await this.store.deleteUser(userId)
     return disconnect
   }
 }
 
-export { ActiveSubscriptionError }
+export { ActiveSubscriptionError, OrganizationOwnershipError }

@@ -1,4 +1,5 @@
 import { prisma } from '@/config/database';
+import { getPersonalWorkspaceId } from '@/modules/workspaces/workspace.service';
 import {
   findCrossReviewDuplicateCandidates,
   type DuplicateCandidate,
@@ -90,8 +91,9 @@ const findingSelect = {
 
 const prismaDuplicateCandidateStore: DuplicateCandidateStore = {
   async loadReview(userId, reviewId) {
+    const workspaceId = await getPersonalWorkspaceId(userId);
     const review = await prisma.codeReview.findFirst({
-      where: { id: reviewId, userId },
+      where: { id: reviewId, userId, workspaceId },
       select: {
         repositoryId: true,
         findings: { select: findingSelect },
@@ -105,10 +107,11 @@ const prismaDuplicateCandidateStore: DuplicateCandidateStore = {
   },
 
   async loadOtherFindings(userId, repositoryId, reviewId) {
+    const workspaceId = await getPersonalWorkspaceId(userId);
     const findings = await prisma.finding.findMany({
       where: {
         reviewId: { not: reviewId },
-        review: { is: { userId, repositoryId } },
+        review: { is: { userId, workspaceId, repositoryId } },
       },
       select: findingSelect,
     });

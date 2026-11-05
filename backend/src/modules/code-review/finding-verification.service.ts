@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client'
 import { z } from 'zod'
 import { prisma } from '@/config/database'
+import { getPersonalWorkspaceId } from '@/modules/workspaces/workspace.service'
 
 export const findingVerificationMethods = ['STATIC_ANALYSIS', 'TARGETED_TEST'] as const
 export const MAX_FINDING_VERIFICATION_REQUESTS = 5
@@ -76,8 +77,9 @@ export class FindingVerificationLimitError extends Error {
 
 const prismaFindingVerificationStore: FindingVerificationStore = {
   async findOwnedFinding(userId, findingId) {
+    const workspaceId = await getPersonalWorkspaceId(userId)
     return prisma.finding.findFirst({
-      where: { id: findingId, review: { is: { userId } } },
+      where: { id: findingId, review: { is: { userId, workspaceId } } },
       select: {
         id: true,
         review: { select: { sourceRevision: true } },
@@ -90,21 +92,23 @@ const prismaFindingVerificationStore: FindingVerificationStore = {
   },
 
   async findOwnedRecord(userId, findingId, requestKey) {
+    const workspaceId = await getPersonalWorkspaceId(userId)
     return prisma.findingVerificationRecord.findFirst({
       where: {
         findingId,
         requestKey,
-        finding: { review: { is: { userId } } },
+        finding: { review: { is: { userId, workspaceId } } },
       },
     })
   },
 
   async createUnavailableRecord(input) {
+    const workspaceId = await getPersonalWorkspaceId(input.userId)
     return prisma.$transaction(async (transaction) => {
       const finding = await transaction.finding.findFirst({
         where: {
           id: input.findingId,
-          review: { is: { userId: input.userId } },
+          review: { is: { userId: input.userId, workspaceId } },
         },
         select: { review: { select: { sourceRevision: true } } },
       })

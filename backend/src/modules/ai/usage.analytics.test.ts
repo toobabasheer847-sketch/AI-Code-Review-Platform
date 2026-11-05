@@ -9,6 +9,11 @@ test('scopes analytics queries and date filters to the authenticated owner', () 
     userId: 'owner-1',
     createdAt: { gte: from, lt: toExclusive },
   })
+  assert.deepEqual(ownedAIUsageWhere('owner-1', { from, toExclusive }, 'personal-workspace-1'), {
+    userId: 'owner-1',
+    workspaceId: 'personal-workspace-1',
+    createdAt: { gte: from, lt: toExclusive },
+  })
 })
 
 test('maps grouped feature/model aggregates and preserves unknown totals', () => {

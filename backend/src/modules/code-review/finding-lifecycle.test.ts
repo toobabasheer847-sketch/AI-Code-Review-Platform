@@ -79,6 +79,34 @@ test('persists status change, optional reason, timestamp, and acting user in fee
         status: 'FALSE_POSITIVE',
         reason: 'Does not apply to this call path',
       });
+
+      test('uses workspace scope for a member updating another member’s finding', async () => {
+        let persistedWorkspaceId: string | undefined
+        const service = new FindingLifecycleService({
+          async findOwnedFinding(userId, findingId, workspaceId) {
+            assert.equal(userId, 'member-2')
+            assert.equal(findingId, 'finding-1')
+            assert.equal(workspaceId, 'workspace-a')
+            return { id: findingId, status: 'UNREVIEWED', independentlyVerifiedAt: null }
+          },
+          async persistStatusChange(input) {
+            persistedWorkspaceId = input.workspaceId
+            return {
+              id: 'feedback-1',
+              findingId: input.findingId,
+              userId: input.userId,
+              previousStatus: input.previousStatus,
+              status: input.status,
+              reason: input.reason,
+              createdAt: new Date(),
+              user: { fullName: 'Workspace Member' },
+            }
+          },
+        })
+
+        await service.updateStatus('member-2', 'finding-1', 'CONFIRMED', undefined, 'workspace-a')
+        assert.equal(persistedWorkspaceId, 'workspace-a')
+      })
       currentStatus = input.status;
       const feedback: FindingFeedbackRecord = {
         id: 'feedback-1',

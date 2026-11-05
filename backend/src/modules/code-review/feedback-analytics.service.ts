@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/config/database';
+import { getPersonalWorkspaceId } from '@/modules/workspaces/workspace.service';
 import {
   summarizeFeedbackAnalytics,
   type FeedbackAnalyticsDataset,
@@ -42,14 +43,16 @@ const verificationStatuses = new Set<ObjectiveVerificationStatus>([
 
 const prismaFeedbackAnalyticsStore: FeedbackAnalyticsStore = {
   async ownsRepository(userId, repositoryId) {
+    const workspaceId = await getPersonalWorkspaceId(userId);
     return (
       (await prisma.repository.count({
-        where: { id: repositoryId, userId },
+        where: { id: repositoryId, userId, workspaceId },
       })) === 1
     );
   },
 
   async read(userId, filter) {
+    const workspaceId = await getPersonalWorkspaceId(userId);
     const findingCreatedAt = createdAtFilter(filter);
     const reviewCreatedAt = createdAtFilter(filter);
     const repositoryId = filter.repositoryId ?? '';
@@ -57,7 +60,7 @@ const prismaFeedbackAnalyticsStore: FeedbackAnalyticsStore = {
       prisma.finding.findMany({
         where: {
           ...(findingCreatedAt ? { createdAt: findingCreatedAt } : {}),
-          review: { is: { userId, repositoryId } },
+          review: { is: { userId, workspaceId, repositoryId } },
         },
         select: {
           id: true,
@@ -81,6 +84,7 @@ const prismaFeedbackAnalyticsStore: FeedbackAnalyticsStore = {
       prisma.codeReview.findMany({
         where: {
           userId,
+          workspaceId,
           repositoryId,
           ...(reviewCreatedAt ? { createdAt: reviewCreatedAt } : {}),
         },
