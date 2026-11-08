@@ -24,6 +24,18 @@ function responseHarness() {
   return { response, status: () => statusCode, body: () => body }
 }
 
+function workspaceRequest(role: 'OWNER' | 'ADMIN' | 'DEVELOPER' | 'VIEWER'): Request {
+  return {
+    workspace: {
+      id: 'workspace-a',
+      organizationId: 'org-a',
+      organizationOwnerUserId: 'user-a',
+      isPersonal: false,
+      role,
+    },
+  } as unknown as Request
+}
+
 function requestHarness(workspaceId: string, userId = 'user-a') {
   return {
     user: { userId },
@@ -82,6 +94,28 @@ test('active workspace membership is attached as trusted request context', async
 
   assert.equal(nextCalled, true)
   assert.equal(request.workspace?.role, 'DEVELOPER')
+})
+
+test('only owners and admins can pass the invitation permission check', () => {
+  for (const role of ['DEVELOPER', 'VIEWER'] as const) {
+    const result = responseHarness()
+    let nextCalled = false
+    requireWorkspacePermission('manage_members')(workspaceRequest(role), result.response, (() => {
+      nextCalled = true
+    }) as NextFunction)
+    assert.equal(result.status(), 403)
+    assert.equal(nextCalled, false)
+  }
+
+  for (const role of ['OWNER', 'ADMIN'] as const) {
+    const result = responseHarness()
+    let nextCalled = false
+    requireWorkspacePermission('manage_members')(workspaceRequest(role), result.response, (() => {
+      nextCalled = true
+    }) as NextFunction)
+    assert.equal(nextCalled, true)
+    assert.equal(result.status(), 200)
+  }
 })
 
 test('workspace permission middleware returns forbidden for disallowed mutations', () => {

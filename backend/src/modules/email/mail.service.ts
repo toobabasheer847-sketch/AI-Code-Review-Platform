@@ -3,6 +3,10 @@ import { env } from '../../config/env.js'
 import { ReviewCompletePayload } from './email.types.js'
 import type { AutomationNotificationPayload } from './email.types.js'
 import type { AccountEmailPayload, VerificationOtpEmailPayload } from './account-email.types.js'
+import {
+	renderWorkspaceInvitationEmail,
+	type WorkspaceInvitationEmailMessage,
+} from './workspace-invitation-email.js'
 import fs from 'fs'
 import path from 'path'
 
@@ -144,6 +148,24 @@ export class MailService {
 			to: payload.to,
 			subject: 'Reset your AI CodeGuard password',
 			html: `<p>A password reset was requested for your account.</p><p><a href="${url}">Reset password</a></p><p>This link expires in 30 minutes. If you did not request a reset, you can ignore this message.</p>`,
+		})
+	}
+
+	public async sendWorkspaceInvitation(payload: WorkspaceInvitationEmailMessage) {
+		const templatePath = path.join(__dirname, 'templates', 'workspace-invitation.html')
+		let template = '<p>{{inviterName}} invited you to {{workspaceName}} as a {{roleLabel}}.</p><p>Expires {{expiresAt}}.</p><p><a href="{{acceptUrl}}">Accept invitation</a></p>'
+		try {
+			template = fs.readFileSync(templatePath, 'utf8')
+		} catch {
+			// The inline fallback still contains the same invitation fields.
+		}
+		const rendered = renderWorkspaceInvitationEmail(template, payload)
+		return this.transporter.sendMail({
+			from: this.fromAddress,
+			to: payload.to,
+			subject: rendered.subject,
+			text: rendered.text,
+			html: rendered.html,
 		})
 	}
 

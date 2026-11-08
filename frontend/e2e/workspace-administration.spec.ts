@@ -132,7 +132,7 @@ test('manages workspace members and hides owner actions from a viewer', async ({
   await expect(page.getByRole('paragraph').filter({ hasText: 'Grace Hopper' })).toBeVisible()
   await page.getByLabel('Email address').fill('new@example.test')
   await page.getByRole('button', { name: 'Invite member' }).click()
-  await expect(page.getByText('Invitation created for new@example.test')).toBeVisible()
+  await expect(page.locator('p[role="status"]', { hasText: 'Invitation email sent to new@example.test.' })).toBeVisible()
   await expect(page.getByText(secret)).toHaveCount(0)
 
   await page.getByLabel('Role for Grace Hopper').selectOption('VIEWER')

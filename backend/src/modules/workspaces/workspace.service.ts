@@ -1,12 +1,31 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { Prisma, type WorkspaceMemberStatus, type WorkspaceRole } from '@prisma/client'
 import { prisma } from '@/config/database'
+import { env } from '@/config/env'
+import { getSafeMailErrorDetails, MailService } from '@/modules/email/mail.service'
+import {
+  buildInvitationAcceptUrl,
+  sendWithRetry,
+  workspaceInvitationRoleLabel,
+  type WorkspaceInvitationEmailMessage,
+} from '@/modules/email/workspace-invitation-email'
+import logger from '@/utils/logger'
 import {
   canTransferOrganizationOwnership,
   invitationAcceptanceFailure,
   normalizeInvitationEmail,
   normalizeWorkspaceSlug,
 } from './workspace.domain'
+
+export interface WorkspaceInvitationMailer {
+  send(message: WorkspaceInvitationEmailMessage): Promise<void>
+}
+
+const smtpInvitationMailer: WorkspaceInvitationMailer = {
+  async send(message) {
+    await new MailService().sendWorkspaceInvitation(message)
+  },
+}
 
 export class WorkspaceServiceError extends Error {
   constructor(
@@ -49,6 +68,8 @@ function isUniqueConstraintError(error: unknown): boolean {
 }
 
 export class WorkspaceService {
+  constructor(private readonly invitationMailer: WorkspaceInvitationMailer = smtpInvitationMailer) {}
+
   async listForUser(userId: string) {
     const memberships = await prisma.workspaceMembership.findMany({
       where: { userId, status: 'ACTIVE' },
@@ -220,6 +241,60 @@ export class WorkspaceService {
         throw new WorkspaceServiceError(409, 'A pending invitation already exists for this email')
       }
       throw error
+    }
+  }
+
+  async createAndSendInvitation(
+    workspaceId: string,
+    invitedById: string,
+    email: string,
+    role: WorkspaceRole
+  ) {
+    const workspace = await prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { name: true },
+    })
+    const invitation = await this.createInvitation(workspaceId, invitedById, email, role)
+    const inviter = await prisma.user.findUnique({
+      where: { id: invitedById },
+      select: { fullName: true, email: true },
+    })
+    const message: WorkspaceInvitationEmailMessage = {
+      to: invitation.email,
+      workspaceName: workspace?.name ?? 'AI CodeGuard',
+      inviterName: inviter?.fullName?.trim() || inviter?.email || 'A workspace admin',
+      roleLabel: workspaceInvitationRoleLabel(invitation.role),
+      expiresAt: invitation.expiresAt,
+      acceptUrl: buildInvitationAcceptUrl(env.FRONTEND_URL, invitation.token),
+    }
+    try {
+      await sendWithRetry(() => this.invitationMailer.send(message))
+    } catch (error) {
+      let revoked = false
+      try {
+        await this.revokeInvitation(workspaceId, invitation.id)
+        revoked = true
+      } catch (revokeError) {
+        logger.error(
+          { errorType: revokeError instanceof Error ? revokeError.name : 'UnknownError' },
+          'Failed to revoke an invitation after email delivery failed'
+        )
+      }
+      logger.error(getSafeMailErrorDetails(error), 'Workspace invitation email failed')
+      throw new WorkspaceServiceError(
+        503,
+        revoked
+          ? 'The invitation email could not be sent. No invitation was left pending.'
+          : 'The invitation email could not be sent. Revoke the pending invitation before trying again.'
+      )
+    }
+    return {
+      id: invitation.id,
+      workspaceId: invitation.workspaceId,
+      email: invitation.email,
+      role: invitation.role,
+      expiresAt: invitation.expiresAt,
+      delivery: 'sent' as const,
     }
   }
 

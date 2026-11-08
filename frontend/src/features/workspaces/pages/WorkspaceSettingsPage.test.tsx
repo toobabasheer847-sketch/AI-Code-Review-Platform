@@ -240,12 +240,45 @@ describe('workspace administration page', () => {
       email: 'join@example.com',
       role: 'DEVELOPER',
     })
+    expect(document.body.textContent).toContain('Invitation email sent to join@example.com.')
     expect(document.body.textContent).not.toContain('acceptUrl')
 
     await clickButton('Revoke invitation for late@example.com')
     await clickButton('Revoke invitation')
     await settle()
     expect(workspaceApi.revokeInvitation).toHaveBeenCalledWith('ws-team', 'inv-expired')
+  })
+
+  it('shows an invitation email failure without revealing a token', async () => {
+    vi.mocked(workspaceApi.invite).mockRejectedValue(
+      Object.assign(new Error('request failed'), {
+        isAxiosError: true,
+        response: {
+          data: {
+            error: 'The invitation email could not be sent. No invitation was left pending.',
+          },
+        },
+      })
+    )
+    render()
+    await settle()
+    const email = document.getElementById('invite-email')
+    if (!(email instanceof HTMLInputElement)) throw new Error('Missing invite email')
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      setter?.call(email, 'join@example.com')
+      email.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const form = document.querySelector('form[aria-label="Invite member"]')
+    if (!(form instanceof HTMLFormElement)) throw new Error('Missing invite form')
+    await act(async () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    })
+    await settle()
+    expect(document.body.textContent).toContain(
+      'The invitation email could not be sent. No invitation was left pending.'
+    )
+    expect(document.body.textContent).not.toContain('token')
   })
 
   it('hides administration actions from viewers', async () => {

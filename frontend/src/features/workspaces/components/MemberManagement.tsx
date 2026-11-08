@@ -279,18 +279,22 @@ export function InvitationManagement({ workspace }: InvitationManagementProps): 
     roles.includes('DEVELOPER') ? 'DEVELOPER' : (roles[0] ?? 'DEVELOPER')
   )
   const [formError, setFormError] = useState<string | null>(null)
+  const [deliveryMessage, setDeliveryMessage] = useState<string | null>(null)
   const [pendingInvitation, setPendingInvitation] = useState<WorkspaceInvitation | null>(null)
 
   const invite = useMutation({
     mutationFn: () => workspaceApi.invite(workspace.id, { email: email.trim(), role }),
     onSuccess: async (invitation) => {
-      toast.success(`Invitation created for ${invitation.email}`)
+      const message = `Invitation email sent to ${invitation.email}.`
+      toast.success(message)
       setEmail('')
       setFormError(null)
+      setDeliveryMessage(message)
       await queryClient.invalidateQueries({ queryKey: ['workspace-invitations', workspace.id] })
     },
     onError: (error) => {
-      const message = getWorkspaceErrorMessage(error, 'Unable to create the invitation')
+      const message = getWorkspaceErrorMessage(error, 'The invitation email could not be sent.')
+      setDeliveryMessage(null)
       setFormError(message)
       toast.error(message)
     },
@@ -323,7 +327,7 @@ export function InvitationManagement({ workspace }: InvitationManagementProps): 
     <section className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-4 sm:p-6">
       <h2 className="text-base font-semibold text-white">Invitations</h2>
       <p className="mt-1 text-sm text-slate-400">
-        Invitation links are not shown here. Pending invitations stay listed until they are accepted, revoked, or expire.
+        Invitation emails are sent to the invited person. Links stay out of this page. Pending invitations remain listed until they are accepted, revoked, or expire.
       </p>
       <form
         aria-label="Invite member"
@@ -374,6 +378,11 @@ export function InvitationManagement({ workspace }: InvitationManagementProps): 
           {invite.isPending ? 'Inviting...' : 'Invite member'}
         </button>
       </form>
+      {deliveryMessage && (
+        <p role="status" className="mt-3 text-sm text-emerald-300">
+          {deliveryMessage}
+        </p>
+      )}
       {formError && (
         <p role="alert" className="mt-3 text-sm text-rose-300">
           {formError}

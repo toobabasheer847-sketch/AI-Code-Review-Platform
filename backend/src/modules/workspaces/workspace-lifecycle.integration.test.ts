@@ -485,6 +485,93 @@ describe('workspace database lifecycle', { concurrency: false, skip: !testDataba
     }
   })
 
+  test('emails one acceptance link and revokes the invitation when delivery fails', async () => {
+    const [{ prisma }, { WorkspaceService, WorkspaceServiceError }] = await Promise.all([
+      import('@/config/database'),
+      import('@/modules/workspaces/workspace.service'),
+    ])
+    const suffix = randomUUID()
+    const owner = await createUser(prisma, `mail-owner-${suffix}`)
+    const invitee = await createUser(prisma, `mail-invitee-${suffix}`)
+    const other = await createUser(prisma, `mail-other-${suffix}`)
+    const userIds = [owner.id, invitee.id, other.id]
+    const mailed: string[] = []
+    let attempts = 0
+    const service = new WorkspaceService({
+      async send(message) {
+        attempts += 1
+        if (attempts === 1) throw new Error('temporary mailbox timeout')
+        mailed.push(message.acceptUrl)
+        assert.equal(message.to, invitee.email)
+        assert.equal(message.workspaceName, 'Mail Team')
+        assert.equal(message.roleLabel, 'Developer')
+      },
+    })
+
+    try {
+      const workspace = await service.create(owner.id, {
+        name: 'Mail Team',
+        organizationName: `Mail ${suffix}`,
+      })
+      const created = await service.createAndSendInvitation(
+        workspace.id,
+        owner.id,
+        invitee.email,
+        'DEVELOPER'
+      )
+      const token = new URL(mailed[0] ?? 'http://invalid').searchParams.get('token') ?? ''
+      assert.equal(created.delivery, 'sent')
+      assert.equal(Object.hasOwn(created, 'token'), false)
+      assert.equal(JSON.stringify(created).includes(token), false)
+      assert.equal(attempts, 2)
+      assert.equal(mailed.length, 1)
+      const stored = await prisma.workspaceInvitation.findUniqueOrThrow({ where: { id: created.id } })
+      assert.equal(stored.status, 'PENDING')
+      assert.notEqual(stored.tokenHash, token)
+      assert.equal(stored.tokenHash.length, 64)
+
+      await service.acceptInvitation(invitee.id, token)
+      assert.equal(
+        (await prisma.workspaceInvitation.findUniqueOrThrow({ where: { id: created.id } })).status,
+        'ACCEPTED'
+      )
+      const membership = await prisma.workspaceMembership.findUniqueOrThrow({
+        where: { workspaceId_userId: { workspaceId: workspace.id, userId: invitee.id } },
+      })
+      assert.equal(membership.role, 'DEVELOPER')
+      assert.equal(membership.status, 'ACTIVE')
+
+      const failing = new WorkspaceService({
+        async send(message) {
+          throw new Error(`provider rejected ${message.acceptUrl}`)
+        },
+      })
+      await assert.rejects(
+        () => failing.createAndSendInvitation(workspace.id, owner.id, other.email, 'VIEWER'),
+        (error: unknown) => {
+          assert.ok(error instanceof WorkspaceServiceError)
+          assert.equal(error.statusCode, 503)
+          assert.equal(error.message, 'The invitation email could not be sent. No invitation was left pending.')
+          assert.equal(/token|accept-invitation|provider/i.test(error.message), false)
+          return true
+        }
+      )
+      const revoked = await prisma.workspaceInvitation.findFirstOrThrow({
+        where: { workspaceId: workspace.id, email: other.email },
+      })
+      assert.equal(revoked.status, 'REVOKED')
+      assert.equal(
+        await prisma.workspaceInvitation.count({
+          where: { workspaceId: workspace.id, email: other.email, status: 'PENDING' },
+        }),
+        0
+      )
+    } finally {
+      await prisma.organization.deleteMany({ where: { ownerUserId: { in: userIds } } })
+      await prisma.user.deleteMany({ where: { id: { in: userIds } } })
+    }
+  })
+
   after(async () => {
     const { prisma } = await import('@/config/database')
     await prisma.$disconnect()

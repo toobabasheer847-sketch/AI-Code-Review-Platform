@@ -1,6 +1,5 @@
 import type { Request, Response } from 'express'
 import { z } from 'zod'
-import { env } from '@/config/env'
 import logger from '@/utils/logger'
 import { updateFindingStatusSchema } from '@/modules/code-review/finding-lifecycle.domain'
 import { WorkspaceService, WorkspaceServiceError } from './workspace.service'
@@ -237,17 +236,13 @@ export class WorkspaceController {
       return
     }
     try {
-      const invitation = await service.createInvitation(
+      const invitation = await service.createAndSendInvitation(
         req.workspace!.id,
         id,
         parsed.data.email,
         parsed.data.role
       )
-      const acceptUrl = new URL('/accept-invitation', env.FRONTEND_URL)
-      acceptUrl.searchParams.set('token', invitation.token)
-      res.status(201).json({
-        invitation: { ...invitation, acceptUrl: acceptUrl.toString() },
-      })
+      res.status(201).json({ invitation })
     } catch (error) {
       respondError(res, error, 'Unable to create invitation')
     }
