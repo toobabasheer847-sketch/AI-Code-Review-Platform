@@ -248,6 +248,7 @@ async function createPendingScheduleExecutions(): Promise<void> {
       const automation = await workflows.create(run.schedule.userId, {
         goal: run.schedule.goal,
         mode: run.schedule.mode,
+        workspaceId: run.schedule.workspaceId ?? undefined,
         plan,
         workflowDefinition: run.schedule.workflowDefinition as unknown as VisualWorkflowDefinition,
         scheduleId: run.scheduleId,
@@ -270,7 +271,9 @@ async function createPendingScheduleExecutions(): Promise<void> {
     } catch (error) {
       const alreadyCreated = await prisma.automation.findFirst({
         where: {
-          userId: run.schedule.userId,
+          ...(run.schedule.workspaceId
+            ? { workspaceId: run.schedule.workspaceId }
+            : { userId: run.schedule.userId }),
           scheduleId: run.scheduleId,
           scheduledFor: run.scheduledFor,
         },

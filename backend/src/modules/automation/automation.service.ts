@@ -52,6 +52,7 @@ export class AutomationService {
     input: {
       goal: string;
       mode: AutomationModeValue;
+      workspaceId?: string;
       idempotencyKey?: string;
       plan?: ValidatedPlan;
       workflowDefinition?: VisualWorkflowDefinition;
@@ -60,8 +61,11 @@ export class AutomationService {
     }
   ): Promise<AutomationRecord> {
     if (input.idempotencyKey) {
-      const previous = await prisma.automation.findUnique({
-        where: { userId_idempotencyKey: { userId, idempotencyKey: input.idempotencyKey } },
+      const previous = await prisma.automation.findFirst({
+        where: {
+          ...ownedAutomationWhere(userId, undefined, input.workspaceId),
+          idempotencyKey: input.idempotencyKey,
+        },
         include: automationInclude,
       });
       if (previous) {
@@ -75,9 +79,12 @@ export class AutomationService {
       (await createAutomationPlan(
         input.goal,
         undefined,
-        await this.workMemory.contextForPlan(userId, input.goal),
+        input.workspaceId
+          ? ''
+          : await this.workMemory.contextForPlan(userId, input.goal),
         {
           userId,
+          ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
           feature: 'automation_planning',
           ...(input.idempotencyKey
             ? { requestKey: `automation-plan:${input.idempotencyKey}` }
@@ -110,10 +117,14 @@ export class AutomationService {
     try {
       automation = await prisma.$transaction(
         async (transaction) => {
-          await transaction.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+          if (input.workspaceId) {
+            await transaction.$queryRaw`SELECT "id" FROM "Workspace" WHERE "id" = ${input.workspaceId} FOR UPDATE`;
+          } else {
+            await transaction.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+          }
           const activeCount = await transaction.automation.count({
             where: {
-              userId,
+              ...ownedAutomationWhere(userId, undefined, input.workspaceId),
               status: {
                 in: [
                   AutomationStatus.AWAITING_APPROVAL,
@@ -129,6 +140,7 @@ export class AutomationService {
 
           return transaction.automation.create({
             data: {
+              workspaceId: input.workspaceId,
               userId,
               goal: input.goal,
               title: plan.title,
@@ -182,8 +194,11 @@ export class AutomationService {
       );
     } catch (error) {
       if (input.idempotencyKey && this.isUniqueConstraintError(error)) {
-        const previous = await prisma.automation.findUnique({
-          where: { userId_idempotencyKey: { userId, idempotencyKey: input.idempotencyKey } },
+        const previous = await prisma.automation.findFirst({
+          where: {
+            ...ownedAutomationWhere(userId, undefined, input.workspaceId),
+            idempotencyKey: input.idempotencyKey,
+          },
           include: automationInclude,
         });
         if (previous) {
@@ -195,8 +210,8 @@ export class AutomationService {
     }
 
     if (input.mode === AutomationMode.AUTO_LOW_RISK) {
-      await this.enqueue(automation.id, 0);
-      return (await this.get(userId, automation.id)) ?? automation;
+      await this.enqueue(automation.id, 0, input.workspaceId);
+      return (await this.get(userId, automation.id, input.workspaceId)) ?? automation;
     }
     return automation;
   }
@@ -210,7 +225,12 @@ export class AutomationService {
     return { valid: true, title: workflow.title, plan };
   }
 
-  async saveVisualDraft(userId: string, goal: string, value: unknown): Promise<AutomationRecord> {
+  async saveVisualDraft(
+    userId: string,
+    goal: string,
+    value: unknown,
+    workspaceId?: string
+  ): Promise<AutomationRecord> {
     const { workflow, plan } = validateAndCompileVisualWorkflow(value);
     await this.authorizeVisualWorkflow(userId, workflow);
     return this.create(userId, {
@@ -218,11 +238,16 @@ export class AutomationService {
       mode: AutomationMode.DRAFT_ONLY,
       plan,
       workflowDefinition: workflow,
+      workspaceId,
     });
   }
 
-  async executeVisualDraft(userId: string, automationId: string): Promise<AutomationRecord> {
-    const automation = await this.getRequired(userId, automationId);
+  async executeVisualDraft(
+    userId: string,
+    automationId: string,
+    workspaceId?: string
+  ): Promise<AutomationRecord> {
+    const automation = await this.getRequired(userId, automationId, workspaceId);
     if (
       automation.mode !== AutomationMode.DRAFT_ONLY ||
       automation.status !== AutomationStatus.DRAFT ||
@@ -258,10 +283,14 @@ export class AutomationService {
 
     await prisma.$transaction(
       async (transaction) => {
-        await transaction.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+        if (workspaceId) {
+          await transaction.$queryRaw`SELECT "id" FROM "Workspace" WHERE "id" = ${workspaceId} FOR UPDATE`;
+        } else {
+          await transaction.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+        }
         const activeCount = await transaction.automation.count({
           where: {
-            userId,
+            ...ownedAutomationWhere(userId, undefined, workspaceId),
             status: {
               in: [
                 AutomationStatus.AWAITING_APPROVAL,
@@ -276,8 +305,7 @@ export class AutomationService {
         }
         const updated = await transaction.automation.updateMany({
           where: {
-            id: automationId,
-            userId,
+            ...ownedAutomationWhere(userId, automationId, workspaceId),
             mode: AutomationMode.DRAFT_ONLY,
             status: AutomationStatus.DRAFT,
           },
@@ -315,29 +343,37 @@ export class AutomationService {
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
     );
-    return this.getRequired(userId, automationId);
+    return this.getRequired(userId, automationId, workspaceId);
   }
 
-  async list(userId: string): Promise<AutomationRecord[]> {
-    await this.expirePendingApprovals(userId);
+  async list(userId: string, workspaceId?: string): Promise<AutomationRecord[]> {
+    await this.expirePendingApprovals(userId, undefined, workspaceId);
     return prisma.automation.findMany({
-      where: ownedAutomationWhere(userId),
+      where: ownedAutomationWhere(userId, undefined, workspaceId),
       include: automationInclude,
       orderBy: { createdAt: 'desc' },
       take: 50,
     });
   }
 
-  async get(userId: string, automationId: string): Promise<AutomationRecord | null> {
-    await this.expirePendingApprovals(userId, automationId);
+  async get(
+    userId: string,
+    automationId: string,
+    workspaceId?: string
+  ): Promise<AutomationRecord | null> {
+    await this.expirePendingApprovals(userId, automationId, workspaceId);
     return prisma.automation.findFirst({
-      where: ownedAutomationWhere(userId, automationId),
+      where: ownedAutomationWhere(userId, automationId, workspaceId),
       include: automationInclude,
     });
   }
 
-  async approve(userId: string, automationId: string): Promise<AutomationRecord> {
-    const automation = await this.getRequired(userId, automationId);
+  async approve(
+    userId: string,
+    automationId: string,
+    workspaceId?: string
+  ): Promise<AutomationRecord> {
+    const automation = await this.getRequired(userId, automationId, workspaceId);
     if (
       automation.mode !== AutomationMode.APPROVAL_REQUIRED ||
       automation.status !== AutomationStatus.AWAITING_APPROVAL
@@ -351,7 +387,7 @@ export class AutomationService {
       const approval = await transaction.automationApproval.findFirst({
         where: {
           automationId,
-          userId,
+          ...(workspaceId ? {} : { userId }),
           status: AutomationApprovalStatus.PENDING,
         },
         orderBy: { createdAt: 'desc' },
@@ -375,7 +411,7 @@ export class AutomationService {
       if (!usable) {
         invalidApproval = approval.expiresAt.getTime() <= Date.now() ? 'expired' : 'changed';
         await transaction.automationApproval.updateMany({
-          where: { id: approval.id, userId, status: AutomationApprovalStatus.PENDING },
+          where: { id: approval.id, ...(workspaceId ? {} : { userId }), status: AutomationApprovalStatus.PENDING },
           data: {
             status: AutomationApprovalStatus.EXPIRED,
             decidedAt: new Date(),
@@ -383,8 +419,7 @@ export class AutomationService {
         });
         await transaction.automation.updateMany({
           where: {
-            id: automationId,
-            userId,
+            ...ownedAutomationWhere(userId, automationId, workspaceId),
             status: AutomationStatus.AWAITING_APPROVAL,
           },
           data: { status: AutomationStatus.CANCELED },
@@ -418,7 +453,7 @@ export class AutomationService {
       const approvalUpdate = await transaction.automationApproval.updateMany({
         where: {
           id: approval.id,
-          userId,
+          ...(workspaceId ? {} : { userId }),
           status: AutomationApprovalStatus.PENDING,
           payloadHash: currentPayloadHash,
           expiresAt: { gt: new Date() },
@@ -427,8 +462,7 @@ export class AutomationService {
       });
       const automationUpdate = await transaction.automation.updateMany({
         where: {
-          id: automationId,
-          userId,
+          ...ownedAutomationWhere(userId, automationId, workspaceId),
           status: AutomationStatus.AWAITING_APPROVAL,
         },
         data: { status: AutomationStatus.QUEUED },
@@ -462,12 +496,16 @@ export class AutomationService {
         409
       );
     }
-    await this.enqueue(automationId, automation.retryCount);
-    return this.getRequired(userId, automationId);
+    await this.enqueue(automationId, automation.retryCount, workspaceId);
+    return this.getRequired(userId, automationId, workspaceId);
   }
 
-  async reject(userId: string, automationId: string): Promise<AutomationRecord> {
-    const automation = await this.getRequired(userId, automationId);
+  async reject(
+    userId: string,
+    automationId: string,
+    workspaceId?: string
+  ): Promise<AutomationRecord> {
+    const automation = await this.getRequired(userId, automationId, workspaceId);
     if (automation.status !== AutomationStatus.AWAITING_APPROVAL) {
       throw new AutomationError('This automation is not awaiting approval.', 409);
     }
@@ -476,7 +514,7 @@ export class AutomationService {
       const approval = await transaction.automationApproval.findFirst({
         where: {
           automationId,
-          userId,
+          ...(workspaceId ? {} : { userId }),
           status: AutomationApprovalStatus.PENDING,
         },
         orderBy: { createdAt: 'desc' },
@@ -485,11 +523,11 @@ export class AutomationService {
         throw new AutomationError('No pending approval exists for this automation.', 409);
       if (approval.expiresAt <= now) {
         await transaction.automationApproval.updateMany({
-          where: { id: approval.id, userId, status: AutomationApprovalStatus.PENDING },
+          where: { id: approval.id, ...(workspaceId ? {} : { userId }), status: AutomationApprovalStatus.PENDING },
           data: { status: AutomationApprovalStatus.EXPIRED, decidedAt: now },
         });
         await transaction.automation.updateMany({
-          where: { id: automationId, userId, status: AutomationStatus.AWAITING_APPROVAL },
+          where: { ...ownedAutomationWhere(userId, automationId, workspaceId), status: AutomationStatus.AWAITING_APPROVAL },
           data: { status: AutomationStatus.CANCELED },
         });
         await transaction.automationTask.updateMany({
@@ -516,11 +554,11 @@ export class AutomationService {
       }
 
       const approvalUpdate = await transaction.automationApproval.updateMany({
-        where: { id: approval.id, userId, status: AutomationApprovalStatus.PENDING },
+        where: { id: approval.id, ...(workspaceId ? {} : { userId }), status: AutomationApprovalStatus.PENDING },
         data: { status: AutomationApprovalStatus.REJECTED, decidedAt: now },
       });
       const automationUpdate = await transaction.automation.updateMany({
-        where: { id: automationId, userId, status: AutomationStatus.AWAITING_APPROVAL },
+        where: { ...ownedAutomationWhere(userId, automationId, workspaceId), status: AutomationStatus.AWAITING_APPROVAL },
         data: { status: AutomationStatus.REJECTED },
       });
       if (approvalUpdate.count !== 1 || automationUpdate.count !== 1) {
@@ -549,19 +587,22 @@ export class AutomationService {
       return true;
     });
     if (!result) throw new AutomationError('This approval request has expired.', 409);
-    return this.getRequired(userId, automationId);
+    return this.getRequired(userId, automationId, workspaceId);
   }
 
-  async cancel(userId: string, automationId: string): Promise<AutomationRecord> {
-    const automation = await this.getRequired(userId, automationId);
+  async cancel(
+    userId: string,
+    automationId: string,
+    workspaceId?: string
+  ): Promise<AutomationRecord> {
+    const automation = await this.getRequired(userId, automationId, workspaceId);
     if (!canTransitionAutomation(automation.status, AutomationStatus.CANCELED)) {
       throw new AutomationError('This automation cannot be canceled in its current state.', 409);
     }
     await prisma.$transaction(async (transaction) => {
       const result = await transaction.automation.updateMany({
         where: {
-          id: automationId,
-          userId,
+          ...ownedAutomationWhere(userId, automationId, workspaceId),
           status: automation.status,
         },
         data: { status: AutomationStatus.CANCELED },
@@ -590,18 +631,26 @@ export class AutomationService {
         data: { status: 'CANCELED', completedAt: new Date() },
       });
       await transaction.automationApproval.updateMany({
-        where: { automationId, userId, status: AutomationApprovalStatus.PENDING },
+        where: {
+          automationId,
+          ...(workspaceId ? {} : { userId }),
+          status: AutomationApprovalStatus.PENDING,
+        },
         data: { status: AutomationApprovalStatus.CANCELED, decidedAt: new Date() },
       });
       await transaction.automationEvent.create({
         data: { automationId, type: 'canceled', message: 'Automation canceled by the owner.' },
       });
     });
-    return this.getRequired(userId, automationId);
+    return this.getRequired(userId, automationId, workspaceId);
   }
 
-  async retry(userId: string, automationId: string): Promise<AutomationRecord> {
-    const automation = await this.getRequired(userId, automationId);
+  async retry(
+    userId: string,
+    automationId: string,
+    workspaceId?: string
+  ): Promise<AutomationRecord> {
+    const automation = await this.getRequired(userId, automationId, workspaceId);
     if (!canRetryAutomation(automation.status, automation.retryCount)) {
       if (
         automation.status === AutomationStatus.FAILED &&
@@ -617,7 +666,7 @@ export class AutomationService {
     const retryCount = automation.retryCount + 1;
     await prisma.$transaction(async (transaction) => {
       const result = await transaction.automation.updateMany({
-        where: { id: automationId, userId, status: AutomationStatus.FAILED },
+        where: { ...ownedAutomationWhere(userId, automationId, workspaceId), status: AutomationStatus.FAILED },
         data: { status: AutomationStatus.QUEUED, retryCount },
       });
       if (result.count !== 1)
@@ -646,12 +695,16 @@ export class AutomationService {
         data: { automationId, type: 'retry', message: 'Automation retry queued.' },
       });
     });
-    await this.enqueue(automationId, retryCount);
-    return this.getRequired(userId, automationId);
+    await this.enqueue(automationId, retryCount, workspaceId);
+    return this.getRequired(userId, automationId, workspaceId);
   }
 
-  private async getRequired(userId: string, automationId: string): Promise<AutomationRecord> {
-    const automation = await this.get(userId, automationId);
+  private async getRequired(
+    userId: string,
+    automationId: string,
+    workspaceId?: string
+  ): Promise<AutomationRecord> {
+    const automation = await this.get(userId, automationId, workspaceId);
     if (!automation) throw new AutomationError('Automation not found.', 404);
     return automation;
   }
@@ -712,12 +765,16 @@ export class AutomationService {
     }
   }
 
-  private async expirePendingApprovals(userId: string, automationId?: string): Promise<void> {
+  private async expirePendingApprovals(
+    userId: string,
+    automationId?: string,
+    workspaceId?: string
+  ): Promise<void> {
     const now = new Date();
     await prisma.$transaction(async (transaction) => {
       const expired = await transaction.automationApproval.findMany({
         where: {
-          userId,
+          ...(workspaceId ? { automation: { workspaceId } } : { userId }),
           status: AutomationApprovalStatus.PENDING,
           expiresAt: { lte: now },
           ...(automationId ? { automationId } : {}),
@@ -735,7 +792,10 @@ export class AutomationService {
       });
       for (const id of new Set(expired.map((approval) => approval.automationId))) {
         const updated = await transaction.automation.updateMany({
-          where: { id, userId, status: AutomationStatus.AWAITING_APPROVAL },
+          where: {
+            ...ownedAutomationWhere(userId, id, workspaceId),
+            status: AutomationStatus.AWAITING_APPROVAL,
+          },
           data: { status: AutomationStatus.CANCELED },
         });
         if (updated.count === 0) continue;
@@ -763,11 +823,15 @@ export class AutomationService {
     });
   }
 
-  private async enqueue(automationId: string, retryCount: number): Promise<void> {
+  private async enqueue(
+    automationId: string,
+    retryCount: number,
+    workspaceId?: string
+  ): Promise<void> {
     try {
       await automationQueue.add(
         'execute',
-        { automationId },
+        { automationId, workspaceId: workspaceId ?? null },
         { jobId: automationJobId(automationId, retryCount) }
       );
     } catch {

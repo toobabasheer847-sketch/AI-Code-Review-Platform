@@ -34,13 +34,19 @@ import {
   validateAndCompileVisualWorkflow,
   type VisualWorkflowDefinition,
 } from './visual-workflow.domain';
+import { hasWorkspacePermission } from '@/modules/workspaces/workspace.domain';
 
 let worker: Worker<AutomationJobData> | null = null;
 
-async function processAutomation(job: Job<AutomationJobData>): Promise<void> {
-  const { automationId } = job.data;
-  const automation = await prisma.automation.findUnique({
-    where: { id: automationId },
+export async function loadAutomationJob(
+  automationId: string,
+  workspaceId?: string | null
+) {
+  return prisma.automation.findFirst({
+    where: {
+      id: automationId,
+      ...(workspaceId === undefined ? {} : { workspaceId }),
+    },
     include: {
       tasks: { orderBy: { createdAt: 'asc' } },
       approvals: {
@@ -50,6 +56,57 @@ async function processAutomation(job: Job<AutomationJobData>): Promise<void> {
       },
     },
   });
+}
+
+async function processAutomation(job: Job<AutomationJobData>): Promise<void> {
+  const { automationId, workspaceId } = job.data;
+  const automation = await loadAutomationJob(automationId, workspaceId);
+  const effectiveWorkspaceId = automation?.workspaceId ?? undefined;
+  if (automation && effectiveWorkspaceId) {
+    const membership = await prisma.workspaceMembership.findFirst({
+      where: {
+        workspaceId: effectiveWorkspaceId,
+        userId: automation.userId,
+        status: 'ACTIVE',
+      },
+      select: { role: true },
+    });
+    if (!membership || !hasWorkspacePermission(membership.role, 'create_automation')) {
+      await prisma.$transaction(async (transaction) => {
+        const canceled = await transaction.automation.updateMany({
+          where: {
+            id: automationId,
+            workspaceId: effectiveWorkspaceId,
+            status: { in: [AutomationStatus.QUEUED, AutomationStatus.RUNNING] },
+          },
+          data: { status: AutomationStatus.CANCELED },
+        });
+        if (canceled.count !== 1) return;
+        await transaction.automationTask.updateMany({
+          where: {
+            automationId,
+            status: {
+              in: [
+                AutomationTaskStatus.PENDING,
+                AutomationTaskStatus.AWAITING_APPROVAL,
+                AutomationTaskStatus.READY,
+                AutomationTaskStatus.RUNNING,
+              ],
+            },
+          },
+          data: { status: AutomationTaskStatus.CANCELED },
+        });
+        await transaction.automationEvent.create({
+          data: {
+            automationId,
+            type: 'workspace_membership_revoked',
+            message: 'Automation execution was canceled because its creator no longer has workspace execution permission.',
+          },
+        });
+      });
+      return;
+    }
+  }
   if (
     !automation ||
     automation.status === AutomationStatus.CANCELED ||
@@ -351,6 +408,7 @@ async function processAutomation(job: Job<AutomationJobData>): Promise<void> {
 
       const output = await actions.execute(task.action, {
         userId: automation.userId,
+        ...(automation.workspaceId ? { workspaceId: automation.workspaceId } : {}),
         automationId: automation.id,
         goal: automation.goal,
         title: task.title,

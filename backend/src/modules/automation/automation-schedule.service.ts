@@ -11,6 +11,7 @@ import {
   AutomationError,
   automationActionCatalog,
   MAX_AUTOMATION_TASKS,
+  ownedAutomationWhere,
   validatePlan,
 } from './automation.domain';
 import { AutomationService } from './automation.service';
@@ -30,16 +31,36 @@ const scheduleInclude = {
   },
 };
 
+function ownedScheduleWhere(userId: string, workspaceId?: string, scheduleId?: string) {
+  return {
+    ...(workspaceId
+      ? { workspaceId }
+      : {
+          userId,
+          OR: [
+            { workspaceId: null },
+            {
+              workspace: {
+                isPersonal: true,
+                memberships: { some: { userId, status: 'ACTIVE' as const } },
+              },
+            },
+          ],
+        }),
+    ...(scheduleId ? { id: scheduleId } : {}),
+  };
+}
+
 export class AutomationScheduleService {
   constructor(
     private readonly workflows = new AutomationService(),
     private readonly now = (): Date => new Date()
   ) {}
 
-  async list(userId: string) {
+  async list(userId: string, workspaceId?: string) {
     const [schedules, preference] = await Promise.all([
       prisma.automationSchedule.findMany({
-        where: { userId },
+        where: ownedScheduleWhere(userId, workspaceId),
         include: scheduleInclude,
         orderBy: { createdAt: 'desc' },
       }),
@@ -56,13 +77,14 @@ export class AutomationScheduleService {
       timeZone: string;
       localTime: string;
       dayOfWeek?: number;
-    }
+    },
+    workspaceId?: string
   ) {
     validateScheduleInput(input);
     const source = await prisma.automation.findFirst({
       where: {
         id: input.automationId,
-        userId,
+        ...ownedAutomationWhere(userId, input.automationId, workspaceId),
         status: AutomationStatus.DRAFT,
         mode: AutomationMode.DRAFT_ONLY,
         workflowDefinition: { not: Prisma.JsonNull },
@@ -85,14 +107,32 @@ export class AutomationScheduleService {
     const mode = needsApproval ? AutomationMode.APPROVAL_REQUIRED : AutomationMode.AUTO_LOW_RISK;
     const now = this.now();
     const nextRunAt = nextScheduledInstant({ ...input, after: now });
-    const subscription = await prisma.subscription.findUnique({ where: { userId } });
+    const subscription = workspaceId
+      ? await prisma.workspaceBillingAccount.findUnique({
+          where: {
+            organizationId: (
+              await prisma.workspace.findUniqueOrThrow({
+                where: { id: workspaceId },
+                select: { organizationId: true },
+              })
+            ).organizationId,
+          },
+        })
+      : await prisma.subscription.findUnique({ where: { userId } });
     const scheduleLimit = activeScheduleLimit(hasProReviewAccess(subscription, now));
 
     const schedule = await prisma.$transaction(
       async (transaction) => {
-        await transaction.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+        if (workspaceId) {
+          await transaction.$queryRaw`SELECT "id" FROM "Workspace" WHERE "id" = ${workspaceId} FOR UPDATE`;
+        } else {
+          await transaction.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+        }
         const activeCount = await transaction.automationSchedule.count({
-          where: { userId, status: AutomationScheduleStatus.ACTIVE },
+          where: {
+            ...ownedScheduleWhere(userId, workspaceId),
+            status: AutomationScheduleStatus.ACTIVE,
+          },
         });
         if (activeCount >= scheduleLimit) {
           throw new AutomationError(
@@ -104,6 +144,7 @@ export class AutomationScheduleService {
         }
         return transaction.automationSchedule.create({
           data: {
+            workspaceId,
             userId,
             sourceAutomationId: source.id,
             title: source.title,
@@ -128,10 +169,11 @@ export class AutomationScheduleService {
   async setStatus(
     userId: string,
     scheduleId: string,
-    status: 'PAUSED' | 'ACTIVE'
+    status: 'PAUSED' | 'ACTIVE',
+    workspaceId?: string
   ) {
     const schedule = await prisma.automationSchedule.findFirst({
-      where: { id: scheduleId, userId },
+      where: ownedScheduleWhere(userId, workspaceId, scheduleId),
       select: {
         id: true,
         timeZone: true,
@@ -146,7 +188,7 @@ export class AutomationScheduleService {
     }
     if (schedule.status === status) {
       return prisma.automationSchedule.findFirst({
-        where: { id: scheduleId, userId },
+        where: ownedScheduleWhere(userId, workspaceId, scheduleId),
         include: scheduleInclude,
       });
     }
@@ -162,19 +204,34 @@ export class AutomationScheduleService {
         : undefined;
     if (status === AutomationScheduleStatus.ACTIVE) {
       const now = this.now();
-      const subscription = await prisma.subscription.findUnique({ where: { userId } });
+      const subscription = workspaceId
+        ? await prisma.workspaceBillingAccount.findFirst({
+            where: { organization: { workspaces: { some: { id: workspaceId } } } },
+          })
+        : await prisma.subscription.findUnique({ where: { userId } });
       const limit = activeScheduleLimit(hasProReviewAccess(subscription, now));
       await prisma.$transaction(
         async (transaction) => {
-          await transaction.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+          if (workspaceId) {
+            await transaction.$queryRaw`SELECT "id" FROM "Workspace" WHERE "id" = ${workspaceId} FOR UPDATE`;
+          } else {
+            await transaction.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+          }
           const activeCount = await transaction.automationSchedule.count({
-            where: { userId, status: AutomationScheduleStatus.ACTIVE },
+            where: {
+              ...ownedScheduleWhere(userId, workspaceId),
+              status: AutomationScheduleStatus.ACTIVE,
+            },
           });
           if (activeCount >= limit) {
             throw new AutomationError(`The active schedule limit of ${limit} has been reached.`, 429);
           }
           const changed = await transaction.automationSchedule.updateMany({
-            where: { id: scheduleId, userId, status: AutomationScheduleStatus.PAUSED },
+            where: {
+              id: scheduleId,
+              ...ownedScheduleWhere(userId, workspaceId, scheduleId),
+              status: AutomationScheduleStatus.PAUSED,
+            },
             data: { status, ...(nextRunAt ? { nextRunAt } : {}) },
           });
           if (changed.count !== 1) throw new AutomationError('Schedule status changed; reload and try again.', 409);
@@ -183,12 +240,16 @@ export class AutomationScheduleService {
       );
     } else {
       await prisma.automationSchedule.updateMany({
-        where: { id: scheduleId, userId, status: AutomationScheduleStatus.ACTIVE },
+        where: {
+          id: scheduleId,
+          ...ownedScheduleWhere(userId, workspaceId, scheduleId),
+          status: AutomationScheduleStatus.ACTIVE,
+        },
         data: { status },
       });
     }
     return prisma.automationSchedule.findFirst({
-      where: { id: scheduleId, userId },
+      where: { id: scheduleId, ...(workspaceId ? { workspaceId } : { userId, workspaceId: null }) },
       include: scheduleInclude,
     });
   }
@@ -201,19 +262,20 @@ export class AutomationScheduleService {
       timeZone: string;
       localTime: string;
       dayOfWeek?: number;
-    }
+    },
+    workspaceId?: string
   ) {
     validateScheduleInput(input);
     const nextRunAt = nextScheduledInstant({ ...input, after: this.now() });
     await prisma.$transaction(async (transaction) => {
       const [locked] = await transaction.$queryRaw<Array<{ id: string }>>`
         SELECT "id" FROM "AutomationSchedule"
-        WHERE "id" = ${scheduleId} AND "userId" = ${userId}
+        WHERE "id" = ${scheduleId}
         FOR UPDATE
       `;
       if (!locked) throw new AutomationError('Schedule not found.', 404);
       const schedule = await transaction.automationSchedule.findFirst({
-        where: { id: scheduleId, userId },
+        where: ownedScheduleWhere(userId, workspaceId, scheduleId),
         select: { status: true },
       });
       if (!schedule || schedule.status === AutomationScheduleStatus.CANCELED) {
@@ -231,17 +293,17 @@ export class AutomationScheduleService {
       });
     });
     return prisma.automationSchedule.findFirst({
-      where: { id: scheduleId, userId },
+      where: ownedScheduleWhere(userId, workspaceId, scheduleId),
       include: scheduleInclude,
     });
   }
 
-  async cancel(userId: string, scheduleId: string) {
+  async cancel(userId: string, scheduleId: string, workspaceId?: string) {
     const changed = await prisma.$transaction(async (transaction) => {
       const result = await transaction.automationSchedule.updateMany({
         where: {
           id: scheduleId,
-          userId,
+          ...ownedScheduleWhere(userId, workspaceId, scheduleId),
           status: { not: AutomationScheduleStatus.CANCELED },
         },
         data: { status: AutomationScheduleStatus.CANCELED },

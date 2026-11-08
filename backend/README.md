@@ -49,6 +49,35 @@ npm run seed
 npm run prisma:studio
 ```
 
+### Workspace-scoped API access
+
+Authenticated automation, social publishing, integrations, and billing routes
+accept an optional `X-Workspace-Id` header. When supplied, the backend resolves
+an active membership and checks the endpoint's workspace role before querying
+or changing workspace data. Without the header, existing personal-user access
+remains available; organization workspace records are not included in that
+personal scope. Workspace integration responses omit encrypted credentials.
+Workspace provider health checks and workspace Stripe checkout/cancellation are
+not yet implemented and return an explicit conflict rather than falling back to
+personal credentials or billing.
+
+Database-backed tenant-isolation tests require a blank disposable PostgreSQL
+database on localhost whose name contains `test`, `workspace`, or `integration`.
+Set `DATABASE_URL` and `WORKSPACE_TENANCY_TEST_DATABASE_URL` to the exact same
+local test URL, then apply migrations and run the test:
+
+```powershell
+$env:DATABASE_URL = "postgresql://<local-user>:<local-password>@localhost:5432/ai_codeguard_workspace_test"
+$env:WORKSPACE_TENANCY_TEST_DATABASE_URL = $env:DATABASE_URL
+npm run prisma:deploy --workspace=backend
+npm run test:workspace-tenancy:integration --workspace=backend
+```
+
+The test refuses remote hosts, database names without a test marker, or a test
+URL different from `DATABASE_URL`; it removes only the fixture workspaces,
+organizations, users, repositories, and reviews it creates. Never use a
+production or shared database for this command.
+
 ### Personal AI work memory
 
 Users can explicitly save project summaries and context, technical decisions,

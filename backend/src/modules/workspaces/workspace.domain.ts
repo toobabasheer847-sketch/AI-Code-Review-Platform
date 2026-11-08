@@ -11,6 +11,8 @@ export type WorkspacePermission =
   | 'verify_fix'
   | 'create_automation'
   | 'approve_automation'
+  | 'create_social_posts'
+  | 'approve_social_posts'
   | 'manage_reviews'
   | 'manage_repository'
   | 'manage_integrations'
@@ -28,6 +30,8 @@ const rolePermissions: Record<WorkspaceRole, ReadonlySet<WorkspacePermission>> =
     'verify_fix',
     'create_automation',
     'approve_automation',
+    'create_social_posts',
+    'approve_social_posts',
     'manage_reviews',
     'manage_repository',
     'manage_integrations',
@@ -44,6 +48,8 @@ const rolePermissions: Record<WorkspaceRole, ReadonlySet<WorkspacePermission>> =
     'verify_fix',
     'create_automation',
     'approve_automation',
+    'create_social_posts',
+    'approve_social_posts',
     'manage_reviews',
     'manage_repository',
     'manage_integrations',
@@ -57,6 +63,7 @@ const rolePermissions: Record<WorkspaceRole, ReadonlySet<WorkspacePermission>> =
     'create_fix_proposal',
     'verify_fix',
     'create_automation',
+    'create_social_posts',
   ]),
   VIEWER: new Set(['read']),
 }

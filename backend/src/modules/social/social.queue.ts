@@ -4,6 +4,7 @@ import { createBullMqRedisConnection } from '@/config/redis-connection';
 export interface SocialPublishJob {
   postId: string;
   scheduleVersion: number;
+  workspaceId?: string | null;
 }
 
 let connection: ReturnType<typeof createBullMqRedisConnection> | null = null;

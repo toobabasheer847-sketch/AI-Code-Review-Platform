@@ -513,7 +513,24 @@ export function isApprovalUsable(input: {
 
 export function ownedAutomationWhere(
   userId: string,
-  automationId?: string
+  automationId?: string,
+  workspaceId?: string
 ): Prisma.AutomationWhereInput {
-  return automationId ? { userId, id: automationId } : { userId };
+  return {
+    ...(workspaceId
+      ? { workspaceId }
+      : {
+          userId,
+          OR: [
+            { workspaceId: null },
+            {
+              workspace: {
+                isPersonal: true,
+                memberships: { some: { userId, status: 'ACTIVE' } },
+              },
+            },
+          ],
+        }),
+    ...(automationId ? { id: automationId } : {}),
+  };
 }

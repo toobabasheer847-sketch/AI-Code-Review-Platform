@@ -3,6 +3,7 @@ import { createBullMqRedisConnection } from '@/config/redis-connection'
 
 export interface AutomationJobData {
   automationId: string
+  workspaceId?: string | null
 }
 
 export function automationJobId(automationId: string, retryCount: number): string {

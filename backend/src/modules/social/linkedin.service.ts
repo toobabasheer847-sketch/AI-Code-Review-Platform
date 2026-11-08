@@ -4,6 +4,7 @@ import { prisma } from '@/config/database';
 import { env } from '@/config/env';
 import { decrypt, encrypt } from '@/utils/crypto';
 import { SocialProviderError } from './social.provider';
+import { hasWorkspacePermission } from '@/modules/workspaces/workspace.domain';
 
 const REQUIRED_SCOPES = ['openid', 'profile', 'w_member_social'] as const;
 
@@ -38,8 +39,24 @@ export class LinkedInService {
     return url.toString();
   }
 
-  async completeAuthorization(code: string, userId: string): Promise<void> {
+  async completeAuthorization(
+    code: string,
+    userId: string,
+    workspaceId?: string
+  ): Promise<void> {
     this.assertConfigured();
+    if (workspaceId) {
+      const membership = await prisma.workspaceMembership.findFirst({
+        where: { workspaceId, userId, status: 'ACTIVE' },
+        select: { role: true },
+      });
+      if (!membership || !hasWorkspacePermission(membership.role, 'manage_integrations')) {
+        throw new SocialProviderError(
+          'Active workspace integration permissions are required.',
+          'PERMISSION_DENIED'
+        );
+      }
+    }
     let tokenResponse: LinkedInTokenResponse;
     try {
       const response = await this.http.post<LinkedInTokenResponse>(
@@ -91,7 +108,7 @@ export class LinkedInService {
       throw new SocialProviderError('LinkedIn returned an invalid member identity.', 'INVALID_IDENTITY');
     }
 
-    await prisma.socialAccount.upsert({
+    const existing = await prisma.socialAccount.findUnique({
       where: {
         userId_provider_providerAccountId: {
           userId,
@@ -99,29 +116,55 @@ export class LinkedInService {
           providerAccountId: profile.sub,
         },
       },
-      create: {
-        userId,
-        provider: SocialProvider.LINKEDIN,
-        providerAccountId: profile.sub,
-        displayName: (profile.name ?? 'LinkedIn member').slice(0, 200),
-        accessToken: encrypt(tokenResponse.access_token),
-        scopes: grantedScopes,
-        tokenExpiresAt: new Date(Date.now() + tokenResponse.expires_in * 1_000),
-        lastSuccessfulConnectionCheckAt: new Date(),
-      },
-      update: {
-        displayName: (profile.name ?? 'LinkedIn member').slice(0, 200),
-        accessToken: encrypt(tokenResponse.access_token),
-        scopes: grantedScopes,
-        tokenExpiresAt: new Date(Date.now() + tokenResponse.expires_in * 1_000),
-        lastSuccessfulConnectionCheckAt: new Date(),
-      },
+      select: { id: true, workspaceId: true },
     });
+    if (existing && existing.workspaceId !== (workspaceId ?? null)) {
+      throw new SocialProviderError(
+        'This LinkedIn account is already assigned to a different workspace context.',
+        'ACCOUNT_CONTEXT_CONFLICT'
+      );
+    }
+    const accountData = {
+      displayName: (profile.name ?? 'LinkedIn member').slice(0, 200),
+      accessToken: encrypt(tokenResponse.access_token),
+      scopes: grantedScopes,
+      tokenExpiresAt: new Date(Date.now() + tokenResponse.expires_in * 1_000),
+      lastSuccessfulConnectionCheckAt: new Date(),
+    };
+    if (existing) {
+      await prisma.socialAccount.update({ where: { id: existing.id }, data: accountData });
+    } else {
+      await prisma.socialAccount.create({
+        data: {
+          workspaceId,
+          userId,
+          provider: SocialProvider.LINKEDIN,
+          providerAccountId: profile.sub,
+          ...accountData,
+        },
+      });
+    }
   }
 
-  async listAccounts(userId: string) {
+  async listAccounts(userId: string, workspaceId?: string) {
     const accounts = await prisma.socialAccount.findMany({
-      where: { userId, provider: SocialProvider.LINKEDIN },
+      where: {
+        ...(workspaceId
+          ? { workspaceId }
+          : {
+              userId,
+              OR: [
+                { workspaceId: null },
+                {
+                  workspace: {
+                    isPersonal: true,
+                    memberships: { some: { userId, status: 'ACTIVE' } },
+                  },
+                },
+              ],
+            }),
+        provider: SocialProvider.LINKEDIN,
+      },
       select: {
         id: true,
         provider: true,
@@ -142,9 +185,26 @@ export class LinkedInService {
     }));
   }
 
-  async getAccessToken(userId: string, accountId: string) {
+  async getAccessToken(userId: string, accountId: string, workspaceId?: string) {
     const account = await prisma.socialAccount.findFirst({
-      where: { id: accountId, userId, provider: SocialProvider.LINKEDIN },
+      where: {
+        id: accountId,
+        ...(workspaceId
+          ? { workspaceId }
+          : {
+              userId,
+              OR: [
+                { workspaceId: null },
+                {
+                  workspace: {
+                    isPersonal: true,
+                    memberships: { some: { userId, status: 'ACTIVE' } },
+                  },
+                },
+              ],
+            }),
+        provider: SocialProvider.LINKEDIN,
+      },
     });
     if (!account) {
       throw new SocialProviderError('The selected LinkedIn account is not connected to this user.', 'ACCOUNT_NOT_FOUND');
@@ -165,8 +225,12 @@ export class LinkedInService {
     }
   }
 
-  async checkConnection(userId: string, accountId: string): Promise<{ checkedAt: Date }> {
-    const { account, accessToken } = await this.getAccessToken(userId, accountId)
+  async checkConnection(
+    userId: string,
+    accountId: string,
+    workspaceId?: string
+  ): Promise<{ checkedAt: Date }> {
+    const { account, accessToken } = await this.getAccessToken(userId, accountId, workspaceId)
     let profile: LinkedInProfile
     try {
       const response = await this.http.get<LinkedInProfile>('https://api.linkedin.com/v2/userinfo', {
@@ -184,16 +248,24 @@ export class LinkedInService {
     }
     const checkedAt = new Date()
     await prisma.socialAccount.updateMany({
-      where: { id: account.id, userId, provider: SocialProvider.LINKEDIN },
+      where: {
+        id: account.id,
+        ...(workspaceId ? { workspaceId } : { userId }),
+        provider: SocialProvider.LINKEDIN,
+      },
       data: { lastSuccessfulConnectionCheckAt: checkedAt },
     })
     return { checkedAt }
   }
 
-  async disconnect(userId: string, accountId: string): Promise<void> {
+  async disconnect(userId: string, accountId: string, workspaceId?: string): Promise<void> {
     await prisma.$transaction(async (transaction) => {
       const account = await transaction.socialAccount.findFirst({
-        where: { id: accountId, userId, provider: SocialProvider.LINKEDIN },
+        where: {
+          id: accountId,
+          ...(workspaceId ? { workspaceId } : { userId }),
+          provider: SocialProvider.LINKEDIN,
+        },
         select: { id: true },
       });
       if (!account) {
@@ -201,7 +273,7 @@ export class LinkedInService {
       }
       const pendingPosts = await transaction.socialPost.findMany({
         where: {
-          userId,
+          ...(workspaceId ? { workspaceId } : { userId }),
           accountId,
           status: { in: [SocialPostStatus.AWAITING_APPROVAL, SocialPostStatus.SCHEDULED] },
         },
@@ -211,7 +283,7 @@ export class LinkedInService {
         const changed = await transaction.socialPost.updateMany({
           where: {
             id,
-            userId,
+            ...(workspaceId ? { workspaceId } : { userId }),
             accountId,
             status: { in: [SocialPostStatus.AWAITING_APPROVAL, SocialPostStatus.SCHEDULED] },
           },
@@ -233,7 +305,12 @@ export class LinkedInService {
           });
         }
       }
-      await transaction.socialAccount.delete({ where: { id: accountId } });
+      await transaction.socialAccount.deleteMany({
+        where: {
+          id: accountId,
+          ...(workspaceId ? { workspaceId } : { userId }),
+        },
+      });
     });
   }
 

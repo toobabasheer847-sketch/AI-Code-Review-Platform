@@ -63,7 +63,81 @@ export const integrationProviders = [
 export type IntegrationProviderId = (typeof integrationProviders)[number]['id'];
 
 export class IntegrationCatalogService {
-  async list(userId: string) {
+  async list(userId: string, workspaceId?: string) {
+    if (workspaceId) {
+      const [workspaceIntegrations, workspaceLinkedInAccounts] = await Promise.all([
+        prisma.workspaceIntegration.findMany({
+          where: { workspaceId, status: { not: 'DISCONNECTED' } },
+          select: {
+            provider: true,
+            externalAccountId: true,
+            displayName: true,
+            scopes: true,
+            status: true,
+          },
+          orderBy: { connectedAt: 'desc' },
+        }),
+        prisma.socialAccount.findMany({
+          where: { workspaceId, provider: SocialProvider.LINKEDIN },
+          select: {
+            id: true,
+            providerAccountId: true,
+            displayName: true,
+            scopes: true,
+            tokenExpiresAt: true,
+            lastSuccessfulConnectionCheckAt: true,
+          },
+          orderBy: { createdAt: 'desc' },
+        }),
+      ]);
+      return integrationProviders.map((provider) => {
+        const providerKey = provider.id.toUpperCase();
+        const accounts =
+          provider.id === 'linkedin'
+            ? workspaceLinkedInAccounts.map((account) => ({
+                id: account.id,
+                providerAccountId: account.providerAccountId,
+                displayName: account.displayName,
+                scopes: account.scopes,
+                authorizationStatus:
+                  account.tokenExpiresAt.getTime() <= Date.now()
+                    ? 'expired'
+                    : provider.requiredPermissions.every((scope) => account.scopes.includes(scope))
+                      ? 'verified'
+                      : 'permission_missing',
+                lastSuccessfulConnectionCheckAt: account.lastSuccessfulConnectionCheckAt,
+              }))
+            : workspaceIntegrations
+                .filter((integration) => integration.provider === providerKey)
+                .map((integration) => ({
+                  id: integration.externalAccountId,
+                  displayName: integration.displayName,
+                  scopes: integration.scopes,
+                  authorizationStatus:
+                    integration.status === 'ACTIVE' ? 'verified' : 'reconnect_required',
+                }));
+        return {
+          ...provider,
+          configured:
+            provider.id === 'github'
+              ? Boolean(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET)
+              : Boolean(env.LINKEDIN_CLIENT_ID && env.LINKEDIN_CLIENT_SECRET),
+          connectionStatus: accounts.some((account) => account.authorizationStatus === 'verified')
+            ? 'connected'
+            : accounts.length > 0
+              ? 'reconnect_required'
+              : 'not_connected',
+          authorizationStatus:
+            accounts.length === 0
+              ? 'not_authorized'
+              : accounts.some((account) => account.authorizationStatus === 'verified')
+                ? 'verified'
+                : 'permission_missing',
+          accounts,
+        };
+      });
+    }
+
     const [github, linkedinAccounts] = await Promise.all([
       prisma.gitHubAccount.findUnique({
         where: { userId },
@@ -75,7 +149,19 @@ export class IntegrationCatalogService {
         },
       }),
       prisma.socialAccount.findMany({
-        where: { userId, provider: SocialProvider.LINKEDIN },
+        where: {
+          userId,
+          provider: SocialProvider.LINKEDIN,
+          OR: [
+            { workspaceId: null },
+            {
+              workspace: {
+                isPersonal: true,
+                memberships: { some: { userId, status: 'ACTIVE' } },
+              },
+            },
+          ],
+        },
         select: {
           id: true,
           providerAccountId: true,

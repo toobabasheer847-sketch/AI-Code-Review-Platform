@@ -47,7 +47,7 @@ export class AutomationController {
       return;
     }
     try {
-      res.json(await scheduleService.list(req.user.userId));
+      res.json(await scheduleService.list(req.user.userId, req.workspace?.id));
     } catch (error) {
       this.respondError(res, error);
     }
@@ -64,7 +64,7 @@ export class AutomationController {
       return;
     }
     try {
-      res.status(201).json(await scheduleService.create(req.user.userId, parsed.data));
+      res.status(201).json(await scheduleService.create(req.user.userId, parsed.data, req.workspace?.id));
     } catch (error) {
       this.respondError(res, error);
     }
@@ -84,7 +84,7 @@ export class AutomationController {
       return;
     }
     try {
-      res.json(await scheduleService.cancel(req.user.userId, req.params.id));
+      res.json(await scheduleService.cancel(req.user.userId, req.params.id, req.workspace?.id));
     } catch (error) {
       this.respondError(res, error);
     }
@@ -101,7 +101,7 @@ export class AutomationController {
       return;
     }
     try {
-      res.json(await scheduleService.update(req.user.userId, req.params.id, parsed.data));
+      res.json(await scheduleService.update(req.user.userId, req.params.id, parsed.data, req.workspace?.id));
     } catch (error) {
       this.respondError(res, error);
     }
@@ -138,7 +138,7 @@ export class AutomationController {
       return;
     }
     try {
-      res.json(await scheduleService.setStatus(req.user.userId, req.params.id, status));
+      res.json(await scheduleService.setStatus(req.user.userId, req.params.id, status, req.workspace?.id));
     } catch (error) {
       this.respondError(res, error);
     }
@@ -175,7 +175,12 @@ export class AutomationController {
       res
         .status(201)
         .json(
-          await service.saveVisualDraft(req.user.userId, parsed.data.goal, parsed.data.workflow)
+          await service.saveVisualDraft(
+            req.user.userId,
+            parsed.data.goal,
+            parsed.data.workflow,
+            req.workspace?.id
+          )
         );
     } catch (error) {
       this.respondError(res, error);
@@ -203,6 +208,7 @@ export class AutomationController {
       const automation = await service.create(req.user.userId, {
         ...parsed.data,
         idempotencyKey,
+        workspaceId: req.workspace?.id,
       });
       res.status(201).json(automation);
     } catch (error) {
@@ -216,7 +222,7 @@ export class AutomationController {
       return;
     }
     try {
-      res.json(await service.list(req.user.userId));
+      res.json(await service.list(req.user.userId, req.workspace?.id));
     } catch (error) {
       this.respondError(res, error);
     }
@@ -228,7 +234,7 @@ export class AutomationController {
       return;
     }
     try {
-      const automation = await service.get(req.user.userId, req.params.id);
+      const automation = await service.get(req.user.userId, req.params.id, req.workspace?.id);
       if (!automation) {
         res.status(404).json({ error: 'Automation not found.' });
         return;
@@ -240,36 +246,36 @@ export class AutomationController {
   }
 
   async approve(req: Request, res: Response): Promise<void> {
-    await this.perform(req, res, (userId, id) => service.approve(userId, id));
+    await this.perform(req, res, (userId, id, workspaceId) => service.approve(userId, id, workspaceId));
   }
 
   async reject(req: Request, res: Response): Promise<void> {
-    await this.perform(req, res, (userId, id) => service.reject(userId, id));
+    await this.perform(req, res, (userId, id, workspaceId) => service.reject(userId, id, workspaceId));
   }
 
   async cancel(req: Request, res: Response): Promise<void> {
-    await this.perform(req, res, (userId, id) => service.cancel(userId, id));
+    await this.perform(req, res, (userId, id, workspaceId) => service.cancel(userId, id, workspaceId));
   }
 
   async retry(req: Request, res: Response): Promise<void> {
-    await this.perform(req, res, (userId, id) => service.retry(userId, id));
+    await this.perform(req, res, (userId, id, workspaceId) => service.retry(userId, id, workspaceId));
   }
 
   async executeDraft(req: Request, res: Response): Promise<void> {
-    await this.perform(req, res, (userId, id) => service.executeVisualDraft(userId, id));
+    await this.perform(req, res, (userId, id, workspaceId) => service.executeVisualDraft(userId, id, workspaceId));
   }
 
   private async perform(
     req: Request,
     res: Response,
-    operation: (userId: string, id: string) => Promise<unknown>
+    operation: (userId: string, id: string, workspaceId?: string) => Promise<unknown>
   ): Promise<void> {
     if (!req.user?.userId) {
       res.status(401).json({ error: 'Unauthorized' });
       return;
     }
     try {
-      res.json(await operation(req.user.userId, req.params.id));
+      res.json(await operation(req.user.userId, req.params.id, req.workspace?.id));
     } catch (error) {
       this.respondError(res, error);
     }

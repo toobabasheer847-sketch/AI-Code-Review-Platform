@@ -61,7 +61,7 @@ export class SocialController {
     const userId = getUserId(req, res);
     if (!userId) return;
     try {
-      res.json(await socialService.getStatus(userId));
+      res.json(await socialService.getStatus(userId, req.workspace?.id));
     } catch (error) {
       this.handleError(error, res, 'Unable to load social account status.');
     }
@@ -71,7 +71,7 @@ export class SocialController {
     const userId = getUserId(req, res);
     if (!userId) return;
     try {
-      res.json(await socialService.listPosts(userId));
+      res.json(await socialService.listPosts(userId, req.workspace?.id));
     } catch (error) {
       this.handleError(error, res, 'Unable to load social posts.');
     }
@@ -91,7 +91,11 @@ export class SocialController {
         path: '/api/social/linkedin/callback',
       };
       res.cookie('social_linkedin_state', state, cookieOptions);
-      res.cookie('social_linkedin_user', encrypt(userId), cookieOptions);
+      res.cookie(
+        'social_linkedin_user',
+        encrypt(JSON.stringify({ userId, workspaceId: req.workspace?.id ?? null })),
+        cookieOptions
+      );
       res.json({ url: authorizeUrl });
     } catch (error) {
       this.handleError(error, res, 'LinkedIn connection is not configured.');
@@ -110,8 +114,21 @@ export class SocialController {
       if (!code || !isValidOAuthState(state, cookieState) || !cookieUser) {
         throw new SocialProviderError('LinkedIn authorization state is invalid or expired.', 'INVALID_OAUTH_STATE');
       }
-      const userId = decrypt(cookieUser);
-      await linkedinService.completeAuthorization(code, userId);
+      const session = JSON.parse(decrypt(cookieUser)) as {
+        userId?: unknown;
+        workspaceId?: unknown;
+      };
+      if (
+        typeof session.userId !== 'string' ||
+        (session.workspaceId !== null && typeof session.workspaceId !== 'string')
+      ) {
+        throw new SocialProviderError('LinkedIn authorization context is invalid.', 'INVALID_OAUTH_STATE');
+      }
+      await linkedinService.completeAuthorization(
+        code,
+        session.userId,
+        session.workspaceId ?? undefined
+      );
       res.redirect(`${env.FRONTEND_URL}/social?linkedin=connected`);
     } catch (error) {
       logger.warn(
@@ -130,7 +147,11 @@ export class SocialController {
     const userId = getUserId(req, res);
     if (!userId) return;
     try {
-      await linkedinService.disconnect(userId, req.params.accountId ?? '');
+      await linkedinService.disconnect(
+        userId,
+        req.params.accountId ?? '',
+        req.workspace?.id
+      );
       res.json({ message: 'LinkedIn account disconnected. Published history was retained.' });
     } catch (error) {
       this.handleError(error, res, 'Unable to disconnect the LinkedIn account.');
@@ -151,6 +172,7 @@ export class SocialController {
       const post = await socialService.generateDraft(userId, {
         ...parsed.data,
         idempotencyKey,
+        workspaceId: req.workspace?.id,
       });
       res.status(201).json(post);
     } catch (error) {
@@ -172,6 +194,7 @@ export class SocialController {
       const post = await socialService.createDraft(userId, {
         ...parsed.data,
         idempotencyKey,
+        workspaceId: req.workspace?.id,
       });
       res.status(201).json(post);
     } catch (error) {
@@ -188,41 +211,48 @@ export class SocialController {
       return;
     }
     try {
-      res.json(await socialService.updateDraft(userId, req.params.postId ?? '', parsed.data));
+      res.json(
+        await socialService.updateDraft(
+          userId,
+          req.params.postId ?? '',
+          parsed.data,
+          req.workspace?.id
+        )
+      );
     } catch (error) {
       this.handleError(error, res, 'Unable to update the social post.');
     }
   }
 
   async requestApproval(req: Request, res: Response): Promise<void> {
-    await this.postAction(req, res, (userId, id) => socialService.requestApproval(userId, id));
+    await this.postAction(req, res, (userId, id, workspaceId) => socialService.requestApproval(userId, id, workspaceId));
   }
 
   async approve(req: Request, res: Response): Promise<void> {
-    await this.postAction(req, res, (userId, id) => socialService.approve(userId, id));
+    await this.postAction(req, res, (userId, id, workspaceId) => socialService.approve(userId, id, workspaceId));
   }
 
   async reject(req: Request, res: Response): Promise<void> {
-    await this.postAction(req, res, (userId, id) => socialService.reject(userId, id));
+    await this.postAction(req, res, (userId, id, workspaceId) => socialService.reject(userId, id, workspaceId));
   }
 
   async cancel(req: Request, res: Response): Promise<void> {
-    await this.postAction(req, res, (userId, id) => socialService.cancel(userId, id));
+    await this.postAction(req, res, (userId, id, workspaceId) => socialService.cancel(userId, id, workspaceId));
   }
 
   async retry(req: Request, res: Response): Promise<void> {
-    await this.postAction(req, res, (userId, id) => socialService.retry(userId, id));
+    await this.postAction(req, res, (userId, id, workspaceId) => socialService.retry(userId, id, workspaceId));
   }
 
   private async postAction(
     req: Request,
     res: Response,
-    action: (userId: string, postId: string) => Promise<unknown>
+    action: (userId: string, postId: string, workspaceId?: string) => Promise<unknown>
   ): Promise<void> {
     const userId = getUserId(req, res);
     if (!userId) return;
     try {
-      res.json(await action(userId, req.params.postId ?? ''));
+      res.json(await action(userId, req.params.postId ?? '', req.workspace?.id));
     } catch (error) {
       this.handleError(error, res, 'Unable to update this social post.');
     }

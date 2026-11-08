@@ -7,8 +7,28 @@ export const SOCIAL_APPROVAL_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 export const SOCIAL_MAX_SCHEDULE_DAYS = 30;
 export const SOCIAL_MAX_SAFE_RETRIES = 3;
 
-export function ownedSocialPostWhere(userId: string, postId?: string): Prisma.SocialPostWhereInput {
-  return { userId, ...(postId ? { id: postId } : {}) };
+export function ownedSocialPostWhere(
+  userId: string,
+  postId?: string,
+  workspaceId?: string
+): Prisma.SocialPostWhereInput {
+  return {
+    ...(workspaceId
+      ? { workspaceId }
+      : {
+          userId,
+          OR: [
+            { workspaceId: null },
+            {
+              workspace: {
+                isPersonal: true,
+                memberships: { some: { userId, status: 'ACTIVE' } },
+              },
+            },
+          ],
+        }),
+    ...(postId ? { id: postId } : {}),
+  };
 }
 
 export interface SocialApprovalPayload {
@@ -76,10 +96,13 @@ export function canClaimSocialPublication(input: {
   approvalPayload: SocialApprovalPayload;
   currentScheduleVersion: number;
   jobScheduleVersion: number;
+  workspaceId?: string | null;
 }): boolean {
   return (
     input.status === SocialPostStatus.SCHEDULED &&
-    input.approvedBy === input.userId &&
+    (input.workspaceId
+      ? typeof input.approvedBy === 'string' && input.approvedBy.length > 0
+      : input.approvedBy === input.userId) &&
     input.approvedAt !== null &&
     isSocialApprovalIntact(input.approvalHash, input.approvalPayload) &&
     input.currentScheduleVersion === input.jobScheduleVersion

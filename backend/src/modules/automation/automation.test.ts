@@ -194,11 +194,26 @@ test('status transitions allow approval and retry but reject bypassing approval'
   assert.equal(canTransitionAutomation('REJECTED', 'QUEUED'), false);
 });
 
-test('owner filters scope automation reads to the authenticated user', () => {
-  assert.deepEqual(ownedAutomationWhere('user-a'), { userId: 'user-a' });
-  assert.deepEqual(ownedAutomationWhere('user-a', 'automation-1'), {
+test('automation ownership excludes organization records and inactive personal memberships', () => {
+  const personalScope = {
     userId: 'user-a',
+    OR: [
+      { workspaceId: null },
+      {
+        workspace: {
+          isPersonal: true,
+          memberships: { some: { userId: 'user-a', status: 'ACTIVE' } },
+        },
+      },
+    ],
+  };
+  assert.deepEqual(ownedAutomationWhere('user-a'), personalScope);
+  assert.deepEqual(ownedAutomationWhere('user-a', 'automation-1'), {
+    ...personalScope,
     id: 'automation-1',
+  });
+  assert.deepEqual(ownedAutomationWhere('user-a', undefined, 'workspace-a'), {
+    workspaceId: 'workspace-a',
   });
   assert.notDeepEqual(ownedAutomationWhere('user-a', 'automation-1'), {
     userId: 'user-b',
@@ -413,20 +428,23 @@ test('review collection is scoped to the automation owner and draft actions cons
     ],
   };
   let requestedUserId = '';
+  let requestedWorkspaceId: string | undefined;
   const draftInputs: Array<{ reviewResults: ReviewResult[] }> = [];
   const registry = new AutomationActionRegistry(
     async (input) => {
       draftInputs.push(input);
       return 'Draft based on review results.';
     },
-    async (userId) => {
+    async (userId, workspaceId) => {
       requestedUserId = userId;
+      requestedWorkspaceId = workspaceId;
       return [review];
     }
   );
 
   const collected = await registry.execute('collect_review_results', {
     userId: 'user-a',
+    workspaceId: 'workspace-a',
     goal: 'Summarize my latest review',
     title: 'Read reviews',
     description: 'Read completed reviews belonging to this account.',
@@ -435,6 +453,7 @@ test('review collection is scoped to the automation owner and draft actions cons
   });
   assert.deepEqual(collected, { reviews: [review] });
   assert.equal(requestedUserId, 'user-a');
+  assert.equal(requestedWorkspaceId, 'workspace-a');
 
   const drafted = await registry.execute('generate_text_draft', {
     userId: 'user-a',

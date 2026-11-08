@@ -129,6 +129,7 @@ const githubDevelopmentContextSchema = z
 
 export interface AutomationActionInput {
   userId: string;
+  workspaceId?: string;
   goal: string;
   title: string;
   description: string;
@@ -151,17 +152,33 @@ export type DraftProvider = (input: {
   githubContext?: GitHubDevelopmentContext;
 }) => Promise<string>;
 
-export type ReviewResultsProvider = (userId: string) => Promise<ReviewResult[]>;
+export type ReviewResultsProvider = (
+  userId: string,
+  workspaceId?: string
+) => Promise<ReviewResult[]>;
 export type GitHubContextProvider = (
   userId: string,
   repository: string,
   pullRequestNumber?: number
 ) => Promise<GitHubDevelopmentContext>;
 
-const prismaReviewResultsProvider: ReviewResultsProvider = async (userId) => {
+const prismaReviewResultsProvider: ReviewResultsProvider = async (userId, workspaceId) => {
   const reviews = await prisma.codeReview.findMany({
     where: {
       userId,
+      ...(workspaceId
+        ? { workspaceId }
+        : {
+            OR: [
+              { workspaceId: null },
+              {
+                workspace: {
+                  isPersonal: true,
+                  memberships: { some: { userId, status: 'ACTIVE' } },
+                },
+              },
+            ],
+          }),
       status: 'completed',
       repository: { is: { userId } },
     },
@@ -289,7 +306,7 @@ export class AutomationActionRegistry {
   > {
     if (action === AUTOMATION_ACTIONS.COLLECT_REVIEW_RESULTS) {
       automationActionInputSchemas[AUTOMATION_ACTIONS.COLLECT_REVIEW_RESULTS].parse(input.actionInput)
-      const reviews = await this.reviewResultsProvider(input.userId)
+      const reviews = await this.reviewResultsProvider(input.userId, input.workspaceId)
       return {
         reviews,
         ...(reviews.length === 0

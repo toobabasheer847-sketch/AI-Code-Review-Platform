@@ -57,7 +57,7 @@ test('registers, verifies, logs in, and logs out using accessible controls', asy
   await page.getByLabel('Email').fill(user.email)
   await page.getByLabel('Full Name').fill(user.fullName)
   await page.getByLabel('Password', { exact: true }).fill('safe-e2e-password')
-  await page.getByLabel('Confirm Password').fill('safe-e2e-password')
+  await page.getByRole('textbox', { name: 'Confirm Password' }).fill('safe-e2e-password')
   await page.getByRole('button', { name: 'Create account' }).click()
 
   await expect(page).toHaveURL(/\/verify-email\?/)
@@ -71,7 +71,7 @@ test('registers, verifies, logs in, and logs out using accessible controls', asy
   await expect(page).toHaveURL(/\/dashboard$/)
 
   await page.goto('/automations')
-  await expect(page.getByRole('heading', { name: /command center/i })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Your command center' })).toBeVisible()
   await page.getByRole('button', { name: 'Sign out' }).last().click()
   await expect(page).toHaveURL(/\/login$/)
 })
@@ -157,13 +157,19 @@ test('mocks GitHub OAuth, starts a review, and handles finding feedback and veri
     runnerIdentity: null,
     runnerVersion: null,
   }
-  const proposal = {
+  const proposal = (): {
+    id: string
+    patch: string
+    patchSha256: string
+    createdAt: string
+    attempts: (typeof attempt)[]
+  } => ({
     id: 'proposal-e2e',
     patch: '--- a/src/input.ts\n+++ b/src/input.ts\n@@ -1 +1 @@\n-old\n+new\n',
     patchSha256: 'a'.repeat(64),
     createdAt: now,
     attempts: verificationRequested ? [attempt] : [],
-  }
+  })
   const review = (): Record<string, unknown> => ({
     id: 'review-e2e',
     repository: {
@@ -190,7 +196,7 @@ test('mocks GitHub OAuth, starts a review, and handles finding feedback and veri
         verificationRecords: [],
         feedback,
         assessmentFeedback,
-        fixProposals: proposalSaved ? [proposal] : [],
+        fixProposals: proposalSaved ? [proposal()] : [],
       },
     ],
     findingLifecycleAnalytics: {
@@ -277,7 +283,7 @@ test('mocks GitHub OAuth, starts a review, and handles finding feedback and veri
     }
     if (method === 'POST' && path === '/reviews/findings/finding-e2e/fix-proposals') {
       proposalSaved = true
-      return json({ proposal })
+      return json({ proposal: proposal() })
     }
     if (method === 'POST' && path === '/reviews/fix-proposals/proposal-e2e/verification-attempts') {
       verificationRequested = true
@@ -294,7 +300,7 @@ test('mocks GitHub OAuth, starts a review, and handles finding feedback and veri
   })
 
   await page.goto('/github/repos')
-  await page.getByRole('button', { name: 'Connect GitHub' }).click()
+  await page.getByRole('button', { name: 'Connect GitHub' }).first().click()
   await page.getByRole('button', { name: 'Authorize AI-CodeGuard' }).click()
   await expect(page.getByRole('heading', { name: 'GitHub repositories' })).toBeVisible()
   await page.getByRole('button', { name: 'Select for Review' }).click()
@@ -308,7 +314,7 @@ test('mocks GitHub OAuth, starts a review, and handles finding feedback and veri
   await page.getByRole('button', { name: 'Submit feedback' }).click()
   await expect(page.getByText('No accuracy feedback submitted yet.')).toHaveCount(0)
 
-  await page.getByLabel('Unified diff patch proposal').fill(proposal.patch)
+  await page.getByLabel('Unified diff patch proposal').fill(proposal().patch)
   await page.getByRole('button', { name: 'Save patch proposal' }).click()
   await page.getByRole('button', { name: 'Request safe verification' }).click()
   await expect(page.getByText(/Needs review · BLOCKED/)).toBeVisible()

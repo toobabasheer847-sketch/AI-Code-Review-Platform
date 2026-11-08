@@ -3,6 +3,7 @@ import test from 'node:test'
 import type { NextFunction, Request, Response } from 'express'
 import {
   createWorkspaceAccessMiddleware,
+  optionalWorkspacePermission,
   requireWorkspacePermission,
   type WorkspaceAccessStore,
 } from './workspace-access.middleware'
@@ -101,5 +102,59 @@ test('workspace permission middleware returns forbidden for disallowed mutations
   }) as NextFunction)
 
   assert.equal(result.status(), 403)
+  assert.equal(nextCalled, false)
+})
+
+test('workspace header is only used after active membership is resolved and role permission passes', async () => {
+  const store: WorkspaceAccessStore = {
+    async findActiveMembership(workspaceId, userId) {
+      assert.equal(workspaceId, 'workspace-a')
+      assert.equal(userId, 'user-a')
+      return {
+        id: workspaceId,
+        organizationId: 'org-a',
+        organizationOwnerUserId: 'owner-a',
+        isPersonal: false,
+        role: 'VIEWER',
+      }
+    },
+  }
+  const middleware = optionalWorkspacePermission('create_automation', store)
+  const request = {
+    user: { userId: 'user-a' },
+    params: {},
+    get: () => 'workspace-a',
+  } as unknown as Request
+  const result = responseHarness()
+  let nextCalled = false
+
+  await middleware(request, result.response, (() => {
+    nextCalled = true
+  }) as NextFunction)
+
+  assert.equal(request.workspace?.id, 'workspace-a')
+  assert.equal(result.status(), 403)
+  assert.equal(nextCalled, false)
+})
+
+test('workspace header denies suspended or removed membership', async () => {
+  const middleware = optionalWorkspacePermission('read', {
+    async findActiveMembership() {
+      return null
+    },
+  })
+  const request = {
+    user: { userId: 'user-a' },
+    params: {},
+    get: () => 'workspace-a',
+  } as unknown as Request
+  const result = responseHarness()
+  let nextCalled = false
+
+  await middleware(request, result.response, (() => {
+    nextCalled = true
+  }) as NextFunction)
+
+  assert.equal(result.status(), 404)
   assert.equal(nextCalled, false)
 })

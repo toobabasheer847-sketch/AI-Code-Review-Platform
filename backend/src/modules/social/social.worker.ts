@@ -13,7 +13,12 @@ export async function startSocialWorker(): Promise<void> {
   await service.recoverInterruptedPublications();
   worker = new Worker<SocialPublishJob>(
     'social-publishing',
-    async (job) => service.publishScheduledPost(job.data.postId, job.data.scheduleVersion),
+    async (job) =>
+      service.publishScheduledPost(
+        job.data.postId,
+        job.data.scheduleVersion,
+        job.data.workspaceId
+      ),
     {
       connection: createBullMqRedisConnection(),
       concurrency: 2,

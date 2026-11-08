@@ -27,6 +27,7 @@ import {
   trackedChatCompletion,
   type AIUsageContext,
 } from '@/modules/ai/usage.service'
+import { hasWorkspacePermission } from '@/modules/workspaces/workspace.domain'
 
 export class SocialServiceError extends Error {
   constructor(
@@ -52,6 +53,7 @@ export interface SocialPostEditInput {
 
 const postSelect = {
   id: true,
+  workspaceId: true,
   userId: true,
   accountId: true,
   platform: true,
@@ -104,8 +106,8 @@ export class SocialService {
     private readonly generateContent = generateLinkedInDraft
   ) {}
 
-  async getStatus(userId: string) {
-    const accounts = await this.linkedin.listAccounts(userId);
+  async getStatus(userId: string, workspaceId?: string) {
+    const accounts = await this.linkedin.listAccounts(userId, workspaceId);
     return {
       providers: [
         {
@@ -133,23 +135,29 @@ export class SocialService {
     };
   }
 
-  async listPosts(userId: string): Promise<PostRecord[]> {
+  async listPosts(userId: string, workspaceId?: string): Promise<PostRecord[]> {
     return prisma.socialPost.findMany({
-      where: ownedSocialPostWhere(userId),
+      where: ownedSocialPostWhere(userId, undefined, workspaceId),
       select: postSelect,
       orderBy: [{ scheduledAt: 'asc' }, { updatedAt: 'desc' }],
       take: 100,
     });
   }
 
-  async generateDraft(userId: string, input: SocialDraftInput): Promise<PostRecord> {
+  async generateDraft(
+    userId: string,
+    input: SocialDraftInput & { workspaceId?: string }
+  ): Promise<PostRecord> {
     const instructions = input.instructions.trim();
     if (!instructions || instructions.length > 2_000) {
       throw new SocialServiceError('Instructions must be between 1 and 2,000 characters.', 400);
     }
     if (input.idempotencyKey) {
-      const previous = await prisma.socialPost.findUnique({
-        where: { userId_idempotencyKey: { userId, idempotencyKey: input.idempotencyKey } },
+      const previous = await prisma.socialPost.findFirst({
+        where: {
+          ...ownedSocialPostWhere(userId, undefined, input.workspaceId),
+          idempotencyKey: input.idempotencyKey,
+        },
         select: postSelect,
       });
       if (previous) {
@@ -165,7 +173,24 @@ export class SocialService {
     }
 
     const review = await prisma.codeReview.findFirst({
-      where: { id: input.reviewId, userId, status: 'completed' },
+      where: {
+        id: input.reviewId,
+        ...(input.workspaceId
+          ? { workspaceId: input.workspaceId }
+          : {
+              userId,
+              OR: [
+                { workspaceId: null },
+                {
+                  workspace: {
+                    isPersonal: true,
+                    memberships: { some: { userId, status: 'ACTIVE' } },
+                  },
+                },
+              ],
+            }),
+        status: 'completed',
+      },
       select: {
         id: true,
         title: true,
@@ -216,6 +241,7 @@ export class SocialService {
         userId,
         feature: 'linkedin_drafting',
         reviewId: review.id,
+        ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
         ...(input.idempotencyKey
           ? { requestKey: `linkedin-draft:${input.idempotencyKey}` }
           : {}),
@@ -237,6 +263,7 @@ export class SocialService {
     try {
       return await prisma.socialPost.create({
         data: {
+          workspaceId: input.workspaceId,
           userId,
           platform: SocialProvider.LINKEDIN,
           platformAccountId: 'unselected',
@@ -258,8 +285,11 @@ export class SocialService {
       });
     } catch (error) {
       if (input.idempotencyKey && this.isUniqueConstraintError(error)) {
-        const previous = await prisma.socialPost.findUnique({
-          where: { userId_idempotencyKey: { userId, idempotencyKey: input.idempotencyKey } },
+        const previous = await prisma.socialPost.findFirst({
+          where: {
+            ...ownedSocialPostWhere(userId, undefined, input.workspaceId),
+            idempotencyKey: input.idempotencyKey,
+          },
           select: postSelect,
         });
         if (previous) {
@@ -282,14 +312,20 @@ export class SocialService {
     accountId?: string;
     scheduledAt?: Date | null;
     idempotencyKey?: string;
+    workspaceId?: string;
   }): Promise<PostRecord> {
     const content = this.validateContent(input.content);
     const scheduledAt = input.scheduledAt ?? null;
     this.validateSchedule(scheduledAt);
-    const account = input.accountId ? await this.getOwnedAccount(userId, input.accountId) : null;
+    const account = input.accountId
+      ? await this.getOwnedAccount(userId, input.accountId, input.workspaceId)
+      : null;
     const prior = input.idempotencyKey
-      ? await prisma.socialPost.findUnique({
-          where: { userId_idempotencyKey: { userId, idempotencyKey: input.idempotencyKey } },
+      ? await prisma.socialPost.findFirst({
+          where: {
+            ...ownedSocialPostWhere(userId, undefined, input.workspaceId),
+            idempotencyKey: input.idempotencyKey,
+          },
           select: postSelect,
         })
       : null;
@@ -306,6 +342,7 @@ export class SocialService {
     try {
       return await prisma.socialPost.create({
       data: {
+        workspaceId: input.workspaceId,
         userId,
         platform: SocialProvider.LINKEDIN,
         accountId: account?.id,
@@ -322,8 +359,11 @@ export class SocialService {
       });
     } catch (error) {
       if (input.idempotencyKey && this.isUniqueConstraintError(error)) {
-        const existing = await prisma.socialPost.findUnique({
-          where: { userId_idempotencyKey: { userId, idempotencyKey: input.idempotencyKey } },
+        const existing = await prisma.socialPost.findFirst({
+          where: {
+            ...ownedSocialPostWhere(userId, undefined, input.workspaceId),
+            idempotencyKey: input.idempotencyKey,
+          },
           select: postSelect,
         });
         if (
@@ -340,21 +380,28 @@ export class SocialService {
     }
   }
 
-  async updateDraft(userId: string, postId: string, input: SocialPostEditInput): Promise<PostRecord> {
+  async updateDraft(
+    userId: string,
+    postId: string,
+    input: SocialPostEditInput,
+    workspaceId?: string
+  ): Promise<PostRecord> {
     const content = this.validateContent(input.content);
     this.validateSchedule(input.scheduledAt);
-    const post = await prisma.socialPost.findFirst({ where: ownedSocialPostWhere(userId, postId) });
+    const post = await prisma.socialPost.findFirst({ where: ownedSocialPostWhere(userId, postId, workspaceId) });
     if (!post) throw new SocialServiceError('Post not found.', 404);
     if (!isEditableStatus(post.status)) {
       throw new SocialServiceError('This post can no longer be edited.', 409);
     }
-    const account = input.accountId ? await this.getOwnedAccount(userId, input.accountId) : null;
+    const account = input.accountId
+      ? await this.getOwnedAccount(userId, input.accountId, workspaceId)
+      : null;
 
     const updated = await prisma.$transaction(async (transaction) => {
       const changed = await transaction.socialPost.updateMany({
         where: {
           id: postId,
-          userId,
+          ...ownedSocialPostWhere(userId, postId, workspaceId),
           status: post.status,
           scheduleVersion: post.scheduleVersion,
         },
@@ -385,20 +432,25 @@ export class SocialService {
           message: 'The post content, destination, or schedule changed. A new approval is required.',
         },
       });
-      return transaction.socialPost.findFirstOrThrow({ where: { id: postId, userId }, select: postSelect });
+      return transaction.socialPost.findFirstOrThrow({
+        where: ownedSocialPostWhere(userId, postId, workspaceId),
+        select: postSelect,
+      });
     });
     return updated;
   }
 
-  async requestApproval(userId: string, postId: string): Promise<PostRecord> {
-    const post = await prisma.socialPost.findFirst({ where: ownedSocialPostWhere(userId, postId) });
+  async requestApproval(userId: string, postId: string, workspaceId?: string): Promise<PostRecord> {
+    const post = await prisma.socialPost.findFirst({
+      where: ownedSocialPostWhere(userId, postId, workspaceId),
+    });
     if (!post) throw new SocialServiceError('Post not found.', 404);
     if (post.status !== SocialPostStatus.DRAFT) {
       throw new SocialServiceError('Only drafts can be submitted for approval.', 409);
     }
     if (!post.accountId) throw new SocialServiceError('Choose a connected LinkedIn account before requesting approval.', 400);
-    const account = await this.getOwnedAccount(userId, post.accountId);
-    await this.linkedin.getAccessToken(userId, account.id);
+    const account = await this.getOwnedAccount(userId, post.accountId, workspaceId);
+    await this.linkedin.getAccessToken(userId, account.id, workspaceId);
     if (!account.scopes.includes('w_member_social')) {
       throw new SocialServiceError('The selected account lacks w_member_social permission.', 403);
     }
@@ -413,8 +465,7 @@ export class SocialService {
     return prisma.$transaction(async (transaction) => {
       const changed = await transaction.socialPost.updateMany({
         where: {
-          id: postId,
-          userId,
+          ...ownedSocialPostWhere(userId, postId, workspaceId),
           status: SocialPostStatus.DRAFT,
           scheduleVersion: post.scheduleVersion,
         },
@@ -442,12 +493,17 @@ export class SocialService {
           details: { payloadHash: approvalHash },
         },
       });
-      return transaction.socialPost.findFirstOrThrow({ where: { id: postId, userId }, select: postSelect });
+      return transaction.socialPost.findFirstOrThrow({
+        where: ownedSocialPostWhere(userId, postId, workspaceId),
+        select: postSelect,
+      });
     });
   }
 
-  async approve(userId: string, postId: string): Promise<PostRecord> {
-    const post = await prisma.socialPost.findFirst({ where: ownedSocialPostWhere(userId, postId) });
+  async approve(userId: string, postId: string, workspaceId?: string): Promise<PostRecord> {
+    const post = await prisma.socialPost.findFirst({
+      where: ownedSocialPostWhere(userId, postId, workspaceId),
+    });
     if (!post) throw new SocialServiceError('Post not found.', 404);
     if (post.status !== SocialPostStatus.AWAITING_APPROVAL) {
       throw new SocialServiceError('This post is not awaiting approval.', 409);
@@ -455,7 +511,10 @@ export class SocialService {
     if (!post.approvalExpiresAt || post.approvalExpiresAt.getTime() <= this.clock().getTime()) {
       await prisma.$transaction(async (transaction) => {
         const changed = await transaction.socialPost.updateMany({
-          where: { id: postId, userId, status: SocialPostStatus.AWAITING_APPROVAL },
+          where: {
+            ...ownedSocialPostWhere(userId, postId, workspaceId),
+            status: SocialPostStatus.AWAITING_APPROVAL,
+          },
           data: {
             status: SocialPostStatus.DRAFT,
             approvalHash: null,
@@ -478,14 +537,14 @@ export class SocialService {
       throw new SocialServiceError('Approval expired. Review and submit this draft again.', 409);
     }
     if (!post.accountId) throw new SocialServiceError('The approved LinkedIn destination is missing.', 409);
-    const account = await this.getOwnedAccount(userId, post.accountId);
-    await this.linkedin.getAccessToken(userId, account.id);
+    const account = await this.getOwnedAccount(userId, post.accountId, workspaceId);
+    await this.linkedin.getAccessToken(userId, account.id, workspaceId);
     if (
       account.providerAccountId !== post.platformAccountId ||
       account.displayName !== post.destinationLabel ||
       !isSocialApprovalIntact(post.approvalHash, this.approvalPayload(post))
     ) {
-      await this.invalidateApproval(userId, postId);
+      await this.invalidateApproval(userId, postId, workspaceId);
       throw new SocialServiceError('Approved content or destination changed. Request approval again.', 409);
     }
     if (post.scheduledAt && post.scheduledAt.getTime() < this.clock().getTime()) {
@@ -495,8 +554,7 @@ export class SocialService {
     const scheduled = await prisma.$transaction(async (transaction) => {
       const changed = await transaction.socialPost.updateMany({
         where: {
-          id: postId,
-          userId,
+          ...ownedSocialPostWhere(userId, postId, workspaceId),
           status: SocialPostStatus.AWAITING_APPROVAL,
           approvalHash: post.approvalHash,
         },
@@ -518,26 +576,35 @@ export class SocialService {
           message: 'The exact post payload and destination were approved for scheduled publication.',
         },
       });
-      return transaction.socialPost.findFirstOrThrow({ where: { id: postId, userId }, select: postSelect });
+      return transaction.socialPost.findFirstOrThrow({
+        where: ownedSocialPostWhere(userId, postId, workspaceId),
+        select: postSelect,
+      });
     });
     try {
       await this.schedulePublication(
-        { postId, scheduleVersion: scheduled.scheduleVersion },
+        {
+          postId,
+          scheduleVersion: scheduled.scheduleVersion,
+          workspaceId: scheduled.workspaceId,
+        },
         Math.max(0, (scheduled.scheduledAt?.getTime() ?? this.clock().getTime()) - this.clock().getTime())
       );
     } catch {
-      await this.markQueueFailure(userId, scheduled);
+      await this.markQueueFailure(userId, scheduled, workspaceId);
       throw new SocialServiceError('Approval was saved, but publishing could not be scheduled. Use Retry after queue service recovery.', 503);
     }
     return scheduled;
   }
 
-  async reject(userId: string, postId: string): Promise<PostRecord> {
-    return this.transitionOwned(userId, postId, SocialPostStatus.AWAITING_APPROVAL, SocialPostStatus.REJECTED, 'rejected', 'Approval was declined; nothing was published.');
+  async reject(userId: string, postId: string, workspaceId?: string): Promise<PostRecord> {
+    return this.transitionOwned(userId, postId, SocialPostStatus.AWAITING_APPROVAL, SocialPostStatus.REJECTED, 'rejected', 'Approval was declined; nothing was published.', workspaceId);
   }
 
-  async cancel(userId: string, postId: string): Promise<PostRecord> {
-    const post = await prisma.socialPost.findFirst({ where: ownedSocialPostWhere(userId, postId) });
+  async cancel(userId: string, postId: string, workspaceId?: string): Promise<PostRecord> {
+    const post = await prisma.socialPost.findFirst({
+      where: ownedSocialPostWhere(userId, postId, workspaceId),
+    });
     if (!post) throw new SocialServiceError('Post not found.', 404);
     if (!isEditableStatus(post.status)) {
       throw new SocialServiceError('This post can no longer be canceled.', 409);
@@ -548,12 +615,15 @@ export class SocialService {
       post.status,
       SocialPostStatus.CANCELED,
       'canceled',
-      'Publishing was canceled. No further request will be made for this post.'
+      'Publishing was canceled. No further request will be made for this post.',
+      workspaceId
     );
   }
 
-  async retry(userId: string, postId: string): Promise<PostRecord> {
-    const post = await prisma.socialPost.findFirst({ where: { id: postId, userId } });
+  async retry(userId: string, postId: string, workspaceId?: string): Promise<PostRecord> {
+    const post = await prisma.socialPost.findFirst({
+      where: ownedSocialPostWhere(userId, postId, workspaceId),
+    });
     if (!post) throw new SocialServiceError('Post not found.', 404);
     if (post.status !== SocialPostStatus.FAILED || !post.retryable || !post.accountId) {
       throw new SocialServiceError('This publication is not safe to retry.', 409);
@@ -561,18 +631,17 @@ export class SocialService {
     if (post.attemptCount >= SOCIAL_MAX_SAFE_RETRIES) {
       throw new SocialServiceError('The bounded retry limit has been reached. Create a new draft after verifying LinkedIn.', 409);
     }
-    const account = await this.getOwnedAccount(userId, post.accountId);
-    await this.linkedin.getAccessToken(userId, account.id);
+    const account = await this.getOwnedAccount(userId, post.accountId, workspaceId);
+    await this.linkedin.getAccessToken(userId, account.id, workspaceId);
     if (!isSocialApprovalIntact(post.approvalHash, this.approvalPayload(post))) {
-      await this.invalidateApproval(userId, postId);
+      await this.invalidateApproval(userId, postId, workspaceId);
       throw new SocialServiceError('The approved post changed. Request approval again.', 409);
     }
     const nextVersion = post.scheduleVersion + 1;
     const updated = await prisma.$transaction(async (transaction) => {
       const changed = await transaction.socialPost.updateMany({
         where: {
-          id: postId,
-          userId,
+          ...ownedSocialPostWhere(userId, postId, workspaceId),
           status: SocialPostStatus.FAILED,
           retryable: true,
           scheduleVersion: post.scheduleVersion,
@@ -595,7 +664,10 @@ export class SocialService {
           message: 'A provider-confirmed non-publication was retried using the unchanged approved payload.',
         },
       });
-      return transaction.socialPost.findFirstOrThrow({ where: { id: postId, userId }, select: postSelect });
+      return transaction.socialPost.findFirstOrThrow({
+        where: ownedSocialPostWhere(userId, postId, workspaceId),
+        select: postSelect,
+      });
     });
     if (!(await this.enqueueOrMarkFailed(updated, 0))) {
       throw new SocialServiceError('Safe retry could not be queued. It was not published; retry after scheduler recovery.', 503);
@@ -603,10 +675,75 @@ export class SocialService {
     return updated;
   }
 
-  async publishScheduledPost(postId: string, scheduleVersion: number): Promise<void> {
-    const post = await prisma.socialPost.findUnique({ where: { id: postId } });
+  async publishScheduledPost(
+    postId: string,
+    scheduleVersion: number,
+    workspaceId?: string | null
+  ): Promise<void> {
+    const post =
+      workspaceId === undefined
+        ? await prisma.socialPost.findUnique({ where: { id: postId } })
+        : await prisma.socialPost.findFirst({ where: { id: postId, workspaceId } });
     if (!post || !post.accountId || post.status !== SocialPostStatus.SCHEDULED) return;
     if (post.scheduleVersion !== scheduleVersion) return;
+    const effectiveWorkspaceId = post.workspaceId ?? undefined;
+    if (effectiveWorkspaceId) {
+      const [creatorMembership, approverMembership] = await Promise.all([
+        prisma.workspaceMembership.findFirst({
+          where: {
+            workspaceId: effectiveWorkspaceId,
+            userId: post.userId,
+            status: 'ACTIVE',
+          },
+          select: { role: true },
+        }),
+        post.approvedBy
+          ? prisma.workspaceMembership.findFirst({
+              where: {
+                workspaceId: effectiveWorkspaceId,
+                userId: post.approvedBy,
+                status: 'ACTIVE',
+              },
+              select: { role: true },
+            })
+          : Promise.resolve(null),
+      ]);
+      if (
+        !creatorMembership ||
+        !hasWorkspacePermission(creatorMembership.role, 'create_social_posts') ||
+        (post.approvedBy !== null &&
+          (!approverMembership ||
+            !hasWorkspacePermission(approverMembership.role, 'approve_social_posts')))
+      ) {
+        await prisma.$transaction(async (transaction) => {
+          const canceled = await transaction.socialPost.updateMany({
+            where: {
+              id: postId,
+              workspaceId: effectiveWorkspaceId,
+              status: SocialPostStatus.SCHEDULED,
+              scheduleVersion,
+            },
+            data: {
+              status: SocialPostStatus.CANCELED,
+              scheduleVersion: { increment: 1 },
+              errorCode: 'WORKSPACE_PERMISSION_REVOKED',
+              errorMessage: 'Publication was canceled because workspace authorization changed.',
+            },
+          });
+          if (canceled.count === 1) {
+            await transaction.socialPostEvent.create({
+              data: {
+                postId,
+                userId: post.approvedBy ?? post.userId,
+                type: 'workspace_permission_revoked',
+                message: 'Publication was canceled because workspace authorization changed.',
+              },
+            });
+          }
+        });
+        return;
+      }
+    }
     const approvalPayload = this.approvalPayload(post);
     if (
       !canClaimSocialPublication({
@@ -618,6 +755,7 @@ export class SocialService {
         approvalPayload,
         currentScheduleVersion: post.scheduleVersion,
         jobScheduleVersion: scheduleVersion,
+        workspaceId: post.workspaceId,
       })
     ) {
       await this.failBeforePublish(post, 'APPROVAL_INTEGRITY_FAILED', 'Publishing was blocked because the approved payload or destination no longer matches.');
@@ -633,7 +771,7 @@ export class SocialService {
       const changed = await transaction.socialPost.updateMany({
         where: {
           id: postId,
-          userId: post.userId,
+          workspaceId: post.workspaceId,
           status: SocialPostStatus.SCHEDULED,
           approvalHash: post.approvalHash,
           scheduleVersion,
@@ -659,7 +797,11 @@ export class SocialService {
     if (!claimed) return;
 
     try {
-      const { accessToken, account } = await this.linkedin.getAccessToken(post.userId, post.accountId);
+      const { accessToken, account } = await this.linkedin.getAccessToken(
+        post.userId,
+        post.accountId,
+        post.workspaceId ?? undefined
+      );
       if (account.providerAccountId !== post.platformAccountId) {
         throw new SocialProviderError('The linked destination no longer matches the approval.', 'DESTINATION_CHANGED');
       }
@@ -670,7 +812,12 @@ export class SocialService {
       });
       await prisma.$transaction(async (transaction) => {
         const changed = await transaction.socialPost.updateMany({
-          where: { id: postId, status: SocialPostStatus.PUBLISHING, scheduleVersion },
+          where: {
+            id: postId,
+            workspaceId: post.workspaceId,
+            status: SocialPostStatus.PUBLISHING,
+            scheduleVersion,
+          },
           data: {
             status: SocialPostStatus.PUBLISHED,
             providerPostId: receipt.postId,
@@ -722,13 +869,18 @@ export class SocialService {
     const staleBefore = new Date(this.clock().getTime() - 5 * 60_000);
     const stale = await prisma.socialPost.findMany({
       where: { status: SocialPostStatus.PUBLISHING, updatedAt: { lt: staleBefore } },
-      select: { id: true, userId: true },
+      select: { id: true, userId: true, workspaceId: true },
     });
     if (stale.length === 0) return;
     await prisma.$transaction(async (transaction) => {
-      for (const { id, userId } of stale) {
+      for (const { id, userId, workspaceId } of stale) {
         const changed = await transaction.socialPost.updateMany({
-          where: { id, status: SocialPostStatus.PUBLISHING, updatedAt: { lt: staleBefore } },
+          where: {
+            id,
+            workspaceId,
+            status: SocialPostStatus.PUBLISHING,
+            updatedAt: { lt: staleBefore },
+          },
           data: {
             status: SocialPostStatus.PUBLICATION_UNKNOWN,
             errorCode: 'WORKER_INTERRUPTED',
@@ -750,7 +902,7 @@ export class SocialService {
   }
 
   private async rescheduleUntilDue(
-    post: { id: string; userId: string; scheduleVersion: number },
+    post: { id: string; userId: string; workspaceId: string | null; scheduleVersion: number },
     version: number,
     dueAt: Date
   ): Promise<void> {
@@ -759,7 +911,7 @@ export class SocialService {
       const changed = await transaction.socialPost.updateMany({
         where: {
           id: post.id,
-          userId: post.userId,
+          workspaceId: post.workspaceId,
           status: SocialPostStatus.SCHEDULED,
           scheduleVersion: version,
         },
@@ -775,8 +927,8 @@ export class SocialService {
         },
       });
       return transaction.socialPost.findFirst({
-        where: { id: post.id, userId: post.userId },
-        select: { id: true, userId: true, scheduleVersion: true },
+        where: { id: post.id, workspaceId: post.workspaceId },
+        select: { id: true, userId: true, workspaceId: true, scheduleVersion: true },
       });
     });
     if (updated) {
@@ -787,6 +939,7 @@ export class SocialService {
   private async scheduleSafeRetry(post: {
     id: string;
     userId: string;
+    workspaceId: string | null;
     scheduleVersion: number;
     attemptCount: number;
   }, version: number, error: SocialProviderError): Promise<void> {
@@ -819,18 +972,33 @@ export class SocialService {
         },
       });
     });
-    const latest = await prisma.socialPost.findUnique({ where: { id: post.id }, select: postSelect });
+    const latest = await prisma.socialPost.findFirst({
+      where: { id: post.id, workspaceId: post.workspaceId },
+      select: postSelect,
+    });
     if (latest?.status === SocialPostStatus.SCHEDULED && latest.scheduleVersion === nextVersion) {
       await this.enqueueOrMarkFailed(latest, retryAt.getTime() - this.clock().getTime());
     }
   }
 
   private async enqueueOrMarkFailed(
-    post: { id: string; userId: string; scheduleVersion: number },
+    post: {
+      id: string;
+      userId: string;
+      workspaceId?: string | null;
+      scheduleVersion: number;
+    },
     delayMs: number
   ): Promise<boolean> {
     try {
-      await this.schedulePublication({ postId: post.id, scheduleVersion: post.scheduleVersion }, delayMs);
+      await this.schedulePublication(
+        {
+          postId: post.id,
+          scheduleVersion: post.scheduleVersion,
+          workspaceId: post.workspaceId ?? null,
+        },
+        delayMs
+      );
       return true;
     } catch {
       await this.markQueueFailure(post.userId, post);
@@ -838,10 +1006,23 @@ export class SocialService {
     }
   }
 
-  private async markQueueFailure(userId: string, post: { id: string; scheduleVersion: number }): Promise<void> {
+  private async markQueueFailure(
+    userId: string,
+    post: { id: string; workspaceId?: string | null; scheduleVersion: number },
+    workspaceId?: string
+  ): Promise<void> {
     await prisma.$transaction(async (transaction) => {
       const changed = await transaction.socialPost.updateMany({
-        where: { id: post.id, userId, status: SocialPostStatus.SCHEDULED, scheduleVersion: post.scheduleVersion },
+        where: {
+          id: post.id,
+          ...(post.workspaceId
+            ? { workspaceId: post.workspaceId }
+            : workspaceId
+              ? { workspaceId }
+              : { userId }),
+          status: SocialPostStatus.SCHEDULED,
+          scheduleVersion: post.scheduleVersion,
+        },
         data: {
           status: SocialPostStatus.FAILED,
           retryable: true,
@@ -865,6 +1046,7 @@ export class SocialService {
   private async failBeforePublish(post: {
     id: string;
     userId: string;
+    workspaceId: string | null;
     scheduleVersion: number;
   }, code: string, message: string): Promise<void> {
     await this.finishFailure(post, post.scheduleVersion, {
@@ -876,7 +1058,7 @@ export class SocialService {
   }
 
   private async finishFailure(
-    post: { id: string; userId: string },
+    post: { id: string; userId: string; workspaceId: string | null },
     scheduleVersion: number,
     failure: { status: SocialPostStatus; code: string; message: string; retryable: boolean },
     expectedStatus: SocialPostStatus = SocialPostStatus.PUBLISHING
@@ -885,7 +1067,7 @@ export class SocialService {
       const changed = await transaction.socialPost.updateMany({
         where: {
           id: post.id,
-          userId: post.userId,
+          workspaceId: post.workspaceId,
           status: expectedStatus,
           scheduleVersion,
         },
@@ -916,11 +1098,12 @@ export class SocialService {
     from: SocialPostStatus,
     to: SocialPostStatus,
     eventType: string,
-    message: string
+    message: string,
+    workspaceId?: string
   ): Promise<PostRecord> {
     return prisma.$transaction(async (transaction) => {
       const changed = await transaction.socialPost.updateMany({
-        where: { id: postId, userId, status: from },
+        where: { ...ownedSocialPostWhere(userId, postId, workspaceId), status: from },
         data: {
           status: to,
           approvalHash: null,
@@ -934,14 +1117,24 @@ export class SocialService {
       await transaction.socialPostEvent.create({
         data: { postId, userId, type: eventType, message },
       });
-      return transaction.socialPost.findFirstOrThrow({ where: { id: postId, userId }, select: postSelect });
+      return transaction.socialPost.findFirstOrThrow({
+        where: ownedSocialPostWhere(userId, postId, workspaceId),
+        select: postSelect,
+      });
     });
   }
 
-  private async invalidateApproval(userId: string, postId: string): Promise<void> {
+  private async invalidateApproval(
+    userId: string,
+    postId: string,
+    workspaceId?: string
+  ): Promise<void> {
     await prisma.$transaction(async (transaction) => {
       const changed = await transaction.socialPost.updateMany({
-        where: { id: postId, userId, status: SocialPostStatus.AWAITING_APPROVAL },
+        where: {
+          ...ownedSocialPostWhere(userId, postId, workspaceId),
+          status: SocialPostStatus.AWAITING_APPROVAL,
+        },
         data: {
           status: SocialPostStatus.DRAFT,
           approvalHash: null,
@@ -965,9 +1158,30 @@ export class SocialService {
     });
   }
 
-  private async getOwnedAccount(userId: string, accountId: string) {
+  private async getOwnedAccount(
+    userId: string,
+    accountId: string,
+    workspaceId?: string
+  ) {
     const account = await prisma.socialAccount.findFirst({
-      where: { id: accountId, userId, provider: SocialProvider.LINKEDIN },
+      where: {
+        id: accountId,
+        ...(workspaceId
+          ? { workspaceId }
+          : {
+              userId,
+              OR: [
+                { workspaceId: null },
+                {
+                  workspace: {
+                    isPersonal: true,
+                    memberships: { some: { userId, status: 'ACTIVE' } },
+                  },
+                },
+              ],
+            }),
+        provider: SocialProvider.LINKEDIN,
+      },
       select: {
         id: true,
         providerAccountId: true,

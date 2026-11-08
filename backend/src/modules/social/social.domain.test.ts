@@ -78,8 +78,27 @@ test('only the current server-approved schedule version can claim one publicatio
   assert.equal(canClaimSocialPublication({ ...approved, jobScheduleVersion: 3 }), false);
 });
 
-test('social post queries always constrain by owner identity', () => {
-  assert.deepEqual(ownedSocialPostWhere('user-a'), { userId: 'user-a' });
-  assert.deepEqual(ownedSocialPostWhere('user-a', 'post-1'), { userId: 'user-a', id: 'post-1' });
+test('social post queries isolate organization records and inactive personal memberships', () => {
+  const personalScope = {
+    userId: 'user-a',
+    OR: [
+      { workspaceId: null },
+      {
+        workspace: {
+          isPersonal: true,
+          memberships: { some: { userId: 'user-a', status: 'ACTIVE' } },
+        },
+      },
+    ],
+  };
+  assert.deepEqual(ownedSocialPostWhere('user-a'), personalScope);
+  assert.deepEqual(ownedSocialPostWhere('user-a', 'post-1'), {
+    ...personalScope,
+    id: 'post-1',
+  });
+  assert.deepEqual(ownedSocialPostWhere('user-a', 'post-1', 'workspace-a'), {
+    workspaceId: 'workspace-a',
+    id: 'post-1',
+  });
   assert.notDeepEqual(ownedSocialPostWhere('user-a', 'post-1'), ownedSocialPostWhere('user-b', 'post-1'));
 });

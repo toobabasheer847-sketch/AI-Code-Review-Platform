@@ -61,7 +61,7 @@ export function createWorkspaceAccessMiddleware(
 ) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const userId = req.user?.userId
-    const workspaceId = req.params.workspaceId
+    const workspaceId = req.params.workspaceId ?? req.get('X-Workspace-Id')
     if (!userId) {
       res.status(401).json({ error: 'Unauthorized' })
       return
@@ -96,6 +96,28 @@ export function requireWorkspacePermission(permission: WorkspacePermission) {
       return
     }
     next()
+  }
+}
+
+export function optionalWorkspacePermission(
+  permission: WorkspacePermission,
+  store: WorkspaceAccessStore = prismaWorkspaceAccessStore
+) {
+  const requirePermission = requireWorkspacePermission(permission)
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const workspaceId = req.get('X-Workspace-Id')
+    if (!workspaceId) {
+      next()
+      return
+    }
+
+    await createWorkspaceAccessMiddleware(store)(req, res, (error?: unknown) => {
+      if (error) {
+        next(error)
+        return
+      }
+      requirePermission(req, res, next)
+    })
   }
 }
 

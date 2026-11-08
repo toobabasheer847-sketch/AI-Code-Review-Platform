@@ -19,7 +19,7 @@ export class IntegrationsController {
       return;
     }
     try {
-      res.json({ providers: await catalog.list(userId) });
+      res.json({ providers: await catalog.list(userId, req.workspace?.id) });
     } catch (error) {
       logger.error(
         { errorType: error instanceof Error ? error.name : 'UnknownError' },
@@ -38,6 +38,12 @@ export class IntegrationsController {
     const provider = integrationProviders.find((item) => item.id === req.params.provider);
     if (!provider) {
       res.status(404).json({ error: 'Integration provider is not supported.' });
+      return;
+    }
+    if (req.workspace) {
+      res.status(409).json({
+        error: 'Workspace provider checks require a connected workspace credential.',
+      });
       return;
     }
     const parsed = checkSchema.safeParse(req.body ?? {});

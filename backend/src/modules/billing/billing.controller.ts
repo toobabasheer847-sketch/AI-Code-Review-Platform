@@ -5,12 +5,18 @@ import { z } from 'zod'
 import logger from '@/utils/logger'
 import { env } from '@/config/env'
 import type Stripe from 'stripe'
+import { WorkspaceResourceService } from '@/modules/workspaces/workspace-resource.service'
 
 const billingService = new BillingService()
 const stripeService = new StripeService()
+const workspaceResources = new WorkspaceResourceService()
 
 export class BillingController {
   async createCheckout(req: Request, res: Response): Promise<void> {
+    if (req.workspace) {
+      res.status(409).json({ error: 'Workspace billing checkout is not available yet.' })
+      return
+    }
     const schema = z.object({ priceId: z.string().min(1).max(255) })
     let input: z.infer<typeof schema>
     try {
@@ -84,6 +90,10 @@ export class BillingController {
   }
 
   async cancelSubscription(req: Request, res: Response): Promise<void> {
+    if (req.workspace) {
+      res.status(409).json({ error: 'Workspace subscription cancellation is not available yet.' })
+      return
+    }
     if (!req.user?.userId) {
       res.status(401).json({ error: 'Unauthorized' })
       return
@@ -103,6 +113,11 @@ export class BillingController {
 
   async getSubscription(req: Request, res: Response): Promise<void> {
     try {
+      if (req.workspace) {
+        const workspaceBilling = await workspaceResources.getBilling(req.workspace.id)
+        res.json(workspaceBilling.billing)
+        return
+      }
       if (!req.user?.userId) {
         res.status(401).json({ error: 'Unauthorized' })
         return
@@ -118,6 +133,11 @@ export class BillingController {
 
   async getUsage(req: Request, res: Response): Promise<void> {
     try {
+      if (req.workspace) {
+        const workspaceBilling = await workspaceResources.getBilling(req.workspace.id)
+        res.json(workspaceBilling.usage)
+        return
+      }
       if (!req.user?.userId) {
         res.status(401).json({ error: 'Unauthorized' })
         return
