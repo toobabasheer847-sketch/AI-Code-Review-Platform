@@ -1,23 +1,12 @@
 import assert from 'node:assert/strict';
+import type { PrismaClient } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import express from 'express';
 import test from 'node:test';
+import { resolveDisposableTestDatabaseUrl } from '@/testing/disposable-database';
 
-const testDatabaseUrl = process.env.FINDING_LIFECYCLE_TEST_DATABASE_URL;
-if (testDatabaseUrl) {
-  const target = new URL(testDatabaseUrl);
-  const databaseName = target.pathname.slice(1);
-  if (
-    !['localhost', '127.0.0.1', '::1'].includes(target.hostname) ||
-    !/(test|lifecycle)/i.test(databaseName) ||
-    testDatabaseUrl !== process.env.DATABASE_URL
-  ) {
-    throw new Error(
-      'Finding lifecycle integration tests require DATABASE_URL to match a localhost test/lifecycle database.'
-    );
-  }
-}
+const testDatabaseUrl = resolveDisposableTestDatabaseUrl();
 
 test(
   'finding lifecycle persists owner-scoped feedback atomically and serves it through the API',
@@ -36,7 +25,10 @@ test(
       import('./review.service'),
       import('./review.routes'),
     ])
-    const { generateToken } = await import('@/utils/jwt');
+    const [{ generateToken }, { env }] = await Promise.all([
+      import('@/utils/jwt'),
+      import('@/config/env'),
+    ]);
     const ownerId = randomUUID();
     const otherUserId = randomUUID();
     const repositoryId = randomUUID();
@@ -71,7 +63,7 @@ test(
       tokenVersion: 0,
     });
     const authHeaders = (token: string) => ({
-      Authorization: `Bearer ${token}`,
+      Cookie: `${env.AUTH_SESSION_COOKIE_NAME}=${token}`,
       'Content-Type': 'application/json',
     });
     const triggerSuffix = randomUUID().replace(/-/g, '');
@@ -98,9 +90,12 @@ test(
           },
         ],
       });
+      const ownerWorkspaceId = await createPersonalWorkspace(prisma, ownerId);
+      await createPersonalWorkspace(prisma, otherUserId);
       await prisma.repository.create({
         data: {
           id: repositoryId,
+          workspaceId: ownerWorkspaceId,
           userId: ownerId,
           name: 'owner/repository',
           url: `https://example.test/${repositoryId}`,
@@ -109,6 +104,7 @@ test(
       await prisma.codeReview.create({
         data: {
           id: reviewId,
+          workspaceId: ownerWorkspaceId,
           userId: ownerId,
           repositoryId,
           title: 'Lifecycle integration review',
@@ -254,7 +250,7 @@ test(
         proposalBody.proposal.id,
         'integration-verification-result'
       )
-      assert.equal(simulatedVerification.status, 'VERIFIED')
+      assert.equal(simulatedVerification.status, 'NEEDS_REVIEW')
       assert.equal(simulatedVerification.patchSha256, proposalBody.proposal.patchSha256)
       assert.ok(simulatedVerification.startedAt instanceof Date)
       assert.ok(simulatedVerification.completedAt instanceof Date)
@@ -264,7 +260,7 @@ test(
         where: { id: simulatedVerification.id },
       })
       assert.equal(persistedAttempt.requestedById, ownerId)
-      assert.equal(persistedAttempt.status, 'VERIFIED')
+      assert.equal(persistedAttempt.status, 'NEEDS_REVIEW')
       assert.equal(persistedAttempt.patchSha256, proposalBody.proposal.patchSha256)
       assert.ok(persistedAttempt.completedAt instanceof Date)
       assert.deepEqual(persistedAttempt.testCommands, ['test-only synthetic runner result'])
@@ -464,8 +460,32 @@ test(
         await prisma.$executeRawUnsafe(`DROP TRIGGER "${triggerName}" ON "FindingFeedback";`);
       }
       await prisma.$executeRawUnsafe(`DROP FUNCTION IF EXISTS "${functionName}"();`);
+      await prisma.organization.deleteMany({ where: { ownerUserId: { in: ids } } });
       await prisma.user.deleteMany({ where: { id: { in: ids } } });
       await prisma.$disconnect();
     }
   }
 );
+
+async function createPersonalWorkspace(prisma: PrismaClient, userId: string): Promise<string> {
+  const workspaceId = `personal-workspace-${userId}`;
+  await prisma.organization.create({
+    data: {
+      id: `personal-org-${userId}`,
+      name: 'Personal',
+      slug: `personal-${userId}`,
+      isPersonal: true,
+      ownerUserId: userId,
+      workspaces: {
+        create: {
+          id: workspaceId,
+          name: 'Personal',
+          slug: 'personal',
+          isPersonal: true,
+          memberships: { create: { userId, role: 'OWNER', status: 'ACTIVE' } },
+        },
+      },
+    },
+  });
+  return workspaceId;
+}

@@ -162,6 +162,8 @@ SELECT
 FROM "User"
 ON CONFLICT ("id") DO NOTHING;
 
+CREATE UNIQUE INDEX "WorkspaceMembership_workspaceId_userId_key" ON "WorkspaceMembership"("workspaceId", "userId");
+
 INSERT INTO "WorkspaceMembership" ("id", "workspaceId", "userId", "role", "status")
 SELECT
     'personal-membership-' || "id",
@@ -241,7 +243,6 @@ CREATE UNIQUE INDEX "Organization_slug_key" ON "Organization"("slug");
 CREATE INDEX "Organization_ownerUserId_idx" ON "Organization"("ownerUserId");
 CREATE UNIQUE INDEX "Workspace_organizationId_slug_key" ON "Workspace"("organizationId", "slug");
 CREATE INDEX "Workspace_organizationId_idx" ON "Workspace"("organizationId");
-CREATE UNIQUE INDEX "WorkspaceMembership_workspaceId_userId_key" ON "WorkspaceMembership"("workspaceId", "userId");
 CREATE INDEX "WorkspaceMembership_userId_status_idx" ON "WorkspaceMembership"("userId", "status");
 CREATE INDEX "WorkspaceMembership_workspaceId_status_role_idx" ON "WorkspaceMembership"("workspaceId", "status", "role");
 CREATE UNIQUE INDEX "WorkspaceInvitation_tokenHash_key" ON "WorkspaceInvitation"("tokenHash");

@@ -221,12 +221,16 @@ For a production release:
 6. Retain the last known-good image and record the migration version and
    release owner.
 
-There are no tested down migrations or automatic data rollback procedures in
-this repository. Prefer a forward corrective migration and application
-rollback only when the schema remains backward-compatible. For an incompatible
-or destructive migration, stop writes and follow the approved restore plan;
-never restore over production without incident authorization and a preserved
-backup of the current state.
+There are no down migrations. The disposable-database suite checks that
+committed migrations stay additive and transactional, that a failed transaction
+leaves no partial schema or workspace rows, and that `prisma migrate deploy` can
+be run again after a failed change. The tenancy migration keeps nullable
+workspace associations so an application rollback can leave those tables in
+place. That suite does not restore a production backup. Prefer a forward
+corrective migration and application rollback only when the schema remains
+backward-compatible. For an incompatible or destructive migration, stop writes
+and follow the approved restore plan; never restore over production without
+incident authorization and a preserved backup of the current state.
 
 ## PostgreSQL backup and restore
 

@@ -19,49 +19,14 @@ import { publishCompletedPullRequestReview } from '@/modules/github/pull-request
 import type { ReviewJobData } from './review.queue'
 import logger from '@/utils/logger'
 import { reportBackendError } from '@/utils/error-monitoring'
-import { reviewWorkerScope } from './review.worker-domain'
+import { findReviewForProcessing } from './review.worker-store'
 
 const connection = createBullMqRedisConnection()
 const githubService = new GitHubService()
 
 const store: ReviewJobStore = {
   async findForProcessing(reviewId, workspaceId): Promise<ReviewJobRecord | null> {
-    const review = await prisma.codeReview.findFirst({
-      where: reviewWorkerScope(reviewId, workspaceId),
-      include: {
-        workspace: { select: { isPersonal: true } },
-        repository: { select: { id: true, name: true } },
-        user: { select: { email: true } },
-        analytics: { select: { qualityScore: true, totalIssues: true } },
-        findings: {
-          select: {
-            file: true,
-            line: true,
-            endLine: true,
-            severity: true,
-            category: true,
-            title: true,
-            message: true,
-            impact: true,
-            evidence: true,
-            suggestions: true,
-          },
-        },
-      },
-    })
-    if (!review || !review.workspaceId) return null
-    if (review.workspace && !review.workspace.isPersonal) {
-      const activeMembership = await prisma.workspaceMembership.findFirst({
-        where: {
-          workspaceId: review.workspaceId,
-          userId: review.userId,
-          status: 'ACTIVE',
-        },
-        select: { id: true },
-      })
-      if (!activeMembership) return null
-    }
-    return review
+    return findReviewForProcessing(reviewId, workspaceId)
   },
 
   async markRunning(reviewId): Promise<void> {

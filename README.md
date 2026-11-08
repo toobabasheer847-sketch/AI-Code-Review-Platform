@@ -499,14 +499,17 @@ npm test --workspace=frontend
 ```
 
 The root `npm test` command runs the backend Node test suite.
-`npm test --workspace=frontend` runs the frontend Vitest suite. CI currently
-runs the high-severity dependency audit gate, Prisma generation/validation and
-migrations against PostgreSQL 15, lint, type-check, backend and frontend unit
-tests, Chromium Playwright E2E tests with provider boundaries mocked, both
-workspace builds, and backend/runner/frontend Docker image builds. Provider
-OAuth, live webhooks, SMTP delivery, and production Redis/runner behavior
-require separate staging verification. Passing CI does not establish
-production readiness.
+`npm test --workspace=frontend` runs the frontend Vitest suite.
+`npm run test:database --workspace=backend` runs migration, workspace, tenant
+isolation, and finding-lifecycle tests against the local disposable database
+`ai_codeguard_integration_test`. Live model and provider tests stay opt-in.
+CI currently runs the high-severity dependency audit gate, Prisma
+generation/validation and migrations against disposable PostgreSQL 15, lint,
+type-check, backend and frontend unit tests, the database integration suite,
+Chromium Playwright E2E tests with provider boundaries mocked, both workspace
+builds, and backend/runner/frontend Docker image builds. Provider OAuth, live
+webhooks, SMTP delivery, and production Redis/runner behavior require separate
+staging verification. Passing CI does not establish production readiness.
 
 ## 📝 Code Quality
 

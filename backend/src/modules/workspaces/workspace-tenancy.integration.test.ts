@@ -4,21 +4,9 @@ import { once } from 'node:events'
 import express from 'express'
 import test from 'node:test'
 import { AutomationMode, AutomationStatus, SocialPostStatus, SocialProvider, WorkspaceIntegrationProvider } from '@prisma/client'
+import { resolveDisposableTestDatabaseUrl } from '@/testing/disposable-database'
 
-const testDatabaseUrl = process.env.WORKSPACE_TENANCY_TEST_DATABASE_URL
-if (testDatabaseUrl) {
-  const target = new URL(testDatabaseUrl)
-  const databaseName = decodeURIComponent(target.pathname.slice(1))
-  if (
-    !['localhost', '127.0.0.1', '::1'].includes(target.hostname) ||
-    !/(test|workspace|integration)/i.test(databaseName) ||
-    testDatabaseUrl !== process.env.DATABASE_URL
-  ) {
-    throw new Error(
-      'Workspace tenancy integration tests require DATABASE_URL to match a localhost disposable test database.'
-    )
-  }
-}
+const testDatabaseUrl = resolveDisposableTestDatabaseUrl()
 
 test(
   'workspace APIs and background jobs isolate records by active workspace membership',
@@ -30,6 +18,7 @@ test(
       { generateToken },
       { encrypt },
       { loadAutomationJob },
+      { findReviewForProcessing },
       { SocialService },
       { default: automationRoutes },
       { default: socialRoutes },
@@ -41,6 +30,7 @@ test(
       import('@/utils/jwt'),
       import('@/utils/crypto'),
       import('@/modules/automation/automation.worker'),
+      import('@/jobs/review.worker-store'),
       import('@/modules/social/social.service'),
       import('@/modules/automation/automation.routes'),
       import('@/modules/social/social.routes'),
@@ -328,10 +318,14 @@ test(
       assert.equal(otherIntegrationResponse.status, 404)
 
       const billingResponse = await fetch(`${baseUrl}/billing/subscription`, {
-        headers: headersFor(viewerAId, workspaceAId),
+        headers: headersFor(ownerAId, workspaceAId),
       })
       assert.equal(billingResponse.status, 200)
       assert.equal((await billingResponse.json() as { plan: string }).plan, 'PRO')
+      const viewerBilling = await fetch(`${baseUrl}/billing/subscription`, {
+        headers: headersFor(viewerAId, workspaceAId),
+      })
+      assert.equal(viewerBilling.status, 403)
       const billingMutationDenied = await fetch(`${baseUrl}/billing/cancel-subscription`, {
         method: 'POST',
         headers: headersFor(viewerAId, workspaceAId),
@@ -351,6 +345,34 @@ test(
       assert.equal(
         (await prisma.socialPost.findUniqueOrThrow({ where: { id: socialB.id } })).status,
         SocialPostStatus.SCHEDULED
+      )
+      assert.equal(await findReviewForProcessing(foreignReviewId, workspaceAId), null)
+      assert.equal(await findReviewForProcessing(foreignReviewId, workspaceBId), null)
+      assert.equal(
+        (await prisma.codeReview.findUnique({ where: { id: foreignReviewId } }))?.workspaceId,
+        workspaceBId
+      )
+      assert.equal(
+        (
+          await prisma.repository.findMany({ where: { workspaceId: workspaceAId } })
+        ).some((repository) => repository.id === repositoryId),
+        false
+      )
+      assert.equal(
+        await prisma.workspaceIntegration.count({ where: { workspaceId: workspaceBId } }),
+        0
+      )
+      assert.equal(
+        (
+          await prisma.workspaceIntegration.findFirstOrThrow({
+            where: { workspaceId: workspaceAId },
+          })
+        ).encryptedCredential,
+        encryptedCredential
+      )
+      assert.equal(
+        await prisma.workspaceBillingAccount.count({ where: { organizationId: organizationBId } }),
+        0
       )
     } finally {
       await new Promise<void>((resolve, reject) => {

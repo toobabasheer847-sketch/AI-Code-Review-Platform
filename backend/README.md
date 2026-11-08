@@ -61,22 +61,25 @@ Workspace provider health checks and workspace Stripe checkout/cancellation are
 not yet implemented and return an explicit conflict rather than falling back to
 personal credentials or billing.
 
-Database-backed tenant-isolation tests require a blank disposable PostgreSQL
-database on localhost whose name contains `test`, `workspace`, or `integration`.
-Set `DATABASE_URL` and `WORKSPACE_TENANCY_TEST_DATABASE_URL` to the exact same
-local test URL, then apply migrations and run the test:
+Database-backed workspace, migration, and tenant-isolation tests use a dedicated
+local PostgreSQL database. Create `ai_codeguard_integration_test` on localhost
+(Compose creates it on a new PostgreSQL volume). Do not point these commands at
+`ai_codeguard`, another shared database, or any remote host.
 
 ```powershell
-$env:DATABASE_URL = "postgresql://<local-user>:<local-password>@localhost:5432/ai_codeguard_workspace_test"
-$env:WORKSPACE_TENANCY_TEST_DATABASE_URL = $env:DATABASE_URL
+$env:DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/ai_codeguard_integration_test"
+$env:INTEGRATION_TEST_DATABASE_URL = $env:DATABASE_URL
 npm run prisma:deploy --workspace=backend
-npm run test:workspace-tenancy:integration --workspace=backend
+npm run test:database --workspace=backend
 ```
 
-The test refuses remote hosts, database names without a test marker, or a test
-URL different from `DATABASE_URL`; it removes only the fixture workspaces,
-organizations, users, repositories, and reviews it creates. Never use a
-production or shared database for this command.
+`npm run db:reset:test --workspace=backend` drops and recreates only that
+database, then reapplies the committed migrations. The guard rejects remote
+hosts, the application database name, production-like names, and a test URL
+that differs from `DATABASE_URL`. `WORKSPACE_TENANCY_TEST_DATABASE_URL` and
+`FINDING_LIFECYCLE_TEST_DATABASE_URL` still select the suite when they match
+that same URL. The tests delete only the fixture rows they create. Live model
+and provider tests stay opt-in because they need external credentials.
 
 ### Personal AI work memory
 
@@ -366,12 +369,10 @@ secrets out of the runner environment. A process crash can leave an attempt in
 `RUNNING`; retry keys prevent duplicate execution, but automated stale-attempt
 recovery is not implemented and would need to be added with the isolated worker.
 
-To exercise database persistence and API authorization, point both
-`DATABASE_URL` and `FINDING_LIFECYCLE_TEST_DATABASE_URL` at the same blank,
-disposable PostgreSQL database on localhost whose database name contains
-`test` or `lifecycle`. Apply migrations with `npm run prisma:deploy`, then run
-`npm run test:finding-lifecycle:integration`. The test refuses remote or
-non-test-named databases and removes only the fixture users it creates.
+Finding persistence is covered by the disposable-database suite documented
+above. `npm run test:finding-lifecycle:integration` still runs that file alone
+when `DATABASE_URL` matches `INTEGRATION_TEST_DATABASE_URL` or
+`FINDING_LIFECYCLE_TEST_DATABASE_URL`.
 
 ### GitHub pull request webhooks
 
