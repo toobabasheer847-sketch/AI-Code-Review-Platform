@@ -464,4 +464,37 @@ export class WorkspaceService {
       })
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable })
   }
+
+  async update(workspaceId: string, input: { name: string }) {
+    const name = input.name.trim()
+    if (name.length < 2 || name.length > 80) {
+      throw new WorkspaceServiceError(400, 'Workspace name must be between 2 and 80 characters')
+    }
+    let slug: string
+    try {
+      slug = normalizeWorkspaceSlug(name)
+    } catch {
+      throw new WorkspaceServiceError(400, 'Workspace name must contain letters or numbers')
+    }
+    const existing = await prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { id: true, isPersonal: true },
+    })
+    if (!existing) throw new WorkspaceServiceError(404, 'Workspace not found')
+    if (existing.isPersonal) {
+      throw new WorkspaceServiceError(409, 'Personal workspaces cannot be renamed')
+    }
+    try {
+      return await prisma.workspace.update({
+        where: { id: workspaceId },
+        data: { name, slug },
+        include: { organization: { select: { id: true, name: true, slug: true } } },
+      })
+    } catch (error) {
+      if (isUniqueConstraintError(error)) {
+        throw new WorkspaceServiceError(409, 'A workspace with this name already exists')
+      }
+      throw error
+    }
+  }
 }

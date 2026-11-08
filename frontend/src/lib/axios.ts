@@ -2,6 +2,7 @@ import axios, { AxiosInstance, type AxiosError, type InternalAxiosRequestConfig 
 
 import { useAppStore } from '@/app/store/useAppStore'
 import type { CsrfResponse } from '@/features/auth/api/authApi'
+import { getActiveWorkspaceId } from '@/features/workspaces/store/workspace-selection'
 import { reportFrontendError } from '@/lib/errorMonitoring'
 import { queryClient } from '@/lib/queryClient'
 
@@ -67,6 +68,10 @@ function clearCsrfToken(): void {
 
 axiosInstance.interceptors.request.use(
   async (config) => {
+    const workspaceId = getActiveWorkspaceId()
+    if (workspaceId && !PUBLIC_AUTH_ENDPOINTS.has(requestPath(config))) {
+      config.headers['X-Workspace-Id'] = workspaceId
+    }
     if (isUnsafeMethod(config) && requestPath(config) !== '/auth/csrf') {
       config.headers['X-CSRF-Token'] = await getCsrfToken()
     }

@@ -87,6 +87,16 @@ const VerificationHistoryPage = lazy(() =>
 const SettingsPage = lazy(() =>
   import('@features/profile/pages/SettingsPage').then((m) => ({ default: m.SettingsPage }))
 );
+const WorkspaceSettingsPage = lazy(() =>
+  import('@features/workspaces/pages/WorkspaceSettingsPage').then((m) => ({
+    default: m.WorkspaceSettingsPage,
+  }))
+);
+const AcceptInvitationPage = lazy(() =>
+  import('@features/workspaces/pages/AcceptInvitationPage').then((m) => ({
+    default: m.AcceptInvitationPage,
+  }))
+);
 const AutomationPage = lazy(() =>
   import('@features/automation/pages/AutomationPage').then((m) => ({ default: m.AutomationPage }))
 );
@@ -344,6 +354,24 @@ export const routes: RouteObject[] = [
           <ReviewsPage />
         </Suspense>
       </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/workspaces',
+    element: (
+      <ProtectedRoute>
+        <Suspense fallback={<LazyFallback />}>
+          <WorkspaceSettingsPage />
+        </Suspense>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/accept-invitation',
+    element: (
+      <Suspense fallback={<LazyFallback />}>
+        <AcceptInvitationPage />
+      </Suspense>
     ),
   },
   {

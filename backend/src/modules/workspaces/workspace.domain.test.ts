@@ -24,6 +24,9 @@ test('workspace roles enforce read, mutation, administration, billing, and trans
   assert.equal(hasWorkspacePermission('DEVELOPER', 'manage_integrations'), false)
   assert.equal(hasWorkspacePermission('VIEWER', 'read'), true)
   assert.equal(hasWorkspacePermission('VIEWER', 'update_findings'), false)
+  assert.equal(hasWorkspacePermission('DEVELOPER', 'manage_members'), false)
+  assert.equal(hasWorkspacePermission('VIEWER', 'manage_members'), false)
+  assert.equal(hasWorkspacePermission('VIEWER', 'transfer_ownership'), false)
 })
 
 test('workspace invitation acceptance checks single-use state, expiry, verification, and email', () => {

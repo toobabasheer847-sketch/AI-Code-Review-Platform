@@ -8,6 +8,7 @@ import {
   Code2,
   FileSearch,
   BarChart3,
+  Building2,
   ListChecks,
   Github,
   Cable,
@@ -25,9 +26,11 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { useLogout } from '@/features/auth/hooks/useAuth';
+import { WorkspaceSwitcher } from '@/features/workspaces/components/WorkspaceSwitcher';
 
 const navigation = [
   { to: '/dashboard', label: 'Overview', icon: LayoutDashboard },
+  { to: '/workspaces', label: 'Workspace', icon: Building2 },
   { to: '/automations', label: 'Command center', icon: Workflow },
   { to: '/automations?view=approvals', label: 'Approval inbox', icon: Bell },
   { to: '/github/agent', label: 'GitHub agent', icon: Code2 },
@@ -307,6 +310,7 @@ export const AutomationShell = ({
               )}
             </div>
             <div className="ml-auto flex shrink-0 items-center gap-2">
+              <WorkspaceSwitcher />
               <Link
                 to="/automations?view=approvals"
                 className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/[0.08] text-slate-400 transition hover:border-white/15 hover:bg-white/[0.04] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"

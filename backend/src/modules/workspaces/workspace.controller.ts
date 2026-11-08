@@ -31,6 +31,7 @@ const updateMemberSchema = z
   .strict()
   .refine((value) => value.role !== undefined || value.status !== undefined)
 const transferSchema = z.object({ newOwnerId: z.string().min(1) }).strict()
+const updateWorkspaceSchema = z.object({ name: z.string().trim().min(2).max(80) }).strict()
 
 function respondError(res: Response, error: unknown, fallback: string): void {
   if (error instanceof WorkspaceServiceError) {
@@ -96,6 +97,20 @@ export class WorkspaceController {
       res.status(201).json({ workspace: { ...workspace, role: 'OWNER' } })
     } catch (error) {
       respondError(res, error, 'Unable to create organization workspace')
+    }
+  }
+
+  async update(req: Request, res: Response): Promise<void> {
+    const parsed = updateWorkspaceSchema.safeParse(req.body)
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Invalid workspace details' })
+      return
+    }
+    try {
+      const workspace = await service.update(req.workspace!.id, parsed.data)
+      res.json({ workspace: { ...workspace, role: req.workspace!.role } })
+    } catch (error) {
+      respondError(res, error, 'Unable to update workspace')
     }
   }
 

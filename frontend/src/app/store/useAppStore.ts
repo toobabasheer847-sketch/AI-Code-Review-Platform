@@ -1,6 +1,8 @@
 import Cookies from 'js-cookie'
 import { create } from 'zustand'
 
+import { clearWorkspaceSession } from '@/features/workspaces/store/workspace-selection'
+
 export interface User {
   id: string
   email: string
@@ -74,6 +76,7 @@ export const useAppStore = create<AppStore>()((set) => ({
   setGitHubConnected: (githubConnected) => set({ githubConnected }),
   setGitHubUsername: (githubUsername) => set({ githubUsername }),
   logout: () => {
+    clearWorkspaceSession()
     set(initialState)
     if (typeof BroadcastChannel !== 'undefined') {
       const channel = new BroadcastChannel(SESSION_CHANNEL_NAME)
@@ -95,10 +98,16 @@ if (typeof window !== 'undefined') {
   if (typeof BroadcastChannel !== 'undefined') {
     const channel = new BroadcastChannel(SESSION_CHANNEL_NAME)
     channel.onmessage = (event: MessageEvent<unknown>) => {
-      if (event.data === 'invalidated') useAppStore.setState(initialState)
+      if (event.data === 'invalidated') {
+        clearWorkspaceSession()
+        useAppStore.setState(initialState)
+      }
     }
   }
   window.addEventListener('storage', (event) => {
-    if (event.key === SESSION_INVALIDATION_KEY) useAppStore.setState(initialState)
+    if (event.key === SESSION_INVALIDATION_KEY) {
+      clearWorkspaceSession()
+      useAppStore.setState(initialState)
+    }
   })
 }

@@ -95,5 +95,11 @@ router.post(
   requireWorkspacePermission('transfer_ownership'),
   (req, res) => controller.transferOwnership(req, res)
 )
+router.patch(
+  '/:workspaceId',
+  workspaceAccessMiddleware,
+  requireWorkspacePermission('manage_members'),
+  (req, res) => controller.update(req, res)
+)
 
 export default router
