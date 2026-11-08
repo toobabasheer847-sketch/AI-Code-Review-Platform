@@ -721,6 +721,209 @@ describe('workspace database lifecycle', { concurrency: false, skip: !testDataba
     }
   })
 
+  test('declines a pending invitation only for the verified invited email', async () => {
+    const [{ prisma }, { WorkspaceService, WorkspaceServiceError }] = await Promise.all([
+      import('@/config/database'),
+      import('@/modules/workspaces/workspace.service'),
+    ])
+    const suffix = randomUUID()
+    const owner = await createUser(prisma, `decline-owner-${suffix}`)
+    const invitee = await createUser(prisma, `decline-invitee-${suffix}`)
+    const outsider = await createUser(prisma, `decline-outsider-${suffix}`)
+    const unverified = await createUser(prisma, `decline-unverified-${suffix}`, { isVerified: false })
+    const userIds = [owner.id, invitee.id, outsider.id, unverified.id]
+    const service = new WorkspaceService({ async send() { return undefined } })
+    const expectError =
+      (statusCode: number, message: string) =>
+      (error: unknown): true => {
+        assert.ok(error instanceof WorkspaceServiceError)
+        assert.equal(error.statusCode, statusCode)
+        assert.equal(error.message, message)
+        assert.equal(/token|accept-invitation/i.test(error.message), false)
+        return true
+      }
+
+    try {
+      const workspace = await service.create(owner.id, {
+        name: 'Decline Team',
+        organizationName: `Decline ${suffix}`,
+      })
+      const other = await service.create(outsider.id, {
+        name: 'Decline Other',
+        organizationName: `Decline Other ${suffix}`,
+      })
+      const invitation = await service.createInvitation(workspace.id, owner.id, invitee.email, 'DEVELOPER')
+      const unknownToken = 'not-a-real-invitation-token-value-123456'
+      await assert.rejects(
+        () => service.declineInvitation(invitee.id, unknownToken),
+        (error: unknown) => {
+          assert.ok(error instanceof WorkspaceServiceError)
+          assert.equal(error.statusCode, 404)
+          assert.equal(error.message.includes(unknownToken), false)
+          return true
+        }
+      )
+      await assert.rejects(
+        () => service.declineInvitation(outsider.id, invitation.token),
+        expectError(403, 'Sign in with the email address that received this invitation')
+      )
+      const unverifiedInvite = await service.createInvitation(
+        workspace.id,
+        owner.id,
+        unverified.email,
+        'VIEWER'
+      )
+      await assert.rejects(
+        () => service.declineInvitation(unverified.id, unverifiedInvite.token),
+        expectError(403, 'A verified account is required to accept invitations')
+      )
+      assert.equal(
+        (await prisma.workspaceInvitation.findUniqueOrThrow({ where: { id: unverifiedInvite.id } })).status,
+        'PENDING'
+      )
+      assert.equal(
+        (await prisma.workspaceInvitation.findUniqueOrThrow({ where: { id: invitation.id } })).status,
+        'PENDING'
+      )
+      assert.equal(
+        await prisma.workspaceMembership.count({ where: { workspaceId: workspace.id, userId: outsider.id } }),
+        0
+      )
+      assert.equal(
+        await prisma.workspaceMembership.count({ where: { workspaceId: other.id, userId: outsider.id } }),
+        1
+      )
+
+      const declined = await service.declineInvitation(invitee.id, invitation.token)
+      assert.deepEqual(declined, { id: invitation.id, status: 'DECLINED' })
+      assert.equal(Object.hasOwn(declined, 'token'), false)
+      assert.equal(JSON.stringify(declined).includes(invitation.token), false)
+      const listed = await service.listInvitations(workspace.id)
+      assert.equal(listed.some((row) => row.id === invitation.id && row.status === 'DECLINED'), true)
+      assert.equal(JSON.stringify(listed).includes(invitation.token), false)
+      assert.equal(
+        (await service.listInvitations(other.id)).some((row) => row.id === invitation.id),
+        false
+      )
+      await assert.rejects(
+        () => service.declineInvitation(invitee.id, invitation.token),
+        expectError(409, 'This invitation has already been declined')
+      )
+      await assert.rejects(
+        () => service.acceptInvitation(invitee.id, invitation.token),
+        expectError(404, 'Invitation is invalid or has already been used')
+      )
+      assert.equal(
+        await prisma.workspaceMembership.count({ where: { workspaceId: workspace.id, userId: invitee.id } }),
+        0
+      )
+
+      const expired = await service.createInvitation(workspace.id, owner.id, `expired-${suffix}@example.test`, 'VIEWER')
+      await prisma.workspaceInvitation.update({
+        where: { id: expired.id },
+        data: { expiresAt: new Date('2020-01-01T00:00:00.000Z') },
+      })
+      const expiredUser = await createUser(prisma, `decline-expired-${suffix}`)
+      userIds.push(expiredUser.id)
+      await prisma.user.update({
+        where: { id: expiredUser.id },
+        data: { email: `expired-${suffix}@example.test` },
+      })
+      await assert.rejects(
+        () => service.declineInvitation(expiredUser.id, expired.token),
+        expectError(410, 'Invitation has expired')
+      )
+      assert.equal(
+        (await prisma.workspaceInvitation.findUniqueOrThrow({ where: { id: expired.id } })).status,
+        'EXPIRED'
+      )
+
+      const acceptedInvite = await service.createInvitation(
+        workspace.id,
+        owner.id,
+        `accepted-${suffix}@example.test`,
+        'VIEWER'
+      )
+      const acceptedUser = await createUser(prisma, `decline-accepted-${suffix}`)
+      userIds.push(acceptedUser.id)
+      await prisma.user.update({
+        where: { id: acceptedUser.id },
+        data: { email: `accepted-${suffix}@example.test` },
+      })
+      await service.acceptInvitation(acceptedUser.id, acceptedInvite.token)
+      await assert.rejects(
+        () => service.declineInvitation(acceptedUser.id, acceptedInvite.token),
+        expectError(409, 'This invitation has already been accepted')
+      )
+
+      const revokedInvite = await service.createInvitation(
+        workspace.id,
+        owner.id,
+        `revoked-${suffix}@example.test`,
+        'VIEWER'
+      )
+      await service.revokeInvitation(workspace.id, revokedInvite.id)
+      const revokedUser = await createUser(prisma, `decline-revoked-${suffix}`)
+      userIds.push(revokedUser.id)
+      await prisma.user.update({
+        where: { id: revokedUser.id },
+        data: { email: `revoked-${suffix}@example.test` },
+      })
+      await assert.rejects(
+        () => service.declineInvitation(revokedUser.id, revokedInvite.token),
+        expectError(409, 'This invitation has been revoked')
+      )
+    } finally {
+      await prisma.organization.deleteMany({ where: { ownerUserId: { in: [owner.id, outsider.id] } } })
+      await prisma.user.deleteMany({ where: { id: { in: userIds } } })
+    }
+  })
+
+  test('lets only one of accept or decline win the invitation lock', async () => {
+    const [{ prisma }, { WorkspaceService, WorkspaceServiceError }] = await Promise.all([
+      import('@/config/database'),
+      import('@/modules/workspaces/workspace.service'),
+    ])
+    const suffix = randomUUID()
+    const owner = await createUser(prisma, `race-owner-${suffix}`)
+    const invitee = await createUser(prisma, `race-invitee-${suffix}`)
+    const service = new WorkspaceService({ async send() { return undefined } })
+
+    try {
+      const workspace = await service.create(owner.id, {
+        name: 'Race Team',
+        organizationName: `Race ${suffix}`,
+      })
+      const invitation = await service.createInvitation(workspace.id, owner.id, invitee.email, 'DEVELOPER')
+      const results = await Promise.allSettled([
+        service.acceptInvitation(invitee.id, invitation.token),
+        service.declineInvitation(invitee.id, invitation.token),
+      ])
+      const fulfilled = results.filter((result) => result.status === 'fulfilled')
+      const rejected = results.filter((result) => result.status === 'rejected')
+      assert.equal(fulfilled.length, 1)
+      assert.equal(rejected.length, 1)
+      const row = await prisma.workspaceInvitation.findUniqueOrThrow({ where: { id: invitation.id } })
+      const membership = await prisma.workspaceMembership.findUnique({
+        where: { workspaceId_userId: { workspaceId: workspace.id, userId: invitee.id } },
+      })
+      const failure = rejected[0]?.status === 'rejected' ? rejected[0].reason : undefined
+      assert.ok(failure instanceof WorkspaceServiceError)
+      assert.equal(/token|accept-invitation/i.test(failure.message), false)
+      if (row.status === 'ACCEPTED') {
+        assert.equal(membership?.status, 'ACTIVE')
+        assert.equal(failure.statusCode, 409)
+      } else {
+        assert.equal(row.status, 'DECLINED')
+        assert.equal(membership, null)
+        assert.equal(failure.statusCode, 404)
+      }
+    } finally {
+      await prisma.organization.deleteMany({ where: { ownerUserId: owner.id } })
+      await prisma.user.deleteMany({ where: { id: { in: [owner.id, invitee.id] } } })
+    }
+  })
+
   after(async () => {
     const { prisma } = await import('@/config/database')
     await prisma.$disconnect()

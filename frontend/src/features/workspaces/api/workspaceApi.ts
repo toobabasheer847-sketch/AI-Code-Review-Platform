@@ -130,6 +130,15 @@ export const workspaceApi = {
   async transferOwnership(workspaceId: string, newOwnerId: string): Promise<void> {
     await axiosInstance.post(`/workspaces/${workspaceId}/transfer-ownership`, { newOwnerId })
   },
+  async declineInvitation(token: string): Promise<{ id: string; status: 'DECLINED' }> {
+    const response = await axiosInstance.post<{
+      invitation?: { id?: string; status?: string; token?: string; acceptUrl?: string }
+    }>('/workspaces/invitations/decline', { token })
+    return {
+      id: response.data.invitation?.id ?? '',
+      status: 'DECLINED',
+    }
+  },
   async acceptInvitation(token: string): Promise<{ workspaceId: string; role: WorkspaceRole }> {
     const response = await axiosInstance.post<{ membership: { workspaceId: string; role: WorkspaceRole } }>(
       '/workspaces/invitations/accept',

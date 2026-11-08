@@ -115,6 +115,7 @@ enum WorkspaceInvitationStatus {
   ACCEPTED
   REVOKED
   EXPIRED
+  DECLINED
 }
 
 model WorkspaceMembership {

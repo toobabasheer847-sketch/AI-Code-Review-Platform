@@ -81,6 +81,25 @@ describe('workspace API client', () => {
     expect(axiosInstance.post).toHaveBeenCalledWith('/workspaces/ws-team/invitations/inv-1/resend')
   })
 
+  it('does not return invitation secrets from a decline response', async () => {
+    vi.mocked(axiosInstance.post).mockResolvedValue({
+      data: {
+        invitation: {
+          id: 'inv-3',
+          status: 'DECLINED',
+          token: 'super-secret-invitation-token-value',
+          acceptUrl: 'http://localhost/accept-invitation?token=super-secret-invitation-token-value',
+        },
+      },
+    })
+
+    const invitation = await workspaceApi.declineInvitation('super-secret-invitation-token-value')
+
+    expect(invitation).toEqual({ id: 'inv-3', status: 'DECLINED' })
+    expect(JSON.stringify(invitation)).not.toContain('super-secret')
+    expect(JSON.stringify(invitation)).not.toContain('acceptUrl')
+  })
+
   it('returns safe API messages and hides invitation secrets', () => {
     const response = (error: string): AxiosError =>
       new AxiosError('request failed', '400', undefined, undefined, {

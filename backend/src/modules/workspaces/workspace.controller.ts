@@ -128,6 +128,21 @@ export class WorkspaceController {
     }
   }
 
+  async declineInvitation(req: Request, res: Response): Promise<void> {
+    const id = userId(req, res)
+    if (!id) return
+    const parsed = acceptInvitationSchema.safeParse(req.body)
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Invalid invitation token' })
+      return
+    }
+    try {
+      res.json({ invitation: await service.declineInvitation(id, parsed.data.token) })
+    } catch (error) {
+      respondError(res, error, 'Unable to decline invitation')
+    }
+  }
+
   async members(req: Request, res: Response): Promise<void> {
     try {
       res.json({ members: await service.listMembers(req.workspace!.id) })

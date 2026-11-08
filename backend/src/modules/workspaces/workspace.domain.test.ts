@@ -5,6 +5,7 @@ import {
   canTransferOrganizationOwnership,
   hasWorkspacePermission,
   invitationAcceptanceFailure,
+  invitationDeclineFailure,
   normalizeInvitationEmail,
   normalizeWorkspaceSlug,
   workspaceReviewWhere,
@@ -63,6 +64,20 @@ test('workspace invitation acceptance checks single-use state, expiry, verificat
   assert.equal(
     invitationAcceptanceFailure({ ...base, role: 'OWNER' }, now),
     'INVALID_ROLE'
+  )
+  assert.equal(invitationAcceptanceFailure({ ...base, status: 'DECLINED' }, now), 'INVALID')
+  assert.equal(invitationDeclineFailure(base, now), null)
+  assert.equal(invitationDeclineFailure({ ...base, status: 'ACCEPTED' }, now), 'ACCEPTED')
+  assert.equal(invitationDeclineFailure({ ...base, status: 'REVOKED' }, now), 'REVOKED')
+  assert.equal(invitationDeclineFailure({ ...base, status: 'DECLINED' }, now), 'ALREADY_DECLINED')
+  assert.equal(
+    invitationDeclineFailure({ ...base, expiresAt: new Date('2026-11-30T00:00:00.000Z') }, now),
+    'EXPIRED'
+  )
+  assert.equal(invitationDeclineFailure({ ...base, userIsVerified: false }, now), 'UNVERIFIED')
+  assert.equal(
+    invitationDeclineFailure({ ...base, userEmail: 'other@example.com' }, now),
+    'EMAIL_MISMATCH'
   )
   assert.equal(normalizeInvitationEmail(' Member@Example.com '), 'member@example.com')
 })

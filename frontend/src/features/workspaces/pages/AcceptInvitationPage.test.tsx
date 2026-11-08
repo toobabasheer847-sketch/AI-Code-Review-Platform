@@ -50,6 +50,7 @@ vi.mock('../api/workspaceApi', async () => {
       ...actual.workspaceApi,
       list: vi.fn(),
       acceptInvitation: vi.fn(),
+      declineInvitation: vi.fn(),
     },
   }
 })
@@ -183,6 +184,79 @@ describe('accept invitation flow', () => {
     expect(document.body.textContent).toContain('Invitation unavailable')
     expect(document.body.textContent).toContain('revoked')
     expect(document.body.textContent).not.toContain(secret)
+  })
+
+  it('confirms a decline, shows progress, and removes the secret', async () => {
+    auth.state = { data: user, isLoading: false }
+    useAppStore.getState().setUser(user)
+    let finish: (value: { id: string; status: 'DECLINED' }) => void = () => undefined
+    vi.mocked(workspaceApi.declineInvitation).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        })
+    )
+    const router = render(`/accept-invitation?token=${secret}`)
+    await settle()
+    const open = Array.from(document.querySelectorAll('button')).find(
+      (element) => element.textContent?.trim() === 'Decline invitation'
+    )
+    if (!(open instanceof HTMLButtonElement)) throw new Error('Missing decline button')
+    await act(async () => {
+      open.click()
+    })
+    expect(document.body.textContent).toContain('Decline this invitation?')
+    const confirm = Array.from(document.querySelectorAll('button')).find(
+      (element) => element.textContent?.trim() === 'Decline invitation' && element !== open
+    )
+    if (!(confirm instanceof HTMLButtonElement)) throw new Error('Missing decline confirmation')
+    await act(async () => {
+      confirm.click()
+    })
+    expect(document.body.textContent).toContain('Declining...')
+    await act(async () => {
+      finish({ id: 'inv-1', status: 'DECLINED' })
+    })
+    await settle()
+    expect(workspaceApi.declineInvitation).toHaveBeenCalledWith(secret)
+    expect(document.body.textContent).toContain('Invitation declined')
+    expect(document.body.textContent).not.toContain(secret)
+    expect(readInvitationToken()).toBeNull()
+    expect(router.state.location.search).toBe('')
+  })
+
+  it('shows a decline error without revealing the invitation secret', async () => {
+    auth.state = { data: user, isLoading: false }
+    useAppStore.getState().setUser(user)
+    vi.mocked(workspaceApi.declineInvitation).mockRejectedValue(
+      new AxiosError('request failed', '409', undefined, undefined, {
+        status: 409,
+        data: { error: `Decline failed for token ${secret}` },
+        statusText: 'Error',
+        headers: {},
+        config: { headers: {} },
+      } as AxiosResponse)
+    )
+    render(`/accept-invitation?token=${secret}`)
+    await settle()
+    const open = Array.from(document.querySelectorAll('button')).find(
+      (element) => element.textContent?.trim() === 'Decline invitation'
+    )
+    if (!(open instanceof HTMLButtonElement)) throw new Error('Missing decline button')
+    await act(async () => {
+      open.click()
+    })
+    const confirm = Array.from(document.querySelectorAll('button')).find(
+      (element) => element.textContent?.trim() === 'Decline invitation' && element !== open
+    )
+    if (!(confirm instanceof HTMLButtonElement)) throw new Error('Missing decline confirmation')
+    await act(async () => {
+      confirm.click()
+    })
+    await settle()
+    expect(document.body.textContent).toContain('This invitation can no longer be declined.')
+    expect(document.body.textContent).not.toContain(secret)
+    expect(readInvitationToken()).toBeNull()
   })
 
   it('shows an invalid state when the link has no usable token', async () => {

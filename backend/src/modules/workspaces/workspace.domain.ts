@@ -86,6 +86,12 @@ export type InvitationAcceptanceFailure =
   | 'EMAIL_MISMATCH'
   | 'INVALID_ROLE'
 
+export type InvitationDeclineFailure =
+  | InvitationAcceptanceFailure
+  | 'ACCEPTED'
+  | 'REVOKED'
+  | 'ALREADY_DECLINED'
+
 export function invitationAcceptanceFailure(input: {
   email: string
   userEmail: string
@@ -96,6 +102,25 @@ export function invitationAcceptanceFailure(input: {
 }, now = new Date()): InvitationAcceptanceFailure | null {
   if (input.status !== 'PENDING') return 'INVALID'
   if (input.expiresAt <= now) return 'EXPIRED'
+  if (!input.userIsVerified) return 'UNVERIFIED'
+  if (normalizeInvitationEmail(input.userEmail) !== input.email) return 'EMAIL_MISMATCH'
+  if (input.role === 'OWNER') return 'INVALID_ROLE'
+  return null
+}
+
+export function invitationDeclineFailure(input: {
+  email: string
+  userEmail: string
+  userIsVerified: boolean
+  role: WorkspaceRole
+  status: WorkspaceInvitationStatus
+  expiresAt: Date
+}, now = new Date()): InvitationDeclineFailure | null {
+  if (input.status === 'ACCEPTED') return 'ACCEPTED'
+  if (input.status === 'REVOKED') return 'REVOKED'
+  if (input.status === 'DECLINED') return 'ALREADY_DECLINED'
+  if (input.status === 'EXPIRED' || input.expiresAt <= now) return 'EXPIRED'
+  if (input.status !== 'PENDING') return 'INVALID'
   if (!input.userIsVerified) return 'UNVERIFIED'
   if (normalizeInvitationEmail(input.userEmail) !== input.email) return 'EMAIL_MISMATCH'
   if (input.role === 'OWNER') return 'INVALID_ROLE'

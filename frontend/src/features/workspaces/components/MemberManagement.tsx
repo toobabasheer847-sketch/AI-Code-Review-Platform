@@ -348,7 +348,7 @@ export function InvitationManagement({ workspace }: InvitationManagementProps): 
     <section className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-4 sm:p-6">
       <h2 className="text-base font-semibold text-white">Invitations</h2>
       <p className="mt-1 text-sm text-slate-400">
-        Invitation emails are sent to the invited person. Links stay out of this page. Pending invitations remain listed until they are accepted, revoked, or expire.
+        Invitation emails are sent to the invited person. Links stay out of this page. Pending invitations remain listed until they are accepted, declined, revoked, or expire. Declined invitations stay visible here.
       </p>
       <form
         aria-label="Invite member"
@@ -409,7 +409,7 @@ export function InvitationManagement({ workspace }: InvitationManagementProps): 
           {formError}
         </p>
       )}
-      <h3 className="mt-6 text-sm font-semibold text-white">Pending invitations</h3>
+      <h3 className="mt-6 text-sm font-semibold text-white">Invitations</h3>
       {invitations.isPending ? (
         <div className="mt-3 h-16 animate-pulse rounded-xl bg-white/[0.04]" role="status" aria-label="Loading invitations" />
       ) : invitations.isError ? (
@@ -424,22 +424,25 @@ export function InvitationManagement({ workspace }: InvitationManagementProps): 
           </button>
         </div>
       ) : invitations.data.length === 0 ? (
-        <p className="mt-3 text-sm text-slate-500">No pending invitations.</p>
+        <p className="mt-3 text-sm text-slate-500">No open invitations.</p>
       ) : (
         <ul className="mt-3 space-y-3">
           {invitations.data.map((invitation) => {
-            const expired = invitationIsExpired(invitation.expiresAt)
+            const declined = invitation.status === 'DECLINED'
+            const expired = !declined && invitationIsExpired(invitation.expiresAt)
+            const stateLabel = declined ? 'Declined' : expired ? 'Expired' : 'Pending'
             return (
               <li key={invitation.id} className="flex flex-col gap-3 rounded-xl border border-white/[0.06] p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-sm text-white">{invitation.email}</p>
                   <p className="mt-1 text-xs text-slate-500">
-                    {workspaceRoleLabels[invitation.role]} · {expired ? 'Expired' : 'Pending'}
+                    {workspaceRoleLabels[invitation.role]} · {stateLabel}
                     {Number.isFinite(Date.parse(invitation.expiresAt))
                       ? ` · ${new Date(invitation.expiresAt).toLocaleDateString()}`
                       : ''}
                   </p>
                 </div>
+                {declined ? null : (
                 <div className="flex flex-col gap-2 sm:items-end">
                   {expired ? (
                     <p className="text-xs text-slate-500">
@@ -465,6 +468,7 @@ export function InvitationManagement({ workspace }: InvitationManagementProps): 
                     Revoke invitation for {invitation.email}
                   </button>
                 </div>
+                )}
               </li>
             )
           })}

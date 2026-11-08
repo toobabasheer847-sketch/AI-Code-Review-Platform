@@ -17,6 +17,7 @@ router.post('/organizations/:organizationId/workspaces', (req, res) =>
   controller.createInOrganization(req, res)
 )
 router.post('/invitations/accept', (req, res) => controller.acceptInvitation(req, res))
+router.post('/invitations/decline', (req, res) => controller.declineInvitation(req, res))
 
 router.get(
   '/:workspaceId/members',

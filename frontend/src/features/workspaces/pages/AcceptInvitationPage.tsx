@@ -8,6 +8,7 @@ import { useAppStore } from '@/app/store/useAppStore'
 import { useMe } from '@/features/auth/hooks/useAuth'
 
 import { getWorkspaceErrorMessage, workspaceApi } from '../api/workspaceApi'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 import { workspaceRoleLabels } from '../domain/workspace-access'
 import { useActivateWorkspace } from '../hooks/useWorkspaces'
 import {
@@ -38,7 +39,11 @@ export function AcceptInvitationPage(): JSX.Element {
     return readInvitationToken() ?? ''
   })
   const [urlReady, setUrlReady] = useState(() => !searchParams.has('token'))
-  const [status, setStatus] = useState<'ready' | 'pending' | 'accepted' | 'expired' | 'unavailable' | 'error'>('ready')
+  const [status, setStatus] = useState<
+    'ready' | 'pending' | 'accepted' | 'declined' | 'expired' | 'unavailable' | 'error'
+  >('ready')
+  const [busyAction, setBusyAction] = useState<'accept' | 'decline' | null>(null)
+  const [confirmDecline, setConfirmDecline] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [acceptedRole, setAcceptedRole] = useState<string | null>(null)
 
@@ -66,6 +71,7 @@ export function AcceptInvitationPage(): JSX.Element {
       setMessage('This invitation link is missing or invalid.')
       return
     }
+    setBusyAction('accept')
     setStatus('pending')
     try {
       const membership = await workspaceApi.acceptInvitation(token)
@@ -103,13 +109,58 @@ export function AcceptInvitationPage(): JSX.Element {
         setMessage(getWorkspaceErrorMessage(error, 'Unable to accept this invitation.'))
       }
       toast.error('Unable to accept this invitation')
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  const decline = async (): Promise<void> => {
+    if (token.length < 32) {
+      setStatus('unavailable')
+      setMessage('This invitation link is missing or invalid.')
+      setConfirmDecline(false)
+      return
+    }
+    setBusyAction('decline')
+    setStatus('pending')
+    try {
+      await workspaceApi.declineInvitation(token)
+      clearInvitationToken()
+      setConfirmDecline(false)
+      setStatus('declined')
+      setMessage('You declined this invitation. An owner or admin can send a new one.')
+      toast.success('Invitation declined')
+    } catch (error) {
+      const httpStatus = isAxiosError(error) ? error.response?.status : undefined
+      if (httpStatus === 400 || httpStatus === 403 || httpStatus === 404 || httpStatus === 409 || httpStatus === 410) {
+        clearInvitationToken()
+      }
+      if (httpStatus === 410) {
+        setStatus('expired')
+        setMessage('This invitation has expired. Ask an owner or admin for a new one.')
+      } else if (httpStatus === 404 || httpStatus === 400) {
+        setStatus('unavailable')
+        setMessage('This invitation was revoked, already used, or is no longer valid.')
+      } else if (httpStatus === 409 || httpStatus === 403) {
+        setStatus('error')
+        setMessage(getWorkspaceErrorMessage(error, 'This invitation can no longer be declined.'))
+      } else {
+        setStatus('error')
+        setMessage(getWorkspaceErrorMessage(error, 'Unable to decline this invitation.'))
+      }
+      setConfirmDecline(false)
+      toast.error('Unable to decline this invitation')
+    } finally {
+      setBusyAction(null)
     }
   }
 
   const title =
     status === 'accepted'
       ? 'Invitation accepted'
-      : status === 'expired'
+      : status === 'declined'
+        ? 'Invitation declined'
+        : status === 'expired'
         ? 'Invitation expired'
         : status === 'unavailable'
           ? 'Invitation unavailable'
@@ -139,15 +190,38 @@ export function AcceptInvitationPage(): JSX.Element {
                   ? 'Accept the invitation sent to your account email. The invitation link is kept out of this page.'
                   : 'This invitation link is missing or invalid.')}
             </p>
-            {token.length >= 32 && status !== 'expired' && status !== 'unavailable' && (
-              <button
-                type="button"
-                onClick={() => void accept()}
-                disabled={status === 'pending'}
-                className="mt-5 rounded-lg bg-indigo-500 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50"
-              >
-                {status === 'pending' ? 'Accepting...' : 'Accept invitation'}
-              </button>
+            {token.length >= 32 && status !== 'declined' && status !== 'expired' && status !== 'unavailable' && (
+              <div className="mt-5 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void accept()}
+                  disabled={busyAction !== null}
+                  className="rounded-lg bg-indigo-500 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50"
+                >
+                  {busyAction === 'accept' ? 'Accepting...' : 'Accept invitation'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDecline(true)}
+                  disabled={busyAction !== null}
+                  className="rounded-lg border border-white/10 px-3 py-2 text-sm text-slate-200 hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 disabled:opacity-50"
+                >
+                  Decline invitation
+                </button>
+              </div>
+            )}
+            {confirmDecline && (
+              <ConfirmDialog
+                title="Decline this invitation?"
+                description="The invitation link stops working. This page never shows the link."
+                confirmLabel="Decline invitation"
+                pendingLabel="Declining..."
+                pending={busyAction === 'decline'}
+                onCancel={() => {
+                  if (busyAction !== 'decline') setConfirmDecline(false)
+                }}
+                onConfirm={() => void decline()}
+              />
             )}
             <Link
               to="/workspaces"

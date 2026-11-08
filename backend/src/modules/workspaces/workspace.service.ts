@@ -13,6 +13,7 @@ import logger from '@/utils/logger'
 import {
   canTransferOrganizationOwnership,
   invitationAcceptanceFailure,
+  invitationDeclineFailure,
   normalizeInvitationEmail,
   normalizeWorkspaceSlug,
 } from './workspace.domain'
@@ -180,11 +181,12 @@ export class WorkspaceService {
 
   async listInvitations(workspaceId: string) {
     return prisma.workspaceInvitation.findMany({
-      where: { workspaceId, status: 'PENDING' },
+      where: { workspaceId, status: { in: ['PENDING', 'DECLINED'] } },
       select: {
         id: true,
         email: true,
         role: true,
+        status: true,
         invitedById: true,
         expiresAt: true,
         createdAt: true,
@@ -487,6 +489,81 @@ export class WorkspaceService {
     })
     if (result.expired) throw new WorkspaceServiceError(410, 'Invitation has expired')
     return result.membership
+  }
+
+  async declineInvitation(userId: string, token: string) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, isVerified: true },
+    })
+    if (!user) {
+      throw new WorkspaceServiceError(403, 'A verified account is required to accept invitations')
+    }
+    const tokenHash = hashInvitationToken(token)
+    const result = await prisma.$transaction(async (transaction) => {
+      await transaction.$queryRaw`
+        SELECT "id" FROM "WorkspaceInvitation" WHERE "tokenHash" = ${tokenHash} FOR UPDATE
+      `
+      const invitation = await transaction.workspaceInvitation.findUnique({
+        where: { tokenHash },
+        select: {
+          id: true,
+          workspaceId: true,
+          email: true,
+          role: true,
+          status: true,
+          expiresAt: true,
+        },
+      })
+      if (!invitation) {
+        throw new WorkspaceServiceError(404, 'Invitation is invalid or has already been used')
+      }
+      const failure = invitationDeclineFailure({
+        email: invitation.email,
+        userEmail: user.email,
+        userIsVerified: user.isVerified,
+        role: invitation.role,
+        status: invitation.status,
+        expiresAt: invitation.expiresAt,
+      })
+      if (failure === 'EXPIRED') {
+        if (invitation.status === 'PENDING') {
+          await transaction.workspaceInvitation.update({
+            where: { id: invitation.id },
+            data: { status: 'EXPIRED' },
+          })
+        }
+        return { expired: true as const }
+      }
+      if (failure === 'ACCEPTED') {
+        throw new WorkspaceServiceError(409, 'This invitation has already been accepted')
+      }
+      if (failure === 'REVOKED') {
+        throw new WorkspaceServiceError(409, 'This invitation has been revoked')
+      }
+      if (failure === 'ALREADY_DECLINED') {
+        throw new WorkspaceServiceError(409, 'This invitation has already been declined')
+      }
+      if (failure === 'UNVERIFIED') {
+        throw new WorkspaceServiceError(403, 'A verified account is required to accept invitations')
+      }
+      if (failure === 'EMAIL_MISMATCH') {
+        throw new WorkspaceServiceError(403, 'Sign in with the email address that received this invitation')
+      }
+      if (failure) {
+        throw new WorkspaceServiceError(404, 'Invitation is invalid or has already been used')
+      }
+      await transaction.workspaceInvitation.update({
+        where: { id: invitation.id },
+        data: { status: 'DECLINED' },
+      })
+      return {
+        expired: false as const,
+        invitation: { id: invitation.id, status: 'DECLINED' as const },
+      }
+    })
+    if (result.expired) throw new WorkspaceServiceError(410, 'Invitation has expired')
+    return result.invitation
   }
 
   async revokeInvitation(workspaceId: string, invitationId: string): Promise<void> {

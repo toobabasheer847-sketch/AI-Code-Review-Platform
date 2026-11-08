@@ -114,6 +114,15 @@ const invitations: WorkspaceInvitation[] = [
     expiresAt: '2020-01-01T00:00:00.000Z',
     createdAt: '2019-12-01T00:00:00.000Z',
   },
+  {
+    id: 'inv-declined',
+    email: 'done@example.com',
+    role: 'DEVELOPER',
+    status: 'DECLINED',
+    invitedById: 'user-owner',
+    expiresAt: '2027-04-01T00:00:00.000Z',
+    createdAt: '2026-11-02T00:00:00.000Z',
+  },
 ]
 
 let root: Root | null = null
@@ -273,7 +282,10 @@ describe('workspace administration page', () => {
     render()
     await settle()
     expect(document.body.textContent).toContain('This invitation has expired. Revoke it before sending a new one.')
+    expect(document.body.textContent).toContain('Declined')
     expect(document.body.textContent).not.toContain('Resend invitation for late@example.com')
+    expect(document.body.textContent).not.toContain('Resend invitation for done@example.com')
+    expect(document.body.textContent).not.toContain('Revoke invitation for done@example.com')
     await clickButton('Resend invitation for new@example.com')
     await clickButton('Resend invitation')
     await settle()

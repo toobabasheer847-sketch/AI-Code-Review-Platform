@@ -78,6 +78,15 @@ test('manages workspace members and hides owner actions from a viewer', async ({
     expiresAt: '2020-01-01T00:00:00.000Z',
     createdAt: '2019-12-01T00:00:00.000Z',
   }
+  const declinedInvitation = {
+    id: 'inv-declined',
+    email: 'done@example.test',
+    role: 'DEVELOPER',
+    status: 'DECLINED',
+    invitedById: user.id,
+    expiresAt: '2027-04-01T00:00:00.000Z',
+    createdAt: '2026-11-02T00:00:00.000Z',
+  }
   await mockApi(page, async ({ method, path, route }) => {
     if (path === '/auth/me' && method === 'GET') return json({ user })
     if (path === '/workspaces' && method === 'GET') return json({ workspaces: [team, viewerWorkspace] })
@@ -112,6 +121,7 @@ test('manages workspace members and hides owner actions from a viewer', async ({
               ]
             : []),
           expiredInvitation,
+          declinedInvitation,
         ],
       })
     }
@@ -163,6 +173,8 @@ test('manages workspace members and hides owner actions from a viewer', async ({
   await expect(page.locator('p[role="status"]', { hasText: 'Invitation email sent to new@example.test.' })).toBeVisible()
   await expect(page.getByText(secret)).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Resend invitation for late@example.test' })).toHaveCount(0)
+  await expect(page.getByText('Developer · Declined')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Resend invitation for done@example.test' })).toHaveCount(0)
   await expect(page.getByText('This invitation has expired. Revoke it before sending a new one.')).toBeVisible()
   await page.getByRole('button', { name: 'Resend invitation for new@example.test' }).click()
   await page.getByRole('button', { name: 'Resend invitation', exact: true }).click()
@@ -239,5 +251,32 @@ test('accepts, expires, and rejects unusable invitations without showing the sec
   await page.getByRole('button', { name: 'Accept invitation' }).click()
   await expect(page.getByRole('heading', { name: 'Invitation unavailable' })).toBeVisible()
   await expect(page.getByText(/revoked/i)).toBeVisible()
+  await expect(page.getByText(secret)).toHaveCount(0)
+})
+
+test('declines an invitation without showing the secret', async ({ page }) => {
+  await mockApi(page, async ({ method, path }) => {
+    if (path === '/auth/me' && method === 'GET') return json({ user })
+    if (path === '/workspaces' && method === 'GET') return json({ workspaces: [team] })
+    if (path === '/workspaces/invitations/decline' && method === 'POST') {
+      return json({
+        invitation: {
+          id: 'inv-declined',
+          status: 'DECLINED',
+          token: secret,
+          acceptUrl: `http://127.0.0.1:3000/accept-invitation?token=${secret}`,
+        },
+      })
+    }
+    return undefined
+  })
+
+  await page.goto(`/accept-invitation?token=${secret}`)
+  await expect(page.getByRole('button', { name: 'Decline invitation' })).toBeVisible({ timeout: 20_000 })
+  await expect(page).toHaveURL(/\/accept-invitation$/)
+  await expect(page.getByText(secret)).toHaveCount(0)
+  await page.getByRole('button', { name: 'Decline invitation' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Decline invitation' }).click()
+  await expect(page.getByRole('heading', { name: 'Invitation declined' })).toBeVisible()
   await expect(page.getByText(secret)).toHaveCount(0)
 })
