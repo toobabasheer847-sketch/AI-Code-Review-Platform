@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { useSyncExternalStore } from 'react'
 
-import { AutomationShell } from '@/features/automation/components/AutomationShell'
 import { useMe } from '@/features/auth/hooks/useAuth'
+import { AutomationShell } from '@/features/automation/components/AutomationShell'
 
 import { getWorkspaceErrorMessage, workspaceApi } from '../api/workspaceApi'
 import { InvitationManagement, MemberManagement } from '../components/MemberManagement'

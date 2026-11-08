@@ -7,9 +7,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useAppStore } from '@/app/store/useAppStore'
 
+import { workspaceApi } from '../api/workspaceApi'
 import type { WorkspaceSummary } from '../domain/types'
 import { getActiveWorkspaceId, setActiveWorkspaceId } from '../store/workspace-selection'
-import { workspaceApi } from '../api/workspaceApi'
+
 import { WorkspaceSwitcher } from './WorkspaceSwitcher'
 
 vi.mock('../api/workspaceApi', async () => {

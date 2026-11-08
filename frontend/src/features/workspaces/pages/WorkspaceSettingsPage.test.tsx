@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { workspaceApi } from '../api/workspaceApi'
 import type { WorkspaceInvitation, WorkspaceMember, WorkspaceSummary } from '../domain/types'
 import { setActiveWorkspaceId } from '../store/workspace-selection'
+
 import { WorkspaceSettingsPage } from './WorkspaceSettingsPage'
 
 vi.mock('@/features/auth/hooks/useAuth', () => ({

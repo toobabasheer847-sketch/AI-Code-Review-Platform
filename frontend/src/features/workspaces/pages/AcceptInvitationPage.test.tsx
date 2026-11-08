@@ -11,6 +11,7 @@ import { useAppStore } from '@/app/store/useAppStore'
 
 import { workspaceApi } from '../api/workspaceApi'
 import { readInvitationToken } from '../store/workspace-selection'
+
 import { AcceptInvitationPage } from './AcceptInvitationPage'
 
 const secret = 'super-secret-invitation-token-value'

@@ -4,8 +4,8 @@ import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import { toast } from 'sonner'
 
 import { getWorkspaceErrorMessage, workspaceApi } from '../api/workspaceApi'
-import { organizationNameError, resolveActiveWorkspaceId, workspaceNameError, workspaceRoleLabels } from '../domain/workspace-access'
 import type { WorkspaceSummary } from '../domain/types'
+import { organizationNameError, resolveActiveWorkspaceId, workspaceNameError, workspaceRoleLabels } from '../domain/workspace-access'
 import { useActivateWorkspace, useWorkspaces } from '../hooks/useWorkspaces'
 import { getActiveWorkspaceId, setActiveWorkspaceId, subscribeActiveWorkspace } from '../store/workspace-selection'
 

@@ -1,9 +1,10 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 
 import { workspaceApi } from '../api/workspaceApi'
+import type { WorkspaceSummary } from '../domain/types'
 import { setActiveWorkspaceId } from '../store/workspace-selection'
 
-export function useWorkspaces() {
+export function useWorkspaces(): UseQueryResult<WorkspaceSummary[], Error> {
   return useQuery({
     queryKey: ['workspaces'],
     queryFn: () => workspaceApi.list(),

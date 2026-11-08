@@ -1,15 +1,16 @@
-import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
 import { toast } from 'sonner'
 
 import { getWorkspaceErrorMessage, workspaceApi } from '../api/workspaceApi'
+import type { WorkspaceMember, WorkspaceSummary } from '../domain/types'
 import {
   canRenameWorkspace,
   canTransferWorkspaceOwnership,
   workspaceNameError,
   workspaceRoleLabels,
 } from '../domain/workspace-access'
-import type { WorkspaceMember, WorkspaceSummary } from '../domain/types'
+
 import { ConfirmDialog } from './ConfirmDialog'
 
 const fieldClass =

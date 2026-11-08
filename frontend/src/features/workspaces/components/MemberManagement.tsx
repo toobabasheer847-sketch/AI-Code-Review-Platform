@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 
 import { isValidEmail } from '@/lib/utils'
 
 import { getWorkspaceErrorMessage, workspaceApi } from '../api/workspaceApi'
+import type { InvitableWorkspaceRole, WorkspaceInvitation, WorkspaceMember, WorkspaceSummary } from '../domain/types'
 import {
   assignableMemberRoles,
   canInviteMembers,
@@ -17,7 +18,7 @@ import {
   workspaceRoleLabels,
   workspaceStatusLabels,
 } from '../domain/workspace-access'
-import type { InvitableWorkspaceRole, WorkspaceInvitation, WorkspaceMember, WorkspaceSummary } from '../domain/types'
+
 import { ConfirmDialog } from './ConfirmDialog'
 
 const fieldClass =
