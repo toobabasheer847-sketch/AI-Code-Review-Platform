@@ -36,6 +36,7 @@ vi.mock('../api/workspaceApi', async () => {
       listMembers: vi.fn(),
       listInvitations: vi.fn(),
       invite: vi.fn(),
+      resendInvitation: vi.fn(),
       revokeInvitation: vi.fn(),
       updateMember: vi.fn(),
       removeMember: vi.fn(),
@@ -172,6 +173,7 @@ beforeEach(() => {
   vi.mocked(workspaceApi.listInvitations).mockClear()
   vi.mocked(workspaceApi.updateMember).mockClear()
   vi.mocked(workspaceApi.invite).mockClear()
+  vi.mocked(workspaceApi.resendInvitation).mockClear()
   vi.mocked(workspaceApi.revokeInvitation).mockClear()
   vi.mocked(workspaceApi.list).mockResolvedValue([workspace()])
   vi.mocked(workspaceApi.listMembers).mockResolvedValue(members)
@@ -182,6 +184,12 @@ beforeEach(() => {
     email: 'join@example.com',
     role: 'DEVELOPER',
     expiresAt: '2027-02-01T00:00:00.000Z',
+  })
+  vi.mocked(workspaceApi.resendInvitation).mockResolvedValue({
+    id: 'inv-resent',
+    email: 'new@example.com',
+    role: 'DEVELOPER',
+    expiresAt: '2027-03-01T00:00:00.000Z',
   })
   vi.mocked(workspaceApi.revokeInvitation).mockResolvedValue()
 })
@@ -247,6 +255,33 @@ describe('workspace administration page', () => {
     await clickButton('Revoke invitation')
     await settle()
     expect(workspaceApi.revokeInvitation).toHaveBeenCalledWith('ws-team', 'inv-expired')
+  })
+
+  it('resends a pending invitation and leaves expired invitations unchanged', async () => {
+    vi.mocked(workspaceApi.resendInvitation).mockImplementation(async () => {
+      vi.mocked(workspaceApi.listInvitations).mockResolvedValue([
+        { ...invitations[0], id: 'inv-resent', expiresAt: '2027-03-01T00:00:00.000Z' },
+        invitations[1],
+      ])
+      return {
+        id: 'inv-resent',
+        email: 'new@example.com',
+        role: 'DEVELOPER',
+        expiresAt: '2027-03-01T00:00:00.000Z',
+      }
+    })
+    render()
+    await settle()
+    expect(document.body.textContent).toContain('This invitation has expired. Revoke it before sending a new one.')
+    expect(document.body.textContent).not.toContain('Resend invitation for late@example.com')
+    await clickButton('Resend invitation for new@example.com')
+    await clickButton('Resend invitation')
+    await settle()
+    expect(workspaceApi.resendInvitation).toHaveBeenCalledWith('ws-team', 'inv-pending')
+    expect(document.body.textContent).toContain('Invitation email resent to new@example.com.')
+    expect(document.body.textContent).toContain('3/1/2027')
+    expect(document.body.textContent).not.toContain('acceptUrl')
+    expect(document.body.textContent).not.toContain('token')
   })
 
   it('shows an invitation email failure without revealing a token', async () => {

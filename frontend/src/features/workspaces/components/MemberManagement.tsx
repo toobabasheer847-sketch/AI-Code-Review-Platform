@@ -280,7 +280,9 @@ export function InvitationManagement({ workspace }: InvitationManagementProps): 
   )
   const [formError, setFormError] = useState<string | null>(null)
   const [deliveryMessage, setDeliveryMessage] = useState<string | null>(null)
-  const [pendingInvitation, setPendingInvitation] = useState<WorkspaceInvitation | null>(null)
+  const [pendingAction, setPendingAction] = useState<
+    { type: 'revoke' | 'resend'; invitation: WorkspaceInvitation } | null
+  >(null)
 
   const invite = useMutation({
     mutationFn: () => workspaceApi.invite(workspace.id, { email: email.trim(), role }),
@@ -304,10 +306,29 @@ export function InvitationManagement({ workspace }: InvitationManagementProps): 
     mutationFn: (invitation: WorkspaceInvitation) => workspaceApi.revokeInvitation(workspace.id, invitation.id),
     onSuccess: async () => {
       toast.success('Invitation revoked')
-      setPendingInvitation(null)
+      setPendingAction(null)
       await queryClient.invalidateQueries({ queryKey: ['workspace-invitations', workspace.id] })
     },
     onError: (error) => toast.error(getWorkspaceErrorMessage(error, 'Unable to revoke the invitation')),
+  })
+
+  const resend = useMutation({
+    mutationFn: (invitation: WorkspaceInvitation) => workspaceApi.resendInvitation(workspace.id, invitation.id),
+    onSuccess: async (invitation) => {
+      const message = `Invitation email resent to ${invitation.email}.`
+      toast.success(message)
+      setFormError(null)
+      setDeliveryMessage(message)
+      setPendingAction(null)
+      await queryClient.invalidateQueries({ queryKey: ['workspace-invitations', workspace.id] })
+    },
+    onError: (error) => {
+      const message = getWorkspaceErrorMessage(error, 'The invitation email could not be resent.')
+      setDeliveryMessage(null)
+      setFormError(message)
+      setPendingAction(null)
+      toast.error(message)
+    },
   })
 
   if (!canInvite) {
@@ -419,26 +440,56 @@ export function InvitationManagement({ workspace }: InvitationManagementProps): 
                       : ''}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setPendingInvitation(invitation)}
-                  className="rounded-lg border border-rose-400/30 px-3 py-2 text-sm text-rose-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
-                >
-                  Revoke invitation for {invitation.email}
-                </button>
+                <div className="flex flex-col gap-2 sm:items-end">
+                  {expired ? (
+                    <p className="text-xs text-slate-500">
+                      This invitation has expired. Revoke it before sending a new one.
+                    </p>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setPendingAction({ type: 'resend', invitation })}
+                      disabled={resend.isPending}
+                      className="rounded-lg border border-indigo-400/30 px-3 py-2 text-sm text-indigo-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50"
+                    >
+                      {resend.isPending && resend.variables?.id === invitation.id
+                        ? 'Resending...'
+                        : `Resend invitation for ${invitation.email}`}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setPendingAction({ type: 'revoke', invitation })}
+                    className="rounded-lg border border-rose-400/30 px-3 py-2 text-sm text-rose-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
+                  >
+                    Revoke invitation for {invitation.email}
+                  </button>
+                </div>
               </li>
             )
           })}
         </ul>
       )}
-      {pendingInvitation && (
+      {pendingAction?.type === 'revoke' && (
         <ConfirmDialog
-          title={`Revoke the invitation for ${pendingInvitation.email}?`}
+          title={`Revoke the invitation for ${pendingAction.invitation.email}?`}
           description="The invitation link stops working. This screen never shows the link itself."
           confirmLabel="Revoke invitation"
           pending={revoke.isPending}
-          onCancel={() => setPendingInvitation(null)}
-          onConfirm={() => revoke.mutate(pendingInvitation)}
+          onCancel={() => setPendingAction(null)}
+          onConfirm={() => revoke.mutate(pendingAction.invitation)}
+        />
+      )}
+      {pendingAction?.type === 'resend' && (
+        <ConfirmDialog
+          title={`Resend the invitation to ${pendingAction.invitation.email}?`}
+          description="The previous invitation link stops working. A new email is sent with a new expiration. This screen never shows the link."
+          confirmLabel="Resend invitation"
+          pendingLabel="Resending..."
+          tone="primary"
+          pending={resend.isPending}
+          onCancel={() => setPendingAction(null)}
+          onConfirm={() => resend.mutate(pendingAction.invitation)}
         />
       )}
     </section>

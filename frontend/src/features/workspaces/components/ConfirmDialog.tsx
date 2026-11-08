@@ -5,6 +5,8 @@ interface ConfirmDialogProps {
   description: string
   confirmLabel: string
   pending?: boolean
+  pendingLabel?: string
+  tone?: 'danger' | 'primary'
   onConfirm: () => void
   onCancel: () => void
 }
@@ -14,6 +16,8 @@ export function ConfirmDialog({
   description,
   confirmLabel,
   pending = false,
+  pendingLabel = 'Working...',
+  tone = 'danger',
   onConfirm,
   onCancel,
 }: ConfirmDialogProps): JSX.Element {
@@ -73,9 +77,13 @@ export function ConfirmDialog({
             type="button"
             onClick={onConfirm}
             disabled={pending}
-            className="rounded-lg bg-rose-500 px-3 py-2 text-sm font-medium text-white hover:bg-rose-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300 disabled:opacity-50"
+            className={
+              tone === 'primary'
+                ? 'rounded-lg bg-indigo-500 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50'
+                : 'rounded-lg bg-rose-500 px-3 py-2 text-sm font-medium text-white hover:bg-rose-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300 disabled:opacity-50'
+            }
           >
-            {pending ? 'Working...' : confirmLabel}
+            {pending ? pendingLabel : confirmLabel}
           </button>
         </div>
       </div>

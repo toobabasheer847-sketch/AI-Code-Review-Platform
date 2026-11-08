@@ -248,6 +248,21 @@ export class WorkspaceController {
     }
   }
 
+  async resendInvitation(req: Request, res: Response): Promise<void> {
+    const id = userId(req, res)
+    if (!id) return
+    try {
+      const invitation = await service.resendInvitation(
+        req.workspace!.id,
+        req.params.invitationId ?? '',
+        id
+      )
+      res.status(201).json({ invitation })
+    } catch (error) {
+      respondError(res, error, 'Unable to resend invitation')
+    }
+  }
+
   async revokeInvitation(req: Request, res: Response): Promise<void> {
     try {
       await service.revokeInvitation(req.workspace!.id, req.params.invitationId ?? '')

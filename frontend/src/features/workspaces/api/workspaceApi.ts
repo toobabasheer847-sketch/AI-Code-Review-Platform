@@ -105,6 +105,15 @@ export const workspaceApi = {
     )
     return publicInvitation(response.data.invitation)
   },
+  async resendInvitation(
+    workspaceId: string,
+    invitationId: string
+  ): Promise<Pick<WorkspaceInvitation, 'id' | 'email' | 'role' | 'expiresAt'>> {
+    const response = await axiosInstance.post<InvitationResponse>(
+      `/workspaces/${workspaceId}/invitations/${invitationId}/resend`
+    )
+    return publicInvitation(response.data.invitation)
+  },
   async revokeInvitation(workspaceId: string, invitationId: string): Promise<void> {
     await axiosInstance.delete(`/workspaces/${workspaceId}/invitations/${invitationId}`)
   },

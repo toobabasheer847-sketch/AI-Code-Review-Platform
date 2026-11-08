@@ -146,6 +146,14 @@ export const rateLimitPolicies = {
     identity: 'ip',
     failureMode: 'fail-open',
   },
+  workspaceInvitationEmail: {
+    name: 'workspace-invitation-email',
+    windowMs: windowSetting('RATE_LIMIT_INVITATION_WINDOW_MS', FIFTEEN_MINUTES),
+    limit: maxSetting('RATE_LIMIT_INVITATION_MAX', 10),
+    error: 'Too many invitation emails. Try again later.',
+    identity: 'user',
+    failureMode: 'fail-closed',
+  },
 } as const satisfies Record<string, RateLimitPolicy>;
 
 export type RateLimitPolicyName = keyof typeof rateLimitPolicies;
@@ -275,3 +283,6 @@ export const aiGenerationLimiter = createDistributedRateLimiter(rateLimitPolicie
 export const githubLimiter = createDistributedRateLimiter(rateLimitPolicies.github);
 export const integrationLimiter = createDistributedRateLimiter(rateLimitPolicies.integration);
 export const socialLimiter = createDistributedRateLimiter(rateLimitPolicies.social);
+export const workspaceInvitationEmailLimiter = createDistributedRateLimiter(
+  rateLimitPolicies.workspaceInvitationEmail
+);

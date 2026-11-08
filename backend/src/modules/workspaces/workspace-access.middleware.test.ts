@@ -96,6 +96,18 @@ test('active workspace membership is attached as trusted request context', async
   assert.equal(request.workspace?.role, 'DEVELOPER')
 })
 
+test('developers and viewers cannot resend workspace invitations', () => {
+  for (const role of ['DEVELOPER', 'VIEWER'] as const) {
+    const result = responseHarness()
+    let nextCalled = false
+    requireWorkspacePermission('manage_members')(workspaceRequest(role), result.response, (() => {
+      nextCalled = true
+    }) as NextFunction)
+    assert.equal(result.status(), 403)
+    assert.equal(nextCalled, false)
+  }
+})
+
 test('only owners and admins can pass the invitation permission check', () => {
   for (const role of ['DEVELOPER', 'VIEWER'] as const) {
     const result = responseHarness()

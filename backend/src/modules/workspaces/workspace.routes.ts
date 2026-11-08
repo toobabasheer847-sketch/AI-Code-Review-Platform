@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { authMiddleware } from '@/middleware/auth.middleware'
+import { workspaceInvitationEmailLimiter } from '@/middleware/rate-limit'
 import {
   requireWorkspacePermission,
   workspaceAccessMiddleware,
@@ -69,7 +70,15 @@ router.post(
   '/:workspaceId/invitations',
   workspaceAccessMiddleware,
   requireWorkspacePermission('manage_members'),
+  workspaceInvitationEmailLimiter,
   (req, res) => controller.invite(req, res)
+)
+router.post(
+  '/:workspaceId/invitations/:invitationId/resend',
+  workspaceAccessMiddleware,
+  requireWorkspacePermission('manage_members'),
+  workspaceInvitationEmailLimiter,
+  (req, res) => controller.resendInvitation(req, res)
 )
 router.delete(
   '/:workspaceId/invitations/:invitationId',

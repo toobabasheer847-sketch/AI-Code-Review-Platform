@@ -572,6 +572,155 @@ describe('workspace database lifecycle', { concurrency: false, skip: !testDataba
     }
   })
 
+  test('resends a pending invitation with a new token and rejects the old one', async () => {
+    const [{ prisma }, { WorkspaceService, WorkspaceServiceError }] = await Promise.all([
+      import('@/config/database'),
+      import('@/modules/workspaces/workspace.service'),
+    ])
+    const suffix = randomUUID()
+    const owner = await createUser(prisma, `resend-owner-${suffix}`)
+    const invitee = await createUser(prisma, `resend-invitee-${suffix}`)
+    const userIds = [owner.id, invitee.id]
+    const mailed: string[] = []
+    const service = new WorkspaceService({
+      async send(message) {
+        mailed.push(message.acceptUrl)
+        assert.equal(message.to, invitee.email)
+      },
+    })
+    const expectError =
+      (statusCode: number, message: string) =>
+      (error: unknown): true => {
+        assert.ok(error instanceof WorkspaceServiceError)
+        assert.equal(error.statusCode, statusCode)
+        assert.equal(error.message, message)
+        assert.equal(/token|accept-invitation/i.test(error.message), false)
+        return true
+      }
+
+    try {
+      const workspace = await service.create(owner.id, {
+        name: 'Resend Team',
+        organizationName: `Resend ${suffix}`,
+      })
+      const other = await service.create(owner.id, { name: `Resend Other ${suffix}` })
+      const original = await service.createInvitation(workspace.id, owner.id, invitee.email, 'DEVELOPER')
+      const resent = await service.resendInvitation(workspace.id, original.id, owner.id)
+      const replacementToken = new URL(mailed.at(-1) ?? 'http://invalid').searchParams.get('token') ?? ''
+      assert.equal(resent.delivery, 'sent')
+      assert.equal(resent.id === original.id, false)
+      assert.equal(Object.hasOwn(resent, 'token'), false)
+      assert.equal(JSON.stringify(resent).includes(replacementToken), false)
+      assert.equal(mailed.length, 1)
+      assert.equal(
+        (await prisma.workspaceInvitation.findUniqueOrThrow({ where: { id: original.id } })).status,
+        'REVOKED'
+      )
+      await assert.rejects(
+        () => service.acceptInvitation(invitee.id, original.token),
+        expectError(404, 'Invitation is invalid or has already been used')
+      )
+      await service.acceptInvitation(invitee.id, replacementToken)
+      assert.equal(
+        (
+          await prisma.workspaceMembership.findUniqueOrThrow({
+            where: { workspaceId_userId: { workspaceId: workspace.id, userId: invitee.id } },
+          })
+        ).role,
+        'DEVELOPER'
+      )
+
+      const pending = await service.createInvitation(workspace.id, owner.id, `fresh-${suffix}@example.test`, 'VIEWER')
+      const callsBeforeDenial = mailed.length
+      await assert.rejects(
+        () => service.resendInvitation(other.id, pending.id, owner.id),
+        expectError(404, 'Invitation not found')
+      )
+      assert.equal(
+        (await prisma.workspaceInvitation.findUniqueOrThrow({ where: { id: pending.id } })).status,
+        'PENDING'
+      )
+      await prisma.workspaceInvitation.update({
+        where: { id: pending.id },
+        data: { expiresAt: new Date('2020-01-01T00:00:00.000Z') },
+      })
+      await assert.rejects(
+        () => service.resendInvitation(workspace.id, pending.id, owner.id),
+        expectError(410, 'This invitation has expired. Send a new invitation.')
+      )
+      assert.equal(
+        (await prisma.workspaceInvitation.findUniqueOrThrow({ where: { id: pending.id } })).status,
+        'EXPIRED'
+      )
+      await assert.rejects(
+        () => service.resendInvitation(workspace.id, original.id, owner.id),
+        expectError(409, 'This invitation has been revoked')
+      )
+      const accepted = await prisma.workspaceInvitation.findFirstOrThrow({
+        where: { workspaceId: workspace.id, email: invitee.email, status: 'ACCEPTED' },
+      })
+      await assert.rejects(
+        () => service.resendInvitation(workspace.id, accepted.id, owner.id),
+        expectError(409, 'This invitation has already been accepted')
+      )
+      assert.equal(mailed.length, callsBeforeDenial)
+    } finally {
+      await prisma.organization.deleteMany({ where: { ownerUserId: owner.id } })
+      await prisma.user.deleteMany({ where: { id: { in: userIds } } })
+    }
+  })
+
+  test('revokes the replacement invitation when a resend email fails', async () => {
+    const [{ prisma }, { WorkspaceService, WorkspaceServiceError }] = await Promise.all([
+      import('@/config/database'),
+      import('@/modules/workspaces/workspace.service'),
+    ])
+    const suffix = randomUUID()
+    const owner = await createUser(prisma, `resend-fail-owner-${suffix}`)
+    const userIds = [owner.id]
+    const failing = new WorkspaceService({
+      async send(message) {
+        throw new Error(`smtp rejected ${message.acceptUrl}`)
+      },
+    })
+
+    try {
+      const workspace = await failing.create(owner.id, {
+        name: 'Resend Failure',
+        organizationName: `Resend Fail ${suffix}`,
+      })
+      const original = await failing.createInvitation(
+        workspace.id,
+        owner.id,
+        `mailbox-${suffix}@example.test`,
+        'VIEWER'
+      )
+      await assert.rejects(
+        () => failing.resendInvitation(workspace.id, original.id, owner.id),
+        (error: unknown) => {
+          assert.ok(error instanceof WorkspaceServiceError)
+          assert.equal(error.statusCode, 503)
+          assert.equal(error.message, 'The invitation email could not be sent. No invitation was left pending.')
+          assert.equal(/token|smtp|accept-invitation/i.test(error.message), false)
+          return true
+        }
+      )
+      assert.equal(
+        (await prisma.workspaceInvitation.findUniqueOrThrow({ where: { id: original.id } })).status,
+        'REVOKED'
+      )
+      assert.equal(
+        await prisma.workspaceInvitation.count({
+          where: { workspaceId: workspace.id, email: `mailbox-${suffix}@example.test`, status: 'PENDING' },
+        }),
+        0
+      )
+    } finally {
+      await prisma.organization.deleteMany({ where: { ownerUserId: owner.id } })
+      await prisma.user.deleteMany({ where: { id: { in: userIds } } })
+    }
+  })
+
   after(async () => {
     const { prisma } = await import('@/config/database')
     await prisma.$disconnect()

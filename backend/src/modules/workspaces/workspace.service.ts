@@ -250,11 +250,103 @@ export class WorkspaceService {
     email: string,
     role: WorkspaceRole
   ) {
+    const invitation = await this.createInvitation(workspaceId, invitedById, email, role)
+    return this.deliverInvitation(workspaceId, invitedById, invitation)
+  }
+
+  async resendInvitation(workspaceId: string, invitationId: string, invitedById: string) {
+    const replacement = await prisma.$transaction(async (transaction) => {
+      const locked = await transaction.$queryRaw<Array<{ id: string }>>`
+        SELECT "id" FROM "WorkspaceInvitation"
+        WHERE "id" = ${invitationId} AND "workspaceId" = ${workspaceId}
+        FOR UPDATE
+      `
+      if (!Array.isArray(locked) || locked.length !== 1) {
+        throw new WorkspaceServiceError(404, 'Invitation not found')
+      }
+      const current = await transaction.workspaceInvitation.findUnique({
+        where: { id: invitationId },
+        select: {
+          id: true,
+          workspaceId: true,
+          email: true,
+          role: true,
+          status: true,
+          expiresAt: true,
+        },
+      })
+      if (!current || current.workspaceId !== workspaceId) {
+        throw new WorkspaceServiceError(404, 'Invitation not found')
+      }
+      if (current.status === 'ACCEPTED') {
+        throw new WorkspaceServiceError(409, 'This invitation has already been accepted')
+      }
+      if (current.status === 'REVOKED') {
+        throw new WorkspaceServiceError(409, 'This invitation has been revoked')
+      }
+      if (current.status === 'EXPIRED' || current.expiresAt.getTime() <= Date.now()) {
+        if (current.status === 'PENDING') {
+          await transaction.workspaceInvitation.update({
+            where: { id: current.id },
+            data: { status: 'EXPIRED' },
+          })
+        }
+        return { expired: true as const }
+      }
+      if (current.status !== 'PENDING' || current.role === 'OWNER') {
+        throw new WorkspaceServiceError(409, 'This invitation cannot be resent')
+      }
+      const existingMember = await transaction.workspaceMembership.findFirst({
+        where: {
+          workspaceId,
+          user: { is: { email: { equals: current.email, mode: 'insensitive' } } },
+          status: { in: ['ACTIVE', 'SUSPENDED'] },
+        },
+        select: { id: true },
+      })
+      if (existingMember) {
+        throw new WorkspaceServiceError(409, 'This user is already a workspace member')
+      }
+      await transaction.workspaceInvitation.update({
+        where: { id: current.id },
+        data: { status: 'REVOKED', revokedAt: new Date() },
+      })
+      const token = createInvitationToken()
+      const created = await transaction.workspaceInvitation.create({
+        data: {
+          workspaceId,
+          email: current.email,
+          role: current.role,
+          tokenHash: hashInvitationToken(token),
+          invitedById,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        },
+        select: { id: true, workspaceId: true, email: true, role: true, expiresAt: true },
+      })
+      return { expired: false as const, invitation: { ...created, token } }
+    })
+    if (replacement.expired) {
+      throw new WorkspaceServiceError(410, 'This invitation has expired. Send a new invitation.')
+    }
+    return this.deliverInvitation(workspaceId, invitedById, replacement.invitation)
+  }
+
+  private async deliverInvitation(
+    workspaceId: string,
+    invitedById: string,
+    invitation: {
+      id: string
+      workspaceId: string
+      email: string
+      role: WorkspaceRole
+      expiresAt: Date
+      token: string
+    }
+  ) {
     const workspace = await prisma.workspace.findUnique({
       where: { id: workspaceId },
       select: { name: true },
     })
-    const invitation = await this.createInvitation(workspaceId, invitedById, email, role)
     const inviter = await prisma.user.findUnique({
       where: { id: invitedById },
       select: { fullName: true, email: true },

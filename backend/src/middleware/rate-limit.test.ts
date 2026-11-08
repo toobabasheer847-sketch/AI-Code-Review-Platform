@@ -64,6 +64,11 @@ test('keeps the existing ceilings and rejects configuration that would weaken th
   assert.equal(rateLimitPolicies.github.limit, 30);
   assert.equal(rateLimitPolicies.integration.limit, 20);
   assert.equal(rateLimitPolicies.social.limit, 20);
+  assert.equal(rateLimitPolicies.workspaceInvitationEmail.limit, 10);
+  assert.equal(rateLimitPolicies.workspaceInvitationEmail.windowMs, 15 * 60 * 1000);
+  assert.equal(rateLimitPolicies.workspaceInvitationEmail.identity, 'user');
+  assert.equal(rateLimitPolicies.workspaceInvitationEmail.failureMode, 'fail-closed');
+  assert.equal(rateLimitPolicies.workspaceInvitationEmail.error, 'Too many invitation emails. Try again later.');
   assert.equal(rateLimitPolicies.manualReview.failureMode, 'fail-closed');
   assert.equal(rateLimitPolicies.repositoryQa.failureMode, 'fail-closed');
   assert.equal(rateLimitPolicies.aiGeneration.failureMode, 'fail-closed');
@@ -89,6 +94,39 @@ test('keeps the existing ceilings and rejects configuration that would weaken th
   assert.match(RATE_LIMIT_INCREMENT_SCRIPT, /INCR/);
   assert.match(RATE_LIMIT_INCREMENT_SCRIPT, /PEXPIRE/);
   assert.match(RATE_LIMIT_DECREMENT_SCRIPT, /DECR/);
+});
+
+test('workspace invitation emails are limited per user', async () => {
+  const redis = createMemoryRateLimitRedis();
+  const app = express();
+  app.set('trust proxy', false);
+  app.use((req, _res, next) => {
+    attachUser(req);
+    next();
+  });
+  app.use(
+    createDistributedRateLimiter(
+      { ...rateLimitPolicies.workspaceInvitationEmail, limit: 1, windowMs: 60_000 },
+      redis
+    )
+  );
+  app.post('/resend', (_req, res) => res.sendStatus(201));
+  const server = await listen(app);
+  try {
+    const first = await request(server.baseUrl, '/resend', { 'x-user': 'owner-a' }, 'POST');
+    const repeat = await request(server.baseUrl, '/resend', { 'x-user': 'owner-a' }, 'POST');
+    const otherUser = await request(server.baseUrl, '/resend', { 'x-user': 'owner-b' }, 'POST');
+    assert.equal(first.status, 201);
+    assert.equal(repeat.status, 429);
+    assert.equal(otherUser.status, 201);
+    assert.deepEqual(repeat.body, {
+      error: rateLimitPolicies.workspaceInvitationEmail.error,
+      retryAfterSeconds: Number(repeat.retryAfter),
+    });
+    assert.equal(JSON.stringify(repeat.body).includes('token'), false);
+  } finally {
+    await server.close();
+  }
 });
 
 test('trusts only an explicit proxy hop count', () => {

@@ -54,6 +54,33 @@ describe('workspace API client', () => {
     expect(JSON.stringify(invitation)).not.toContain('acceptUrl')
   })
 
+  it('does not return invitation secrets from a resend response', async () => {
+    vi.mocked(axiosInstance.post).mockResolvedValue({
+      data: {
+        invitation: {
+          id: 'inv-2',
+          email: 'new@example.com',
+          role: 'DEVELOPER',
+          expiresAt: '2027-02-01T00:00:00.000Z',
+          token: 'super-secret-invitation-token-value',
+          acceptUrl: 'http://localhost/accept-invitation?token=super-secret-invitation-token-value',
+        },
+      },
+    })
+
+    const invitation = await workspaceApi.resendInvitation('ws-team', 'inv-1')
+
+    expect(invitation).toEqual({
+      id: 'inv-2',
+      email: 'new@example.com',
+      role: 'DEVELOPER',
+      expiresAt: '2027-02-01T00:00:00.000Z',
+    })
+    expect(JSON.stringify(invitation)).not.toContain('super-secret')
+    expect(JSON.stringify(invitation)).not.toContain('acceptUrl')
+    expect(axiosInstance.post).toHaveBeenCalledWith('/workspaces/ws-team/invitations/inv-1/resend')
+  })
+
   it('returns safe API messages and hides invitation secrets', () => {
     const response = (error: string): AxiosError =>
       new AxiosError('request failed', '400', undefined, undefined, {

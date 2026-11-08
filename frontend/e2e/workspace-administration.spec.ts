@@ -69,6 +69,15 @@ test.beforeEach(async ({ page }) => {
 
 test('manages workspace members and hides owner actions from a viewer', async ({ page }) => {
   let invited = false
+  let resent = false
+  const expiredInvitation = {
+    id: 'inv-expired',
+    email: 'late@example.test',
+    role: 'VIEWER',
+    invitedById: user.id,
+    expiresAt: '2020-01-01T00:00:00.000Z',
+    createdAt: '2019-12-01T00:00:00.000Z',
+  }
   await mockApi(page, async ({ method, path, route }) => {
     if (path === '/auth/me' && method === 'GET') return json({ user })
     if (path === '/workspaces' && method === 'GET') return json({ workspaces: [team, viewerWorkspace] })
@@ -89,18 +98,21 @@ test('manages workspace members and hides owner actions from a viewer', async ({
     }
     if (path === '/workspaces/ws-team/invitations' && method === 'GET') {
       return json({
-        invitations: invited
-          ? [
-              {
-                id: 'inv-created',
-                email: 'new@example.test',
-                role: 'DEVELOPER',
-                invitedById: user.id,
-                expiresAt: '2027-01-01T00:00:00.000Z',
-                createdAt: '2026-11-08T00:00:00.000Z',
-              },
-            ]
-          : [],
+        invitations: [
+          ...(invited
+            ? [
+                {
+                  id: resent ? 'inv-resent' : 'inv-created',
+                  email: 'new@example.test',
+                  role: 'DEVELOPER',
+                  invitedById: user.id,
+                  expiresAt: resent ? '2027-06-01T00:00:00.000Z' : '2027-01-01T00:00:00.000Z',
+                  createdAt: '2026-11-08T00:00:00.000Z',
+                },
+              ]
+            : []),
+          expiredInvitation,
+        ],
       })
     }
     if (path === '/workspaces/ws-team/invitations' && method === 'POST') {
@@ -113,6 +125,22 @@ test('manages workspace members and hides owner actions from a viewer', async ({
             email: 'new@example.test',
             role: 'DEVELOPER',
             expiresAt: '2027-01-01T00:00:00.000Z',
+            token: secret,
+            acceptUrl: `http://127.0.0.1:3000/accept-invitation?token=${secret}`,
+          },
+        },
+        201
+      )
+    }
+    if (path === '/workspaces/ws-team/invitations/inv-created/resend' && method === 'POST') {
+      resent = true
+      return json(
+        {
+          invitation: {
+            id: 'inv-resent',
+            email: 'new@example.test',
+            role: 'DEVELOPER',
+            expiresAt: '2027-06-01T00:00:00.000Z',
             token: secret,
             acceptUrl: `http://127.0.0.1:3000/accept-invitation?token=${secret}`,
           },
@@ -133,6 +161,13 @@ test('manages workspace members and hides owner actions from a viewer', async ({
   await page.getByLabel('Email address').fill('new@example.test')
   await page.getByRole('button', { name: 'Invite member' }).click()
   await expect(page.locator('p[role="status"]', { hasText: 'Invitation email sent to new@example.test.' })).toBeVisible()
+  await expect(page.getByText(secret)).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Resend invitation for late@example.test' })).toHaveCount(0)
+  await expect(page.getByText('This invitation has expired. Revoke it before sending a new one.')).toBeVisible()
+  await page.getByRole('button', { name: 'Resend invitation for new@example.test' }).click()
+  await page.getByRole('button', { name: 'Resend invitation', exact: true }).click()
+  await expect(page.locator('p[role="status"]', { hasText: 'Invitation email resent to new@example.test.' })).toBeVisible()
+  await expect(page.getByText('6/1/2027')).toBeVisible()
   await expect(page.getByText(secret)).toHaveCount(0)
 
   await page.getByLabel('Role for Grace Hopper').selectOption('VIEWER')
