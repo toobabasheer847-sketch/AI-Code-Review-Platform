@@ -523,10 +523,14 @@ npm run build
 
 ## 🔄 CI/CD
 
-GitHub Actions CI is configured in `.github/workflows/ci.yml`. The root and
-workspace manifests require Node.js 22+ and npm 10+; CI and Docker images pin
-Node.js 24.22.2. CI runs `npm audit --audit-level=high`; review its current
-output for development-tooling advisories and run
+GitHub Actions CI is configured in `.github/workflows/ci.yml`. Database and
+Redis integration run in their own workflows. Staging and production deployment
+are manual dispatches with separate environment secrets; production also
+requires the GitHub environment approval gate and a confirmed backup. See
+[SAAS-LAUNCH-READINESS.md](./SAAS-LAUNCH-READINESS.md). The root and workspace
+manifests require Node.js 22+ and npm 10+; CI and Docker images pin Node.js
+24.22.2. CI runs `npm audit --audit-level=high`; review its current output for
+development-tooling advisories and run
 `npm audit --omit=dev --audit-level=moderate` for the production dependency
 gate. Audit results change as the lockfile and advisory database change.
 

@@ -1,0 +1,54 @@
+name: Staging deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      backup_confirmed:
+        description: A fresh staging backup or point-in-time checkpoint exists
+        required: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-deployment
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+    steps:
+      - name: Require the main branch and a confirmed backup
+        env:
+          BACKUP_CONFIRMED: ${{ inputs.backup_confirmed }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "Staging deployment is restricted to the main branch."
+            exit 1
+          fi
+          if [ "$BACKUP_CONFIRMED" != "true" ]; then
+            echo "Staging deployment requires a confirmed backup. No migration was started."
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.2
+          cache: npm
+      - run: npm ci
+      - name: Migrate staging and verify readiness
+        working-directory: backend
+        env:
+          DEPLOY_TARGET: staging
+          BACKUP_CONFIRMED: yes
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          HEALTH_URL: ${{ secrets.STAGING_HEALTH_URL }}
+          DEPLOY_WEBHOOK_URL: ${{ secrets.STAGING_DEPLOY_WEBHOOK_URL }}
+          DEPLOY_WEBHOOK_TOKEN: ${{ secrets.STAGING_DEPLOY_TOKEN }}
+        run: npm run deploy:migrate

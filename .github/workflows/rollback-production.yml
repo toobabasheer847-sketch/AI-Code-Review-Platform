@@ -1,0 +1,48 @@
+name: Production rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      git_sha:
+        description: Full 40-character commit of the last known-good release
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    steps:
+      - name: Require the main branch
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "Production rollback is restricted to the main branch."
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.2
+          cache: npm
+      - run: npm ci
+      - name: Request rollback and verify readiness
+        working-directory: backend
+        env:
+          DEPLOY_TARGET: production
+          CONFIRM_PRODUCTION_MIGRATION: approved
+          ROLLBACK_SHA: ${{ inputs.git_sha }}
+          HEALTH_URL: ${{ secrets.PRODUCTION_HEALTH_URL }}
+          DEPLOY_WEBHOOK_URL: ${{ secrets.PRODUCTION_DEPLOY_WEBHOOK_URL }}
+          DEPLOY_WEBHOOK_TOKEN: ${{ secrets.PRODUCTION_DEPLOY_TOKEN }}
+        run: npm run deploy:rollback

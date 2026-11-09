@@ -5,8 +5,11 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
-  verify:
+  quality:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -15,20 +18,66 @@ jobs:
           node-version: 24.22.2
           cache: npm
       - run: npm ci
-      # High and critical advisories fail this job. Moderate and low findings
-      # are still printed. Do not lower this level to hide them.
       - run: npm audit --audit-level=high
       - run: npm audit --omit=dev --audit-level=moderate
       - run: npm run prisma:generate --workspace=backend
       - run: npm run prisma:validate --workspace=backend
+      - run: npm run deploy:check --workspace=backend
       - run: npm run lint
       - run: npm run type-check
       - run: npm run type-check:e2e --workspace=frontend
+
+  backend-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.2
+          cache: npm
+      - run: npm ci
+      - run: npm run prisma:generate --workspace=backend
       - run: npm test
+
+  frontend-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.2
+          cache: npm
+      - run: npm ci
       - run: npm test --workspace=frontend
-      - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e --workspace=frontend
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.2
+          cache: npm
+      - run: npm ci
+      - run: npm run prisma:generate --workspace=backend
       - run: npm run build
+
+  images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       - run: docker build --file backend/Dockerfile --tag ai-codeguard-backend:ci .
       - run: docker build --file backend/Dockerfile.runner --tag ai-codeguard-runner:ci .
       - run: docker build --file frontend/Dockerfile --tag ai-codeguard-frontend:ci .
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.2
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e --workspace=frontend

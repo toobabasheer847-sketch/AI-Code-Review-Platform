@@ -4,6 +4,9 @@ on:
   workflow_dispatch:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   providers:
     if: github.event_name == 'workflow_dispatch' || vars.RUN_PROVIDER_INTEGRATION_TESTS == 'true'

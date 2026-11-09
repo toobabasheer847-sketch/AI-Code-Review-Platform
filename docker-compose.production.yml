@@ -1,0 +1,43 @@
+# Runtime images only. Supply managed PostgreSQL and TLS Redis URLs from the
+# shell environment. This file does not load a dotenv file and does not migrate
+# on startup.
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      REDIS_URL: ${REDIS_URL:?REDIS_URL is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      CSRF_SECRET: ${CSRF_SECRET:?CSRF_SECRET is required}
+      GITHUB_TOKEN_ENCRYPTION_KEY: ${GITHUB_TOKEN_ENCRYPTION_KEY:?GITHUB_TOKEN_ENCRYPTION_KEY is required}
+      EMAIL_OTP_SECRET: ${EMAIL_OTP_SECRET:?EMAIL_OTP_SECRET is required}
+      FRONTEND_URL: ${FRONTEND_URL:?FRONTEND_URL is required}
+      GITHUB_CALLBACK_URL: ${GITHUB_CALLBACK_URL:?GITHUB_CALLBACK_URL is required}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY is required}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:?GITHUB_CLIENT_ID is required}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:?GITHUB_CLIENT_SECRET is required}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:?GITHUB_WEBHOOK_SECRET is required}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:?STRIPE_SECRET_KEY is required}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:?STRIPE_WEBHOOK_SECRET is required}
+      STRIPE_PRO_PRICE_ID: ${STRIPE_PRO_PRICE_ID:?STRIPE_PRO_PRICE_ID is required}
+    ports:
+      - "3001:3001"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_URL: ${PUBLIC_API_URL:?PUBLIC_API_URL is required}
+        VITE_APP_NAME: AI-CodeGuard
+        VITE_STRIPE_PRO_PRICE_ID: ${STRIPE_PRO_PRICE_ID:?STRIPE_PRO_PRICE_ID is required}
+    ports:
+      - "8080:8080"
+    depends_on:
+      - backend
+    restart: unless-stopped

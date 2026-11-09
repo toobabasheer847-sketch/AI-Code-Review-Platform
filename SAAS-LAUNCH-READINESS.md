@@ -207,21 +207,33 @@ startup. Do not use it as a production deployment template.
 For a production release:
 
 1. Build immutable backend and frontend artifacts in CI; scan and retain the
-   exact image digests and dependency lockfile.
+   exact image digests and dependency lockfile. Pull-request CI does not deploy.
 2. Take a verified pre-migration backup or managed point-in-time recovery
-   checkpoint.
-3. Review and apply migrations as a separately approved deployment step, using
-   the release image and a production migration credential. The CI workflow
-   deploys migrations only to its disposable PostgreSQL service.
-4. Deploy application artifacts using a rolling strategy only when the
-   migration is backward-compatible with both versions. Do not let every
-   production replica run schema migrations on boot.
+   checkpoint. The production workflow refuses to continue unless the operator
+   confirms that backup in the dispatch form.
+3. Review and apply migrations as a separately approved deployment step.
+   `.github/workflows/deploy-staging.yml` uses the `staging` GitHub environment
+   and `STAGING_*` secrets. `.github/workflows/deploy-production.yml` uses the
+   `production` environment and `PRODUCTION_*` secrets. Configure required
+   reviewers on the production environment before the first dispatch; that
+   review is the manual approval gate. The workflow also refuses any ref other
+   than `refs/heads/main`. No remote deployment has been executed from this
+   repository. If the staging or production hook and database secrets are
+   absent, the job fails before `prisma migrate deploy`.
+4. The deployment hook receives `{ "action": "deploy", "target", "sha" }` over
+   HTTPS with a bearer token. Application replicas must not run schema
+   migrations on boot. `docker-compose.yml` remains local development.
+   `docker-compose.production.yml` starts the runtime images only and expects
+   managed PostgreSQL and `rediss://` Redis URLs.
 5. Wait for `/health` readiness and check authenticated product flows, provider
    callbacks, signed Stripe webhook processing, and queue/scheduler metrics.
 6. Retain the last known-good image and record the migration version and
    release owner.
 
-There are no down migrations. The disposable-database suite checks that
+There are no down migrations. Application rollback is
+`.github/workflows/rollback-production.yml`: it asks the production hook to
+redeploy a recorded 40-character SHA and then checks readiness. It does not
+change the schema. The disposable-database suite checks that
 committed migrations stay additive and transactional, that a failed transaction
 leaves no partial schema or workspace rows, and that `prisma migrate deploy` can
 be run again after a failed change. The tenancy migration keeps nullable
