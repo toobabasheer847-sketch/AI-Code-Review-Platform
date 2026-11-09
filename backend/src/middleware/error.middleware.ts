@@ -28,7 +28,7 @@ export function errorMiddleware(
   if (status >= 500) {
     reportBackendError(error, 'api')
     logger.error(
-      { errorType: error instanceof Error ? error.name : 'UnknownError' },
+      { err: error, errorType: error instanceof Error ? error.name : 'UnknownError' },
       'Unhandled API request error'
     )
   }

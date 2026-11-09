@@ -7,6 +7,7 @@ import type { AccountEmailJob } from '@/modules/email/account-email.types'
 import { decryptVerificationOtp } from '@/modules/email/verification-otp.crypto'
 import type { AutomationNotificationPayload, ReviewCompletePayload } from '@/modules/email/email.types'
 import { prisma } from '@/config/database'
+import { recordJobOutcome } from '@/observability/metrics'
 import { reportBackendError } from '@/utils/error-monitoring'
 
 type EmailJobData =
@@ -88,12 +89,14 @@ export async function startEmailWorker(): Promise<void> {
   )
 
   emailWorker.on('completed', (job) => {
+    recordJobOutcome({ at: Date.now(), queue: 'email', outcome: 'succeeded' })
     logger.info({ jobId: job.id }, 'Email job completed')
   })
 
   emailWorker.on('failed', (job, error) => {
     if (job && job.attemptsMade >= (job.opts.attempts ?? 1)) {
       reportBackendError(error, 'email-worker')
+      recordJobOutcome({ at: Date.now(), queue: 'email', outcome: 'failed' })
     }
     logger.error(
       {

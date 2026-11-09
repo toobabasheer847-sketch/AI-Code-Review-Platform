@@ -3,6 +3,7 @@ import OpenAI from 'openai'
 import { AIRequestStatus, Prisma } from '@prisma/client'
 import { prisma } from '@/config/database'
 import { env } from '@/config/env'
+import { recordAIUsage } from '@/observability/metrics'
 import { getPersonalWorkspaceId } from '@/modules/workspaces/workspace.service'
 
 export type AIUsageFeature =
@@ -221,6 +222,20 @@ export async function persistAIUsage(write: AIUsageWrite): Promise<void> {
   )
 }
 
+function rememberAIUsage(write: AIUsageWrite): void {
+  const inputTokens = validTokenCount(write.usage.inputTokens) ?? 0
+  const outputTokens = validTokenCount(write.usage.outputTokens) ?? 0
+  const estimatedCostUsd = calculateEstimatedCost(write.modelName, write.usage)
+  recordAIUsage({
+    at: Date.now(),
+    inputTokens,
+    outputTokens,
+    estimatedCostUsd: estimatedCostUsd ?? 0,
+    failed: write.status === AIRequestStatus.FAILED,
+    unpriced: estimatedCostUsd === null,
+  })
+}
+
 export async function runTrackedAIRequest<T>(
   context: AIUsageContext,
   modelName: string,
@@ -232,11 +247,15 @@ export async function runTrackedAIRequest<T>(
   writeUsage: UsageWriter = persistAIUsage
 ): Promise<T> {
   const startedAt = Date.now()
+  const record = async (write: AIUsageWrite): Promise<void> => {
+    await writeUsage(write)
+    rememberAIUsage(write)
+  }
   let result: Awaited<ReturnType<typeof execute>>
   try {
     result = await execute()
   } catch (error) {
-    await writeUsage({
+    await record({
       context,
       provider: 'openai',
       modelName,
@@ -248,7 +267,7 @@ export async function runTrackedAIRequest<T>(
     })
     throw error
   }
-  await writeUsage({
+  await record({
     context,
     provider: 'openai',
     modelName,

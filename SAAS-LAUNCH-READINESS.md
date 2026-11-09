@@ -106,24 +106,56 @@ credential shapes, and reused/short JWT and encryption keys.
 
 ## Monitoring, health, and alert setup
 
-Set `SENTRY_DSN` for backend reporting and `VITE_SENTRY_DSN` at frontend build
-time only after creating the corresponding Sentry projects. Optionally set the
-release identifiers so errors can be correlated with an immutable deployment.
-The backend reports API 5xx, worker, scheduler, Redis, and startup/shutdown
-failures; the frontend reports API network/5xx and React error-boundary
-failures. Event payloads use fixed messages and allowlisted component/category
-tags. Do not add request bodies, prompts, repository text, tokens, user IDs,
-or arbitrary exception context to telemetry. Monitoring failures are logged
-without changing the original application outcome.
+Production logs are JSON from Pino at `info` unless `LOG_LEVEL` is `debug`,
+`info`, `warn`, or `error`. Each request log includes `requestId`,
+`correlationId`, `method`, `route`, `statusCode`, and `durationMs`. Incoming
+`x-request-id` and `x-correlation-id` values are reused only when they are
+short identifiers; otherwise the process generates a UUID. Passwords, tokens,
+API keys, cookies, invitation tokens, emails, database URLs, and bearer tokens
+are redacted. Error logs keep the error name and a redacted stack.
 
-Configure Sentry-side alerts and a tested on-call destination for new/frequent
-issues and regressions; the application does not create alert rules or prove
-delivery. Also alert on readiness failures, queue depth/oldest-job age and
-terminal failures, Redis availability, scheduler tick age/leader state, failed
-webhooks, SMTP delivery failures, and database storage/backup status. Use
-`GET /health/live` for process liveness and `GET /health/ready` for dependency
-readiness (`GET /health` is a compatibility alias). Readiness is not a
-synthetic user-flow check.
+Set `SENTRY_DSN` for backend reporting and `VITE_SENTRY_DSN` at frontend build
+time only after creating the corresponding Sentry projects. Optionally set
+`SENTRY_RELEASE` and `VITE_SENTRY_RELEASE` so events group by deployed version.
+An empty DSN leaves reporting disabled and does not change request handling.
+Events use a fixed message, the environment, the release when configured, and
+a fingerprint of component, category, and error name. They omit exception
+text, request data, user identity, prompts, repository content, and arbitrary
+context.
+
+`GET /health/live` checks the process. `GET /health/ready` and `GET /health`
+check PostgreSQL and Redis independently, then queue counts when both are
+reachable. A failed dependency returns HTTP 503 with `ok` or `unavailable`
+for that dependency and does not include the error, connection string, or
+credentials. The first time a recommended threshold opens, the process logs
+`Monitoring alert threshold crossed` with the alert id. That log is not a
+delivered page.
+
+`GET /metrics` returns the five-minute dashboard when `METRICS_TOKEN` is set
+and the request has `Authorization: Bearer <token>`. Without the token
+configuration the route is 404. The dashboard panels are application health,
+API traffic, latency, error rate, AI usage and estimated cost, database and
+Redis status, and background job success/failure. AI token and cost figures
+come from the same pricing calculation as AI usage analytics. Requests whose
+price cannot be calculated increment `unpricedRequests` and add zero cost.
+
+Recommended thresholds, evaluated over the trailing five minutes:
+
+| Alert | Opens when |
+| --- | --- |
+| Backend unavailable | Liveness probe fails |
+| High HTTP 5xx rate | At least 30 requests and at least 5% are 5xx |
+| High API latency | At least 30 requests and p95 latency is at least 2,000 ms |
+| PostgreSQL unavailable | Database readiness probe fails |
+| Redis unavailable | Redis readiness probe fails |
+| Background job failures | At least 3 terminal job failures |
+| AI cost spike | At least 5 priced AI requests and estimated cost reaches $5 |
+
+Route the structured warning, the Sentry issue stream, and an external probe
+of `/health/ready` to the on-call channel. Keep the 5xx and latency rules
+above the sample floor so a single failure does not page. Queue depth, backup
+status, and SMTP delivery still need an external check; this process does not
+collect those series. No alert delivery was verified from this repository.
 
 ## API, workers, scheduler, and retry behavior
 

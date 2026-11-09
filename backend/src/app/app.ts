@@ -20,6 +20,11 @@ import { automationQueue } from '@/modules/automation/automation.queue';
 import { getAutomationSchedulerHealth } from '@/modules/automation/automation.scheduler';
 import { socialQueue } from '@/modules/social/social.queue';
 import { fixVerificationQueue } from '@/jobs/fix-verification.queue';
+import { evaluateAlerts, takeNewlyTriggeredAlerts } from '@/observability/alerts';
+import { authorizeMetricsRequest, buildMonitoringDashboard } from '@/observability/dashboard';
+import { checkDependencyHealth } from '@/observability/health';
+import { metricsSnapshot, recordDependencyStatus, recordHttpObservation } from '@/observability/metrics';
+import { requestContextMiddleware, requestLogBindings } from '@/observability/request-context';
 
 export const createApp = (): Express => {
   const app = express();
@@ -33,17 +38,33 @@ export const createApp = (): Express => {
 
   app.use(helmet());
   app.use(corsMiddleware);
+  app.use(requestContextMiddleware);
+  app.use((req, res, next) => {
+    const started = process.hrtime.bigint();
+    res.on('finish', () => {
+      recordHttpObservation({
+        at: Date.now(),
+        status: res.statusCode,
+        durationMs: Number(process.hrtime.bigint() - started) / 1_000_000,
+      });
+    });
+    next();
+  });
 
   app.use(
     pinoHttp({
       logger,
+      genReqId: (req) => req.id ?? '',
+      customProps: (req, res) => ({
+        ...requestLogBindings(req),
+        statusCode: res.statusCode,
+      }),
+      customAttributeKeys: {
+        responseTime: 'durationMs',
+      },
       serializers: {
         req(request) {
-          return {
-            method: request.method,
-            url: request.url?.split('?')[0],
-            remoteAddress: request.remoteAddress,
-          };
+          return requestLogBindings(request);
         },
       },
     })
@@ -67,9 +88,37 @@ export const createApp = (): Express => {
   });
 
   const readinessHandler = async (_req: express.Request, res: express.Response): Promise<void> => {
+    const dependencies = await checkDependencyHealth({
+      database: () => prisma.$queryRaw`SELECT 1`,
+      redis: () => redis.ping(),
+    });
+    recordDependencyStatus('database', dependencies.database);
+    recordDependencyStatus('redis', dependencies.redis);
+    const opened = takeNewlyTriggeredAlerts(
+      evaluateAlerts({
+        live: 'ok',
+        database: dependencies.database,
+        redis: dependencies.redis,
+        snapshot: metricsSnapshot(),
+      })
+    );
+    for (const alert of opened) {
+      logger.warn({ alert: alert.id }, 'Monitoring alert threshold crossed');
+    }
+    if (dependencies.database !== 'ok' || dependencies.redis !== 'ok') {
+      logger.error(
+        { database: dependencies.database, redis: dependencies.redis },
+        'Readiness health check failed'
+      );
+      res.status(503).json({
+        status: 'error',
+        timestamp: new Date().toISOString(),
+        dependencies: { ...dependencies, queues: 'unknown' },
+      });
+      return;
+    }
+
     try {
-      await prisma.$queryRaw`SELECT 1`;
-      await redis.ping();
       const [reviewJobs, emailJobs, automationJobs, socialJobs, verificationJobs] =
         await Promise.all([
           reviewQueue.getJobCounts('waiting', 'active', 'delayed', 'failed'),
@@ -111,13 +160,38 @@ export const createApp = (): Express => {
       res.status(503).json({
         status: 'error',
         timestamp: new Date().toISOString(),
-        dependencies: { database: 'unknown', redis: 'unknown', queues: 'unknown' },
+        dependencies: { database: 'ok', redis: 'ok', queues: 'unavailable' },
       });
     }
   };
 
   app.get('/health/ready', readinessHandler);
   app.get('/health', readinessHandler);
+  app.get('/metrics', (req, res) => {
+    const authorization = authorizeMetricsRequest(
+      req.header('authorization'),
+      process.env.METRICS_TOKEN ?? ''
+    );
+    if (authorization === 'not-configured') {
+      res.status(404).json({ error: { status: 404, message: 'Not found' } });
+      return;
+    }
+    if (authorization === 'rejected') {
+      res.status(401).json({ error: { status: 401, message: 'Unauthorized' } });
+      return;
+    }
+    res.json(
+      buildMonitoringDashboard({
+        live: 'ok',
+        ready:
+          metricsSnapshot().dependencies.database === 'ok' &&
+          metricsSnapshot().dependencies.redis === 'ok'
+            ? 'ok'
+            : 'error',
+        snapshot: metricsSnapshot(),
+      })
+    );
+  });
 
   app.use('/api', createApiRoutes());
 

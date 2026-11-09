@@ -9,7 +9,15 @@ function safeTag(value: unknown, allowedValues: Set<string>): string {
   return typeof value === 'string' && allowedValues.has(value) ? value : 'unknown'
 }
 
+function safeErrorName(value: unknown): string {
+  return typeof value === 'string' && /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(value) ? value : 'Error'
+}
+
 export function sanitizeFrontendMonitoringEvent(event: Event): ErrorEvent {
+  const component = safeTag(event.tags?.component, components)
+  const category = safeTag(event.tags?.category, categories)
+  const errorName = safeErrorName(event.exception?.values?.find((value) => value.type)?.type)
+  const release = import.meta.env.VITE_SENTRY_RELEASE
   return {
     event_id: event.event_id,
     timestamp: event.timestamp,
@@ -17,26 +25,45 @@ export function sanitizeFrontendMonitoringEvent(event: Event): ErrorEvent {
     level: 'error',
     type: undefined,
     environment: import.meta.env.MODE,
+    ...(release ? { release } : {}),
     message: 'Frontend operation failed',
-    tags: {
-      component: safeTag(event.tags?.component, components),
-      category: safeTag(event.tags?.category, categories),
-    },
+    fingerprint: [component, category, errorName],
+    tags: { component, category, errorName },
   }
 }
 
-export function initializeFrontendErrorMonitoring(): void {
-  const dsn = import.meta.env.VITE_SENTRY_DSN
-  if (!dsn) return
-
-  Sentry.init({
-    dsn,
+export function buildFrontendMonitoringOptions(
+  dsn: string,
+  release = import.meta.env.VITE_SENTRY_RELEASE
+): {
+  dsn: string
+  environment: string
+  release: string | undefined
+  defaultIntegrations: false
+  tracesSampleRate: number
+  beforeSend: (event: Event) => ErrorEvent
+} | null {
+  const configuredDsn = dsn.trim()
+  if (!configuredDsn) return null
+  return {
+    dsn: configuredDsn,
     environment: import.meta.env.MODE,
-    release: import.meta.env.VITE_SENTRY_RELEASE || undefined,
-    defaultIntegrations: false,
+    release: release?.trim() || undefined,
+    defaultIntegrations: false as const,
     tracesSampleRate: 0,
     beforeSend: sanitizeFrontendMonitoringEvent,
-  })
+  }
+}
+
+export function isFrontendMonitoringEnabled(): boolean {
+  return monitoringEnabled
+}
+
+export function initializeFrontendErrorMonitoring(): void {
+  const options = buildFrontendMonitoringOptions(import.meta.env.VITE_SENTRY_DSN ?? '')
+  if (!options) return
+
+  Sentry.init(options)
   monitoringEnabled = true
 }
 
@@ -55,9 +82,15 @@ export function reportFrontendError(
   if (!monitoringEnabled) return
 
   try {
+    const safeCategory = category ?? getErrorCategory(error)
+    const errorName = error instanceof Error && /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(error.name)
+      ? error.name
+      : 'Error'
     Sentry.withScope((scope) => {
       scope.setTag('component', component)
-      scope.setTag('category', category ?? getErrorCategory(error))
+      scope.setTag('category', safeCategory)
+      scope.setTag('errorName', errorName)
+      scope.setFingerprint([component, safeCategory, errorName])
       Sentry.captureMessage('Frontend operation failed', 'error')
     })
   } catch {

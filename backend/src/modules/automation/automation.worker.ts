@@ -8,6 +8,7 @@ import { Worker, type Job } from 'bullmq';
 import { createBullMqRedisConnection } from '@/config/redis-connection';
 import { prisma } from '@/config/database';
 import logger from '@/utils/logger';
+import { recordJobOutcome } from '@/observability/metrics';
 import { reportBackendError } from '@/utils/error-monitoring';
 import { automationJobId, automationQueue } from './automation.queue';
 import {
@@ -595,9 +596,13 @@ export async function startAutomationWorker(): Promise<void> {
     concurrency: 5,
     lockDuration: AUTOMATION_TASK_LOCK_DURATION_MS,
   });
+  worker.on('completed', () => {
+    recordJobOutcome({ at: Date.now(), queue: 'automations', outcome: 'succeeded' });
+  });
   worker.on('failed', (job, error) => {
     if (job && job.attemptsMade >= (job.opts.attempts ?? 1)) {
       reportBackendError(error, 'automation-worker');
+      recordJobOutcome({ at: Date.now(), queue: 'automations', outcome: 'failed' });
     }
     logger.error(
       { automationId: job?.data.automationId, errorType: error.name },

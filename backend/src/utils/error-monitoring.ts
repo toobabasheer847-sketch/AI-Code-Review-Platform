@@ -1,6 +1,7 @@
 import * as Sentry from '@sentry/node'
 import type { ErrorEvent, Event } from '@sentry/node'
 import { env } from '@/config/env'
+import { safeErrorName } from '@/observability/redaction'
 import logger from '@/utils/logger'
 
 const components = new Set([
@@ -22,7 +23,15 @@ function safeTag(value: unknown, allowedValues: Set<string>): string {
   return typeof value === 'string' && allowedValues.has(value) ? value : 'unknown'
 }
 
+function groupedErrorName(event: Event): string {
+  const exceptionType = event.exception?.values?.find((value) => value.type)?.type
+  return safeErrorName(exceptionType)
+}
+
 export function sanitizeMonitoringEvent(event: Event): ErrorEvent {
+  const component = safeTag(event.tags?.component, components)
+  const category = safeTag(event.tags?.category, categories)
+  const errorName = groupedErrorName(event)
   return {
     event_id: event.event_id,
     timestamp: event.timestamp,
@@ -30,30 +39,40 @@ export function sanitizeMonitoringEvent(event: Event): ErrorEvent {
     level: 'error',
     type: undefined,
     environment: env.NODE_ENV,
+    ...(env.SENTRY_RELEASE ? { release: env.SENTRY_RELEASE } : {}),
     message: 'Application operation failed',
-    tags: {
-      component: safeTag(event.tags?.component, components),
-      category: safeTag(event.tags?.category, categories),
-    },
+    fingerprint: [component, category, errorName],
+    tags: { component, category, errorName },
   }
 }
 
+export function buildErrorMonitoringOptions(dsn: string, release = env.SENTRY_RELEASE) {
+  const configuredDsn = dsn.trim()
+  if (!configuredDsn) return null
+  return {
+    dsn: configuredDsn,
+    environment: env.NODE_ENV,
+    release: release.trim() || undefined,
+    defaultIntegrations: false as const,
+    tracesSampleRate: 0,
+    beforeSend: sanitizeMonitoringEvent,
+  }
+}
+
+export function isErrorMonitoringEnabled(): boolean {
+  return monitoringEnabled
+}
+
 export function initializeErrorMonitoring(): void {
-  if (!env.SENTRY_DSN) {
+  const options = buildErrorMonitoringOptions(env.SENTRY_DSN)
+  if (!options) {
     if (env.NODE_ENV === 'production') {
       logger.warn('SENTRY_DSN is not configured; external error monitoring is disabled')
     }
     return
   }
 
-  Sentry.init({
-    dsn: env.SENTRY_DSN,
-    environment: env.NODE_ENV,
-    release: env.SENTRY_RELEASE || undefined,
-    defaultIntegrations: false,
-    tracesSampleRate: 0,
-    beforeSend: sanitizeMonitoringEvent,
-  })
+  Sentry.init(options)
   monitoringEnabled = true
 }
 
@@ -70,9 +89,12 @@ export function reportBackendError(error: unknown, component: string): void {
   const safeComponent = safeTag(component, components)
   const category = getErrorCategory(error)
   try {
+    const errorName = safeErrorName(error instanceof Error ? error.name : undefined)
     Sentry.withScope((scope) => {
       scope.setTag('component', safeComponent)
       scope.setTag('category', category)
+      scope.setTag('errorName', errorName)
+      scope.setFingerprint([safeComponent, category, errorName])
       Sentry.captureMessage('Application operation failed', 'error')
     })
   } catch {

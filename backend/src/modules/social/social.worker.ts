@@ -1,6 +1,7 @@
 import { Worker } from 'bullmq';
 import { createBullMqRedisConnection } from '@/config/redis-connection';
 import logger from '@/utils/logger';
+import { recordJobOutcome } from '@/observability/metrics';
 import { reportBackendError } from '@/utils/error-monitoring';
 import { SocialService } from './social.service';
 import type { SocialPublishJob } from './social.queue';
@@ -25,8 +26,12 @@ export async function startSocialWorker(): Promise<void> {
       lockDuration: 180_000,
     }
   );
+  worker.on('completed', () => {
+    recordJobOutcome({ at: Date.now(), queue: 'social', outcome: 'succeeded' });
+  });
   worker.on('failed', (job, error) => {
     reportBackendError(error, 'social-worker');
+    recordJobOutcome({ at: Date.now(), queue: 'social', outcome: 'failed' });
     logger.error(
       { postId: job?.data.postId, errorType: error.name },
       'Social publication job failed before a terminal result was persisted'

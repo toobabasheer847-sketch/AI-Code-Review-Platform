@@ -18,6 +18,7 @@ import { GitHubService } from '@/modules/github/github.service'
 import { publishCompletedPullRequestReview } from '@/modules/github/pull-request-review-publisher'
 import type { ReviewJobData } from './review.queue'
 import logger from '@/utils/logger'
+import { recordJobOutcome } from '@/observability/metrics'
 import { reportBackendError } from '@/utils/error-monitoring'
 import { findReviewForProcessing } from './review.worker-store'
 
@@ -187,9 +188,15 @@ const worker = new Worker<ReviewJobData>(
   { connection, autorun: false }
 )
 
+worker.on('completed', () => {
+  recordJobOutcome({ at: Date.now(), queue: 'reviews', outcome: 'succeeded' })
+})
 worker.on('failed', (job, error) => {
   const isTerminalFailure = Boolean(job && job.attemptsMade >= (job.opts.attempts ?? 1))
-  if (isTerminalFailure) reportBackendError(error, 'review-worker')
+  if (isTerminalFailure) {
+    reportBackendError(error, 'review-worker')
+    recordJobOutcome({ at: Date.now(), queue: 'reviews', outcome: 'failed' })
+  }
   logger.error(
     { errorType: error instanceof Error ? error.name : 'UnknownError' },
     'Code review job failed'

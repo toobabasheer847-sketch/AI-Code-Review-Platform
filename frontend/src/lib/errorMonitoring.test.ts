@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { sanitizeFrontendMonitoringEvent } from './errorMonitoring'
+import {
+  buildFrontendMonitoringOptions,
+  isFrontendMonitoringEnabled,
+  sanitizeFrontendMonitoringEvent,
+} from './errorMonitoring'
 
 describe('sanitizeFrontendMonitoringEvent', () => {
   it('removes user, request, exception and breadcrumb data', () => {
@@ -14,7 +18,9 @@ describe('sanitizeFrontendMonitoringEvent', () => {
     })
 
     expect(event.message).toBe('Frontend operation failed')
-    expect(event.tags).toEqual({ component: 'api', category: 'server' })
+    expect(event.tags).toEqual({ component: 'api', category: 'server', errorName: 'Error' })
+    expect(event.fingerprint).toEqual(['api', 'server', 'Error'])
+    expect(JSON.stringify(event)).not.toContain('secret')
     expect(event).not.toHaveProperty('request')
     expect(event).not.toHaveProperty('user')
     expect(event).not.toHaveProperty('exception')
@@ -26,6 +32,19 @@ describe('sanitizeFrontendMonitoringEvent', () => {
       tags: { component: 'person@example.test', category: 'private prompt' },
     })
 
-    expect(event.tags).toEqual({ component: 'unknown', category: 'unknown' })
+    expect(event.tags).toEqual({ component: 'unknown', category: 'unknown', errorName: 'Error' })
+  })
+
+  it('stays disabled without a DSN and keeps a configured release', () => {
+    expect(buildFrontendMonitoringOptions('')).toBeNull()
+    expect(isFrontendMonitoringEnabled()).toBe(false)
+    const options = buildFrontendMonitoringOptions('https://public@o0.ingest.sentry.io/1', 'web-21')
+    expect(options?.release).toBe('web-21')
+    expect(options?.tracesSampleRate).toBe(0)
+    const sanitized = options?.beforeSend?.({
+      message: 'invitation token secret',
+      tags: { component: 'ui', category: 'render' },
+    })
+    expect(JSON.stringify(sanitized)).not.toContain('secret')
   })
 })

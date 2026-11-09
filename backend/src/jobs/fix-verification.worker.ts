@@ -10,6 +10,7 @@ import {
   RetryableVerificationDispatchError,
 } from '@/modules/code-review/fix-verification.lifecycle'
 import logger from '@/utils/logger'
+import { recordJobOutcome } from '@/observability/metrics'
 import { reportBackendError } from '@/utils/error-monitoring'
 import {
   enqueueFixVerificationJob,
@@ -81,10 +82,14 @@ const worker = new Worker<FixVerificationJobData>(
   { connection, autorun: false }
 )
 
+worker.on('completed', () => {
+  recordJobOutcome({ at: Date.now(), queue: 'fix-verification', outcome: 'succeeded' })
+})
 worker.on('failed', (job, error) => {
   if (error instanceof RetryableVerificationDispatchError || error instanceof DelayedError) return
   if (job && job.attemptsMade >= (job.opts.attempts ?? 1)) {
     reportBackendError(error, 'verification-worker')
+    recordJobOutcome({ at: Date.now(), queue: 'fix-verification', outcome: 'failed' })
   }
   logger.error({ attemptId: job?.data.attemptId }, 'Fix verification job failed')
 })
