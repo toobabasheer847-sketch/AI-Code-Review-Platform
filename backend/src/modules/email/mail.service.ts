@@ -10,7 +10,7 @@ import {
 import fs from 'fs'
 import path from 'path'
 
-type MailConfiguration = Pick<
+export type MailConfiguration = Pick<
 	typeof env,
 	'MAIL_HOST' | 'MAIL_PORT' | 'MAIL_USER' | 'MAIL_PASSWORD' | 'MAIL_FROM'
 >
@@ -82,24 +82,26 @@ function escapeHtml(value: string): string {
 
 export class MailService {
 	private transporter
+	private readonly configuration: MailConfiguration
 
-	constructor() {
-		validateMailConfiguration()
+	constructor(configuration: MailConfiguration = env) {
+		validateMailConfiguration(configuration)
+		this.configuration = configuration
 		this.transporter = nodemailer.createTransport({
-			host: env.MAIL_HOST,
-			port: env.MAIL_PORT,
-			secure: env.MAIL_PORT === 465,
+			host: configuration.MAIL_HOST,
+			port: configuration.MAIL_PORT,
+			secure: configuration.MAIL_PORT === 465,
 			auth: {
-				user: env.MAIL_USER,
-				pass: env.MAIL_PASSWORD,
+				user: configuration.MAIL_USER,
+				pass: configuration.MAIL_PASSWORD,
 			},
 		})
 	}
 
 	private get fromAddress(): string {
-		return env.MAIL_HOST.toLowerCase() === 'smtp.gmail.com'
-			? env.MAIL_USER
-			: env.MAIL_FROM
+		return this.configuration.MAIL_HOST.toLowerCase() === 'smtp.gmail.com'
+			? this.configuration.MAIL_USER
+			: this.configuration.MAIL_FROM
 	}
 
 	public async sendReviewComplete(payload: ReviewCompletePayload) {

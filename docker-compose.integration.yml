@@ -1,0 +1,14 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: ai-codeguard-redis-integration
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6390:6379"
+
+  mailpit:
+    image: axllent/mailpit:v1.21
+    container_name: ai-codeguard-mailpit-integration
+    ports:
+      - "1025:1025"
+      - "8025:8025"

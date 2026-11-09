@@ -1,0 +1,62 @@
+name: Redis and SMTP integration
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  redis:
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      REDIS_URL: redis://127.0.0.1:6380/0
+      REDIS_INTEGRATION_URL: redis://127.0.0.1:6380/15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.2
+          cache: npm
+      - run: npm ci
+      - run: npm run test:redis --workspace=backend
+
+  smtp:
+    runs-on: ubuntu-latest
+    services:
+      mailpit:
+        image: axllent/mailpit:v1.21
+        ports:
+          - 1025:1025
+          - 8025:8025
+    env:
+      SMTP_INTEGRATION_HOST: 127.0.0.1
+      SMTP_INTEGRATION_PORT: 1025
+      SMTP_INTEGRATION_API_URL: http://127.0.0.1:8025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.2
+          cache: npm
+      - run: npm ci
+      - name: Wait for Mailpit
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl --silent --fail http://127.0.0.1:8025/api/v1/info; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Mailpit did not become ready" >&2
+          exit 1
+      - run: npm run test:smtp --workspace=backend
