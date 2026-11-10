@@ -2,17 +2,47 @@
 
 ## Release decision
 
-**Not production-launch-ready based on this repository audit.** The automated
-checks and local source review below are not a production deployment, external
-security certification, or independent penetration test. Do not advertise
-organization/workspace tenancy or enterprise RBAC: the current data model is
-user-owned and has no organization, workspace, membership, or role models.
+**Not production-launch-ready.** Workspace organizations, memberships, roles,
+and invitation accept/decline exist in this checkout and are covered by
+integration tests and mocked Playwright flows. That does not make this a
+production deployment, an external security certification, or a penetration
+test. A beta can be offered only to a limited set of accounts after the launch
+blockers below are closed in a real staging environment.
+
+## Beta launch checklist
+
+Launch blockers:
+
+- [ ] Configure the GitHub `production` environment with required reviewers and a `main` deployment branch policy.
+- [ ] Provide separate staging and production secrets, managed PostgreSQL, and TLS Redis. Confirm `/health/ready` after a staging deploy.
+- [ ] Set `TRUST_PROXY_HOPS` to the real proxy chain and confirm a spoofed `X-Forwarded-For` does not create a new rate-limit bucket.
+- [ ] Point every API and worker replica at the same durable Redis and rehearse restart, failover, and duplicate job behavior.
+- [ ] Rehearse backup restore against a current staging backup, not only a local disposable database.
+- [ ] Configure Sentry DSNs, `METRICS_TOKEN`, and an on-call route. Confirm one test alert is delivered.
+- [ ] Run Stripe test-mode webhook replay, payment failure, and cancellation against the deployed staging URL.
+- [ ] Name the incident owner, RPO, and RTO before accepting customer data.
+
+Required before calling the beta safe, already present in source:
+
+- [x] Session cookies are HttpOnly, production cookies are `Secure`, and CSRF plus exact-origin checks guard cookie mutations.
+- [x] Workspace routes resolve membership before role checks. Invitation tokens are stored as hashes.
+- [x] Stripe and GitHub webhooks verify signatures. Provider credentials are encrypted at rest.
+- [x] API 500 responses use a fixed message. Logs redact tokens, cookies, and database URLs.
+- [x] CI separates unit, disposable Postgres, Redis, and opt-in provider tests. Production deploy is manual.
+- [x] Readiness checks PostgreSQL and Redis without returning connection strings.
+
+Non-blocking improvements:
+
+- [ ] Screen-reader and keyboard passes beyond the current Playwright smoke tests.
+- [ ] A shared metrics backend so replica dashboards are one series.
+- [ ] Team-workspace review chat. Review chat currently resolves the caller's personal workspace and returns not found for other workspaces.
+- [ ] Commercial AI budgets beyond the code-review quota and schedule cap.
+- [ ] Retention, legal hold, and backup expiry policy owned by operations.
 
 ## Prioritized release blockers
 
 | Priority | Finding | Required release action |
 | --- | --- | --- |
-| Blocker | There is no organization/workspace membership or role-based access model. Ownership is by individual `userId`; there is no tenant administrator or member lifecycle. | Decide the intended tenancy model, then implement and test tenant-scoped access across APIs, database relations, jobs, approvals, schedules, files, billing, and provider credentials before selling team/organization plans. |
 | High | The application uses an HttpOnly session cookie, signed CSRF token, and exact-origin validation in source; production cookie and proxy behavior has not been verified. | Verify production `CSRF_SECRET`, cookie SameSite/HTTPS settings, deployed frontend/API origins, OAuth callbacks, and browser behavior in staging before launch. |
 | High | API rate limits now use shared Redis counters. `X-Forwarded-For` is ignored unless `TRUST_PROXY_HOPS` is the exact trusted hop count. | Set `TRUST_PROXY_HOPS` to the deployed proxy chain, point every replica at the same durable Redis, and confirm spoofed forwarded headers do not create new buckets in staging. |
 | Medium | The 2026-11-05 dependency audit reports 6 moderate development-tooling findings, including GHSA-g3hv-75wg-m249; it reports no high/critical issues and `npm audit --omit=dev --audit-level=moderate` reports no production dependency vulnerabilities. | Keep CI at `npm audit --audit-level=high` so critical and high advisories fail the build. Do not lower that level. The minimatch advisory affects the development lint/type-check dependency tree. Revisit when compatible lint/type-check dependencies can use a fixed version without a breaking toolchain change. |
@@ -208,8 +238,6 @@ targets before accepting production data.
 
 ## Release checklist
 
-- [ ] Select and document individual-account versus organization/workspace
-  tenancy. Do not offer team plans until tenant RBAC and isolation exist.
 - [ ] Complete the high-priority blockers above, including session storage,
   shared rate limits, dependency advisories, and the supported worker topology.
 - [ ] Configure production secrets and validate callback URLs, CORS origin,

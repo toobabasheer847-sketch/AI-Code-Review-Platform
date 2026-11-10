@@ -138,6 +138,20 @@ export function recordAIRequestFailure(
   })
 }
 
+function isTimeoutError(error: object): boolean {
+  const name = 'name' in error && typeof error.name === 'string' ? error.name : ''
+  const code = 'code' in error && typeof error.code === 'string' ? error.code : ''
+  const ctor = error.constructor?.name ?? ''
+  if (/timeout|abort/i.test(`${name} ${ctor}`) || /ETIMEDOUT|ECONNABORTED|ABORT_ERR|UND_ERR_.*TIMEOUT/i.test(code)) {
+    return true
+  }
+  const message = 'message' in error && typeof error.message === 'string' ? error.message : ''
+  if (/\btimed out\b|\btimeout\b/i.test(message)) return true
+  return 'cause' in error && typeof error.cause === 'object' && error.cause !== null
+    ? isTimeoutError(error.cause)
+    : false
+}
+
 function errorCategory(error: unknown): string {
   if (typeof error === 'object' && error !== null) {
     const status =
@@ -148,10 +162,7 @@ function errorCategory(error: unknown): string {
           : null
     if (status === 429) return 'rate_limited'
     if (status === 401 || status === 403) return 'authentication'
-    if (status === 408 || status === 504) return 'timeout'
-    if ('name' in error && typeof error.name === 'string' && /timeout|abort/i.test(error.name)) {
-      return 'timeout'
-    }
+    if (status === 408 || status === 504 || isTimeoutError(error)) return 'timeout'
   }
   return 'provider_failure'
 }
