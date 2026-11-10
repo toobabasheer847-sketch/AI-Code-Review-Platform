@@ -57,6 +57,9 @@ test('keeps the existing ceilings and rejects configuration that would weaken th
   assert.equal(rateLimitPolicies.api.windowMs, 15 * 60 * 1000);
   assert.equal(rateLimitPolicies.loginRegistration.limit, 5);
   assert.equal(rateLimitPolicies.loginRegistration.skipSuccessfulRequests, true);
+  assert.equal(rateLimitPolicies.registration.limit, 5);
+  assert.equal(rateLimitPolicies.registration.skipSuccessfulRequests, false);
+  assert.equal(rateLimitPolicies.registration.failureMode, 'fail-closed');
   assert.equal(rateLimitPolicies.accountSecurity.limit, 5);
   assert.equal(rateLimitPolicies.emailVerification.limit, 10);
   assert.equal(rateLimitPolicies.automation.limit, 10);
@@ -94,6 +97,31 @@ test('keeps the existing ceilings and rejects configuration that would weaken th
   assert.match(RATE_LIMIT_INCREMENT_SCRIPT, /INCR/);
   assert.match(RATE_LIMIT_INCREMENT_SCRIPT, /PEXPIRE/);
   assert.match(RATE_LIMIT_DECREMENT_SCRIPT, /DECR/);
+});
+
+test('registration limits count successful signup attempts', async () => {
+  const redis = createMemoryRateLimitRedis();
+  const app = express();
+  app.set('trust proxy', false);
+  app.post(
+    '/register',
+    createDistributedRateLimiter({ ...rateLimitPolicies.registration, limit: 1 }, redis),
+    (_req, res) => res.sendStatus(201)
+  );
+  const server = await listen(app);
+  try {
+    assert.equal((await request(server.baseUrl, '/register', {}, 'POST')).status, 201);
+    const blocked = await request(server.baseUrl, '/register', {}, 'POST');
+    assert.equal(blocked.status, 429);
+    assert.equal(
+      typeof blocked.body === 'object' && blocked.body !== null && 'error' in blocked.body
+        ? blocked.body.error
+        : '',
+      rateLimitPolicies.registration.error
+    );
+  } finally {
+    await server.close();
+  }
 });
 
 test('workspace invitation emails are limited per user', async () => {

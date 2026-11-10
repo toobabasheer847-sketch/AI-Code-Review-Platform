@@ -5,6 +5,7 @@ import { env } from '@/config/env';
 import {
   apiLimiter,
   loginRegistrationLimiter,
+  registrationLimiter,
   resolveTrustProxySetting,
 } from '@/middleware/rate-limit';
 import logger from '@/utils/logger';
@@ -80,7 +81,7 @@ export const createApp = (): Express => {
 
   app.use('/api/', apiLimiter);
   app.use('/api/auth/login', loginRegistrationLimiter);
-  app.use('/api/auth/register', loginRegistrationLimiter);
+  app.use('/api/auth/register', registrationLimiter);
   app.use('/api', apiSecurityMiddleware);
 
   app.get('/health/live', (_req, res) => {

@@ -66,6 +66,15 @@ export const rateLimitPolicies = {
     failureMode: 'fail-closed',
     skipSuccessfulRequests: true,
   },
+  registration: {
+    name: 'registration',
+    windowMs: windowSetting('RATE_LIMIT_REGISTER_WINDOW_MS', FIFTEEN_MINUTES),
+    limit: maxSetting('RATE_LIMIT_REGISTER_MAX', 5),
+    error: 'Too many registration attempts. Try again later.',
+    identity: 'ip',
+    failureMode: 'fail-closed',
+    skipSuccessfulRequests: false,
+  },
   accountSecurity: {
     name: 'account-security',
     windowMs: windowSetting('RATE_LIMIT_ACCOUNT_WINDOW_MS', FIFTEEN_MINUTES),
@@ -269,6 +278,7 @@ export const apiLimiter = createDistributedRateLimiter(rateLimitPolicies.api);
 export const loginRegistrationLimiter = createDistributedRateLimiter(
   rateLimitPolicies.loginRegistration
 );
+export const registrationLimiter = createDistributedRateLimiter(rateLimitPolicies.registration);
 export const accountSecurityLimiter = createDistributedRateLimiter(
   rateLimitPolicies.accountSecurity
 );

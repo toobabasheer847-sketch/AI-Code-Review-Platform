@@ -6,6 +6,18 @@ import { LoadingSpinner } from '@components/common/LoadingSpinner';
 import { ProtectedRoute } from './ProtectedRoute';
 
 const LandingPage = lazy(() => import('@pages/LandingPage').then((m) => ({ default: m.default })));
+const DocsPage = lazy(() =>
+  import('@features/launch/pages/LaunchPages').then((m) => ({ default: m.DocsPage }))
+);
+const PrivacyDraftPage = lazy(() =>
+  import('@features/launch/pages/LaunchPages').then((m) => ({ default: m.PrivacyDraftPage }))
+);
+const TermsDraftPage = lazy(() =>
+  import('@features/launch/pages/LaunchPages').then((m) => ({ default: m.TermsDraftPage }))
+);
+const CookieDraftPage = lazy(() =>
+  import('@features/launch/pages/LaunchPages').then((m) => ({ default: m.CookieDraftPage }))
+);
 const LoginPage = lazy(() =>
   import('@features/auth/pages/LoginPage').then((m) => ({ default: m.LoginPage }))
 );
@@ -171,6 +183,38 @@ export const routes: RouteObject[] = [
     element: (
       <Suspense fallback={<LazyFallback />}>
         <LandingPage />
+      </Suspense>
+    ),
+  },
+  {
+    path: '/docs',
+    element: (
+      <Suspense fallback={<LazyFallback />}>
+        <DocsPage />
+      </Suspense>
+    ),
+  },
+  {
+    path: '/privacy',
+    element: (
+      <Suspense fallback={<LazyFallback />}>
+        <PrivacyDraftPage />
+      </Suspense>
+    ),
+  },
+  {
+    path: '/terms',
+    element: (
+      <Suspense fallback={<LazyFallback />}>
+        <TermsDraftPage />
+      </Suspense>
+    ),
+  },
+  {
+    path: '/cookies',
+    element: (
+      <Suspense fallback={<LazyFallback />}>
+        <CookieDraftPage />
       </Suspense>
     ),
   },

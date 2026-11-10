@@ -25,8 +25,8 @@ export const PricingPage = (): JSX.Element => {
 
             <div className="mt-6 space-y-4 text-sm text-slate-300">
               <p>3 code reviews per month</p>
-              <p>Basic security feedback</p>
-              <p>Email support</p>
+              <p>GitHub connection, workspace membership, and AI review findings</p>
+              <p>Email verification is required before product routes</p>
             </div>
 
             <Link
@@ -41,15 +41,15 @@ export const PricingPage = (): JSX.Element => {
             <div className="flex items-center justify-between gap-4">
               <div>
                 <h2 className="text-xl font-semibold text-white">Pro</h2>
-                <p className="mt-2 text-sm text-slate-400">Unlimited reviews, priority support</p>
+                <p className="mt-2 text-sm text-slate-400">Code-review cap lifted while Pro is active</p>
               </div>
               <span className="rounded-full bg-indigo-500/15 px-3 py-1 text-xs text-indigo-200">Best choice</span>
             </div>
 
             <div className="mt-6 space-y-4 text-sm text-slate-300">
-              <p>Unlimited code reviews</p>
-              <p>Advanced metrics and analytics</p>
-              <p>Priority support and faster analysis</p>
+              <p>The monthly code-review cap is not applied while the subscription is entitled</p>
+              <p>Stripe checkout, cancellation at period end, and payment-failure updates</p>
+              <p>Other AI features are not covered by a general token budget</p>
             </div>
 
             <div className="mt-6">
