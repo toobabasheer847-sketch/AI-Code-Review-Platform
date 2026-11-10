@@ -31,6 +31,14 @@ Required before calling the beta safe, already present in source:
 - [x] CI separates unit, disposable Postgres, Redis, and opt-in provider tests. Production deploy is manual.
 - [x] Readiness checks PostgreSQL and Redis without returning connection strings.
 
+Controlled beta access, after the blockers above are closed:
+
+- Leave `BETA_ALLOWLIST` empty for local development and the automated tests. Set it to a comma-separated email list to place every other new registration in `PENDING`.
+- Set `BETA_ADMIN_EMAILS` to the operators who may open `/beta-admin`. An empty list rejects every admin request.
+- Pending and revoked users can still read `/auth/me` and sign out. Product routes return `403` with `BETA_ACCESS_REQUIRED`.
+- Product analytics store an allowlisted event name and user id only: registration, workspace creation, GitHub connection, review start, review completion, repository chat, and feedback submission. They do not store prompts, source, tokens, or feedback text.
+- Finding-level review feedback remains on the review and analytics pages. The beta form is for product feedback.
+
 Non-blocking improvements:
 
 - [ ] Screen-reader and keyboard passes beyond the current Playwright smoke tests.

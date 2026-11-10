@@ -25,6 +25,9 @@ export interface AuthResponse {
     isVerified: boolean
     githubConnected: boolean
     githubUsername: string | null
+    betaStatus?: 'ACTIVE' | 'PENDING' | 'REVOKED'
+    onboardingDismissedAt?: string | null
+    betaAdmin?: boolean
     createdAt: string
     updatedAt: string
   }
@@ -51,6 +54,9 @@ export interface UserResponse {
     isVerified: boolean
     githubConnected: boolean
     githubUsername: string | null
+    betaStatus?: 'ACTIVE' | 'PENDING' | 'REVOKED'
+    onboardingDismissedAt?: string | null
+    betaAdmin?: boolean
     createdAt: string
     updatedAt: string
   }

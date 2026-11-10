@@ -20,6 +20,7 @@ import { AutomationCommandInput } from '@/features/automation/components/Automat
 import { AutomationShell } from '@/features/automation/components/AutomationShell'
 import { DashboardMetricCard } from '@/features/automation/components/DashboardMetricCard'
 import { useAutomations } from '@/features/automation/hooks/useAutomations'
+import { BetaOnboarding } from '@/features/beta/components/BetaOnboarding'
 import { ConnectGitHubButton } from '@/features/github/components/ConnectGitHubButton'
 import { reviewApi, type ReviewSummary } from '@/features/reviews/api/reviewApi'
 import { useListReviews } from '@/features/reviews/hooks/useReviews'
@@ -113,6 +114,7 @@ export const DashboardPage = (): JSX.Element => {
       userName={user?.fullName ?? 'Your account'}
       pendingApprovals={pendingApprovals}
     >
+      <BetaOnboarding />
       <div className="mb-7">
         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-300/80">
           Workspace / Overview

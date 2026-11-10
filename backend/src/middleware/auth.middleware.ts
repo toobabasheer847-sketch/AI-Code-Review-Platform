@@ -17,6 +17,7 @@ export function isTokenVersionCurrent(
 interface UserAuthState {
   tokenVersion: number
   isVerified: boolean
+  betaStatus?: 'ACTIVE' | 'PENDING' | 'REVOKED'
 }
 
 type UserAuthStateReader = (userId: string) => Promise<UserAuthState | null>
@@ -24,10 +25,10 @@ type UserAuthStateReader = (userId: string) => Promise<UserAuthState | null>
 const readUserAuthState: UserAuthStateReader = async (userId) => {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { tokenVersion: true, isVerified: true },
+    select: { tokenVersion: true, isVerified: true, betaStatus: true },
   })
   return user
-    ? { tokenVersion: user.tokenVersion, isVerified: user.isVerified }
+    ? { tokenVersion: user.tokenVersion, isVerified: user.isVerified, betaStatus: user.betaStatus }
     : null
 }
 
@@ -41,7 +42,7 @@ declare global {
 
 export function createAuthMiddleware(
   readAuthState: UserAuthStateReader = readUserAuthState,
-  options: { permitUnverified?: boolean } = {}
+  options: { permitUnverified?: boolean; permitBetaRestricted?: boolean } = {}
 ) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     let decoded: JWTPayload
@@ -70,7 +71,15 @@ export function createAuthMiddleware(
         return
       }
       if (!options.permitUnverified && !authState.isVerified) {
-        res.status(403).json({ error: 'Email verification required' })
+        res.status(403).json({ error: 'Email verification required', code: 'EMAIL_VERIFICATION_REQUIRED' })
+        return
+      }
+      if (
+        !options.permitBetaRestricted &&
+        authState.betaStatus &&
+        authState.betaStatus !== 'ACTIVE'
+      ) {
+        res.status(403).json({ error: 'Beta access is not active', code: 'BETA_ACCESS_REQUIRED' })
         return
       }
       req.user = decoded
@@ -84,4 +93,5 @@ export function createAuthMiddleware(
 export const authMiddleware = createAuthMiddleware()
 export const accountLifecycleAuthMiddleware = createAuthMiddleware(readUserAuthState, {
   permitUnverified: true,
+  permitBetaRestricted: true,
 })

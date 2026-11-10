@@ -12,6 +12,7 @@ import integrationsRoutes from '@/modules/integrations/integrations.routes'
 import repositoryRoutes from '@/modules/repositories/repository.routes'
 import aiUsageRoutes from '@/modules/ai/usage.routes'
 import workspaceRoutes from '@/modules/workspaces/workspace.routes'
+import betaRoutes from '@/modules/beta/beta.routes'
 
 /**
  * Aggregates all API routes.
@@ -33,6 +34,7 @@ export const createApiRoutes = (): Router => {
   router.use('/integrations', integrationsRoutes)
   router.use('/ai-usage', aiUsageRoutes)
   router.use('/workspaces', workspaceRoutes)
+  router.use('/beta', betaRoutes)
   router.use('/webhooks/github', pullRequestWebhookRoutes)
 
   return router

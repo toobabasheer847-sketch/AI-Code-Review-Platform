@@ -8,6 +8,8 @@ export type StoredAuthUser = {
   passwordHash: string
   isVerified: boolean
   tokenVersion: number
+  betaStatus?: 'ACTIVE' | 'PENDING' | 'REVOKED'
+  onboardingDismissedAt?: Date | null
   createdAt: Date
   updatedAt: Date
   githubAccount?: { username: string } | null
@@ -23,6 +25,7 @@ export interface AuthStore {
   findUserByEmail(email: string): Promise<StoredAuthUser | null>
   findUserById(userId: string): Promise<StoredAuthUser | null>
   createUser(data: { email: string; fullName: string; passwordHash: string }): Promise<StoredAuthUser>
+  setBetaStatus?(userId: string, status: 'ACTIVE' | 'PENDING' | 'REVOKED'): Promise<void>
   assertCanDeleteUser?(userId: string): Promise<void>
   replaceToken(
     userId: string,
@@ -67,6 +70,10 @@ export const authStore: AuthStore = {
       where: { id: userId },
       include: { githubAccount: { select: { username: true } } },
     })
+  },
+
+  async setBetaStatus(userId, status) {
+    await prisma.user.update({ where: { id: userId }, data: { betaStatus: status } })
   },
 
   async createUser(data) {

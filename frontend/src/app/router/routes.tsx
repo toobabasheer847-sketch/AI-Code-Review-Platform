@@ -18,6 +18,12 @@ const AccountActionPage = lazy(() =>
 const DashboardPage = lazy(() =>
   import('@features/dashboard/pages/DashboardPage').then((m) => ({ default: m.DashboardPage }))
 );
+const FeedbackPage = lazy(() =>
+  import('@features/beta/pages/FeedbackPage').then((m) => ({ default: m.FeedbackPage }))
+);
+const BetaAdminPage = lazy(() =>
+  import('@features/beta/pages/BetaAdminPage').then((m) => ({ default: m.BetaAdminPage }))
+);
 const PricingPage = lazy(() =>
   import('@features/billing/pages/PricingPage').then((m) => ({ default: m.PricingPage }))
 );
@@ -214,6 +220,26 @@ export const routes: RouteObject[] = [
       <ProtectedRoute>
         <Suspense fallback={<LazyFallback />}>
           <DashboardPage />
+        </Suspense>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/feedback',
+    element: (
+      <ProtectedRoute>
+        <Suspense fallback={<LazyFallback />}>
+          <FeedbackPage />
+        </Suspense>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/beta-admin',
+    element: (
+      <ProtectedRoute>
+        <Suspense fallback={<LazyFallback />}>
+          <BetaAdminPage />
         </Suspense>
       </ProtectedRoute>
     ),

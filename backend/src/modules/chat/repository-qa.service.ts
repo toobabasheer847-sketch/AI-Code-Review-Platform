@@ -6,7 +6,8 @@ import {
 } from '@/modules/code-review/analyzer';
 import { redactCredentialSource } from '@/modules/code-review/security-scanner';
 import type { ReviewSourceFile } from '@/modules/github/github.service';
-import type { AIUsageContext } from '@/modules/ai/usage.service'
+import type { AIUsageContext } from '@/modules/ai/usage.service';
+import { recordProductEvent } from '@/modules/beta/product-events';
 
 export const MAX_REPOSITORY_QA_EVIDENCE = 6;
 export const MAX_REPOSITORY_QA_CONTEXT_CHARS = 12_000;
@@ -320,6 +321,7 @@ export class RepositoryQAService {
     const prepared = prepareRepositoryFiles(files);
     const evidence = retrieveRepositoryEvidence(prepared.files, input.question);
     if (evidence.length === 0) {
+      await recordProductEvent(userId, 'REPO_CHAT');
       return {
         answer:
           'I could not find repository source relevant to this question, so there is not enough information to answer it.',
@@ -371,6 +373,7 @@ export class RepositoryQAService {
       ) {
         throw new Error('Answer did not provide valid evidence references');
       }
+      await recordProductEvent(userId, 'REPO_CHAT');
       return {
         answer: parsed.answer,
         evidence: citedEvidence,

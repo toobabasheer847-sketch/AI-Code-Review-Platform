@@ -14,6 +14,7 @@ import {
   Cable,
   LayoutDashboard,
   LogOut,
+  MessageSquare,
   MessageSquareText,
   Search,
   Settings,
@@ -25,6 +26,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
+import { useAppStore } from '@/app/store/useAppStore';
 import { useLogout } from '@/features/auth/hooks/useAuth';
 import { WorkspaceSwitcher } from '@/features/workspaces/components/WorkspaceSwitcher';
 
@@ -38,6 +40,7 @@ const navigation = [
   { to: '/integrations', label: 'Integrations', icon: Cable },
   { to: '/reviews', label: 'Code reviews', icon: FileSearch },
   { to: '/chat', label: 'AI chat', icon: MessageSquareText },
+  { to: '/feedback', label: 'Feedback', icon: MessageSquare },
   { to: '/analytics', label: 'Feedback analytics', icon: BarChart3 },
   { to: '/ai-usage', label: 'AI usage', icon: BarChart3 },
   { to: '/repository-rules', label: 'Review rules', icon: ListChecks },
@@ -71,6 +74,7 @@ export const AutomationShell = ({
   const [searchOpen, setSearchOpen] = useState(false);
   const searchInput = useRef<HTMLInputElement>(null);
   const logout = useLogout();
+  const betaAdmin = useAppStore((state) => state.user?.betaAdmin === true);
   const navigate = useNavigate();
   const location = useLocation();
   const matchingLinks = quickLinks.filter((item) =>
@@ -182,6 +186,7 @@ export const AutomationShell = ({
           {[
             { to: '/billing', label: 'Billing', icon: CreditCard },
             { to: '/settings', label: 'Settings', icon: Settings },
+            ...(betaAdmin ? [{ to: '/beta-admin', label: 'Beta admin', icon: ShieldCheck }] : []),
           ].map(({ to, label, icon: Icon }) => (
             <NavLink
               key={to}

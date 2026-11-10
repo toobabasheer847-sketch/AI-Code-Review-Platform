@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client'
 import { env } from '@/config/env'
 import { createBullMqRedisConnection } from '@/config/redis-connection'
 import { prisma } from '@/config/database'
+import { recordProductEvent } from '@/modules/beta/product-events'
 import { emailQueue } from './email.queue'
 import { analyzeCode, completeWithOpenAI } from '@/modules/code-review/analyzer'
 import { listEnabledRepositoryReviewRules } from '@/modules/repositories/repository-review-rules.service'
@@ -87,6 +88,7 @@ const store: ReviewJobStore = {
         files
       )
     })
+    await recordProductEvent(review.userId, 'REVIEW_COMPLETED')
   },
 
   async markFailed(reviewId, message): Promise<void> {

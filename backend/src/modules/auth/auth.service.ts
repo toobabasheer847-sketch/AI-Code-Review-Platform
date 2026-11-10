@@ -8,6 +8,8 @@ import logger from '@/utils/logger'
 import type { AccountEmailJob } from '@/modules/email/account-email.types'
 import { encryptVerificationOtp } from '@/modules/email/verification-otp.crypto'
 import { getSafeMailErrorDetails } from '@/modules/email/mail.service'
+import { betaAdminEmails, betaAllowlist, isBetaAdmin, resolveBetaStatus } from '@/modules/beta/beta.domain'
+import { recordProductEvent } from '@/modules/beta/product-events'
 import { GitHubService } from '@/modules/github/github.service'
 import type { LoginInput, RegisterInput } from './auth.validation'
 import type { LoginResult, UserResponse } from './auth.types'
@@ -131,6 +133,8 @@ export class AuthService {
     fullName: string
     avatar: string | null
     isVerified: boolean
+    betaStatus?: 'ACTIVE' | 'PENDING' | 'REVOKED'
+    onboardingDismissedAt?: Date | null
     createdAt: Date
     updatedAt: Date
     githubAccount?: { username: string } | null
@@ -143,6 +147,9 @@ export class AuthService {
       isVerified: user.isVerified,
       githubConnected: !!user.githubAccount,
       githubUsername: user.githubAccount?.username ?? null,
+      betaStatus: user.betaStatus ?? 'ACTIVE',
+      onboardingDismissedAt: user.onboardingDismissedAt ?? null,
+      betaAdmin: isBetaAdmin(user.email, betaAdminEmails()),
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     }
@@ -275,6 +282,12 @@ export class AuthService {
       }
       throw error
     }
+
+    const betaStatus = resolveBetaStatus(user.email, betaAllowlist())
+    if (betaStatus !== 'ACTIVE') {
+      await this.store.setBetaStatus?.(user.id, betaStatus)
+    }
+    await recordProductEvent(user.id, 'REGISTRATION')
 
     const queued = await this.issueEmailVerification(user.id, user.email)
     if (!queued) throw new AccountEmailQueueError()

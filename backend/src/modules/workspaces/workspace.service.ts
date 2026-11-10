@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { Prisma, type WorkspaceMemberStatus, type WorkspaceRole } from '@prisma/client'
 import { prisma } from '@/config/database'
 import { env } from '@/config/env'
+import { recordProductEvent } from '@/modules/beta/product-events'
 import { getSafeMailErrorDetails, MailService } from '@/modules/email/mail.service'
 import {
   buildInvitationAcceptUrl,
@@ -97,7 +98,7 @@ export class WorkspaceService {
     }
     const suffix = randomBytes(3).toString('hex')
 
-    return prisma.$transaction(async (transaction) => {
+    const created = await prisma.$transaction(async (transaction) => {
       const organization = await transaction.organization.create({
         data: {
           name: input.organizationName?.trim() || name,
@@ -119,6 +120,8 @@ export class WorkspaceService {
       })
       return { ...workspace, role: 'OWNER' as const }
     })
+    await recordProductEvent(userId, 'WORKSPACE_CREATED')
+    return created
   }
 
   async createInOrganization(

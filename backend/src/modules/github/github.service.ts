@@ -1,6 +1,7 @@
 import axios, { type AxiosInstance } from 'axios'
 import { prisma } from '@/config/database'
 import { env } from '@/config/env'
+import { recordProductEvent } from '@/modules/beta/product-events'
 import { decryptWithRotation, encrypt } from '@/utils/crypto'
 import {
   getAccessTokenExchangeBody,
@@ -884,6 +885,9 @@ export class GitHubService {
         },
       }),
     ])
+    if (!existingAccount) {
+      await recordProductEvent(userId, 'REPOSITORY_CONNECTED')
+    }
   }
 
   async getGitHubAccount(userId: string) {

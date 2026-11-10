@@ -24,6 +24,8 @@ model User {
   workspaceInvitationsSent WorkspaceInvitation[] @relation("WorkspaceInvitationInviter")
   workspaceInvitationsAccepted WorkspaceInvitation[] @relation("WorkspaceInvitationAccepter")
   isVerified          Boolean              @default(false)
+  betaStatus          BetaAccessStatus     @default(ACTIVE)
+  onboardingDismissedAt DateTime?
   tokenVersion        Int                  @default(0)
   subscription        Subscription?
   repositories        Repository[]
@@ -40,6 +42,8 @@ model User {
   socialPostEvents    SocialPostEvent[]
   workMemories        WorkMemory[]
   findingFeedback     FindingFeedback[]
+  productFeedback     ProductFeedback[]
+  productEvents       ProductEvent[]
   findingAssessmentFeedback FindingAssessmentFeedback[]
   repositoryReviewRules RepositoryReviewRule[]
   repositoryReviewRuleRevisions RepositoryReviewRuleRevision[]
@@ -1120,4 +1124,62 @@ model ReviewAnalytics {
   @@unique([reviewId])
   @@index([userId])
   @@index([reviewId])
+}
+
+enum BetaAccessStatus {
+  ACTIVE
+  PENDING
+  REVOKED
+}
+
+enum ProductFeedbackCategory {
+  BUG
+  FEATURE
+  GENERAL
+  REVIEW_QUALITY
+}
+
+enum ProductFeedbackStatus {
+  OPEN
+  TRIAGED
+  PLANNED
+  CLOSED
+}
+
+enum ProductEventName {
+  REGISTRATION
+  WORKSPACE_CREATED
+  REPOSITORY_CONNECTED
+  REVIEW_STARTED
+  REVIEW_COMPLETED
+  REPO_CHAT
+  FEEDBACK_SUBMITTED
+}
+
+model ProductFeedback {
+  id        String                  @id @default(cuid())
+  userId    String
+  user      User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category  ProductFeedbackCategory
+  status    ProductFeedbackStatus   @default(OPEN)
+  subject   String
+  body      String
+  rating    Int?
+  reviewId  String?
+  createdAt DateTime                @default(now())
+  updatedAt DateTime                @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([status, category])
+}
+
+model ProductEvent {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      ProductEventName
+  createdAt DateTime         @default(now())
+
+  @@index([name, createdAt])
+  @@index([userId, name])
 }

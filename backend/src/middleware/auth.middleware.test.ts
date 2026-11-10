@@ -109,10 +109,54 @@ test('protected routes reject unverified users while account lifecycle routes re
   })
   const protectedResult = await invokeMiddleware(token, 0, false)
   assert.equal(protectedResult.statusCode, 403)
-  assert.deepEqual(protectedResult.responseBody, { error: 'Email verification required' })
+  assert.deepEqual(protectedResult.responseBody, {
+    error: 'Email verification required',
+    code: 'EMAIL_VERIFICATION_REQUIRED',
+  })
   assert.equal(protectedResult.nextCalled, false)
 
   const lifecycleResult = await invokeMiddleware(token, 0, false, true)
   assert.equal(lifecycleResult.nextCalled, true)
   assert.equal(lifecycleResult.user?.userId, 'user-1')
+})
+
+test('pending beta users can use account routes and cannot use product routes', async () => {
+  const token = generateToken({
+    userId: 'user-1',
+    email: 'person@example.com',
+    tokenVersion: 0,
+  })
+  const reader = async () => ({ tokenVersion: 0, isVerified: true, betaStatus: 'PENDING' as const })
+  let statusCode = 0
+  let body: { code?: string } | undefined
+  const req = {
+    headers: { cookie: `${env.AUTH_SESSION_COOKIE_NAME}=${encodeURIComponent(token)}` },
+  } as Request
+  const res = {
+    status(code: number) {
+      statusCode = code
+      return this
+    },
+    json(value: { code?: string }) {
+      body = value
+      return this
+    },
+    clearCookie() {
+      return this
+    },
+  } as unknown as Response
+
+  await createAuthMiddleware(reader)(req, res, () => undefined)
+  assert.equal(statusCode, 403)
+  assert.equal(body?.code, 'BETA_ACCESS_REQUIRED')
+
+  let lifecycleNext = false
+  await createAuthMiddleware(reader, { permitUnverified: true, permitBetaRestricted: true })(
+    req,
+    res,
+    () => {
+      lifecycleNext = true
+    }
+  )
+  assert.equal(lifecycleNext, true)
 })

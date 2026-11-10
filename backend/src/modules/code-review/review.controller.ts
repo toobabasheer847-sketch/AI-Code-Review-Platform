@@ -14,6 +14,7 @@ import {
 	FindingVerificationService,
 	requestFindingVerificationSchema,
 } from './finding-verification.service'
+import { recordProductEvent } from '@/modules/beta/product-events'
 import logger from '@/utils/logger'
 
 const reviewService = new ReviewService()
@@ -331,6 +332,7 @@ export class ReviewController {
 				repository,
 				branch || 'main'
 			)
+			await recordProductEvent(req.user.userId, 'REVIEW_STARTED')
 			res.json({ reviewId: review.id })
 		} catch (error) {
 			respondWithError(error, res, 'Unable to start this review.')

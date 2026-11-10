@@ -11,6 +11,9 @@ export interface User {
   isVerified: boolean
   githubConnected?: boolean
   githubUsername?: string | null
+  betaStatus?: 'ACTIVE' | 'PENDING' | 'REVOKED'
+  onboardingDismissedAt?: string | null
+  betaAdmin?: boolean
   createdAt: string
 }
 

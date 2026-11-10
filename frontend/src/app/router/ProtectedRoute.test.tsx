@@ -11,6 +11,7 @@ import { ProtectedRoute } from './ProtectedRoute'
 
 vi.mock('@/features/auth/hooks/useAuth', () => ({
   useMe: () => ({ isLoading: false, error: undefined }),
+  useLogout: () => ({ mutateAsync: async () => undefined, isPending: false }),
 }))
 
 describe('ProtectedRoute', () => {
@@ -63,5 +64,33 @@ describe('ProtectedRoute', () => {
       renderRoute()
     })
     expect(container.textContent).toContain('private content')
+  })
+
+  it('shows the beta waitlist instead of treating pending access as email verification', async () => {
+    useAppStore.getState().setUser({
+      id: 'user-1',
+      email: 'person@example.com',
+      fullName: 'Test Person',
+      avatar: null,
+      isVerified: true,
+      betaStatus: 'PENDING',
+      createdAt: new Date().toISOString(),
+    })
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/private']}>
+          <Routes>
+            <Route
+              path="/private"
+              element={<ProtectedRoute><div>private content</div></ProtectedRoute>}
+            />
+            <Route path="/login" element={<div>login page</div>} />
+          </Routes>
+        </MemoryRouter>
+      )
+    })
+    expect(container.textContent).toContain('Beta access is pending')
+    expect(container.textContent).not.toContain('private content')
+    expect(container.textContent).not.toContain('login page')
   })
 })

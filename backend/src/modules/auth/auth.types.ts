@@ -6,6 +6,9 @@ export interface UserResponse {
   isVerified: boolean
   githubConnected: boolean
   githubUsername: string | null
+  betaStatus: 'ACTIVE' | 'PENDING' | 'REVOKED'
+  onboardingDismissedAt: Date | null
+  betaAdmin: boolean
   createdAt: Date
   updatedAt: Date
 }
