@@ -1,13 +1,16 @@
 import { createClient } from 'redis'
 import { env } from './env'
 import logger from '@/utils/logger'
-import { getRedisConnectionTarget } from './redis-connection'
+import { getRedisConnectionTarget, redisReconnectDelayMs } from './redis-connection'
 import { reportBackendError } from '@/utils/error-monitoring'
 
 const redisTarget = getRedisConnectionTarget()
 
 export const redis = createClient({
   url: env.REDIS_URL,
+  socket: {
+    reconnectStrategy: (retries) => redisReconnectDelayMs(retries),
+  },
 })
 
 redis.on('error', (error) => {

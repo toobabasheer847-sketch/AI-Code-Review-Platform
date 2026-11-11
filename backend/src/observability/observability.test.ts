@@ -2,8 +2,8 @@ import assert from 'node:assert/strict'
 import { Writable } from 'node:stream'
 import test from 'node:test'
 import type { Request, Response } from 'express'
-import { evaluateAlerts, recommendedAlertThresholds, resetAlertState, takeNewlyTriggeredAlerts } from '@/observability/alerts'
-import { authorizeMetricsRequest, buildMonitoringDashboard } from '@/observability/dashboard'
+import { alertCooldownMs, evaluateAlerts, recommendedAlertThresholds, resetAlertState, takeNewlyTriggeredAlerts } from '@/observability/alerts'
+import { authorizeMetricsRequest, buildMonitoringDashboard, providerHealthFromUsage } from '@/observability/dashboard'
 import { checkDependencyHealth } from '@/observability/health'
 import {
   metricsSnapshot,
@@ -189,14 +189,60 @@ test('alert thresholds stay quiet below the sample floor and open once', () => {
       'ai_cost_spike',
     ]
   )
-  assert.equal(takeNewlyTriggeredAlerts(triggered).length, triggered.length)
-  assert.equal(takeNewlyTriggeredAlerts(triggered).length, 0)
+  const opened = takeNewlyTriggeredAlerts(triggered, 1_000)
+  assert.equal(opened.length, triggered.filter((alert) => alert.triggered).length)
+  assert.equal(opened.every((alert) => alert.severity === 'critical' || alert.severity === 'high' || alert.severity === 'warning'), true)
+  assert.equal(takeNewlyTriggeredAlerts(triggered, 1_000 + alertCooldownMs).length, 0)
 
   const dashboard = buildMonitoringDashboard({ live: 'ok', ready: 'error', snapshot })
   assert.equal(dashboard.panels.apiTraffic.requests, snapshot.http.requests)
   assert.equal(dashboard.panels.aiUsage.estimatedCostUsd, snapshot.ai.estimatedCostUsd)
   assert.equal(dashboard.panels.backgroundJobs.email.failed, snapshot.jobs.email.failed)
   assert.equal(JSON.stringify(dashboard).includes('postgres://'), false)
+})
+
+test('ai provider failures open one high alert and honor the cooldown', () => {
+  resetAlertState()
+  resetMetrics()
+  const now = Date.parse('2026-11-11T00:00:00Z')
+  const snapshot = metricsSnapshot(now)
+  snapshot.ai.requests = recommendedAlertThresholds.aiFailureMinRequests
+  snapshot.ai.failedRequests = recommendedAlertThresholds.aiFailureMinRequests
+  const input = {
+    live: 'ok' as const,
+    database: 'ok' as const,
+    redis: 'ok' as const,
+    snapshot,
+  }
+  const outage = evaluateAlerts(input).find((alert) => alert.id === 'ai_provider_outage')
+  assert.equal(outage?.triggered, true)
+  assert.equal(outage?.severity, 'high')
+  assert.equal(providerHealthFromUsage(snapshot.ai), 'unavailable')
+
+  const belowFloor = metricsSnapshot(now)
+  belowFloor.ai.requests = recommendedAlertThresholds.aiFailureMinRequests - 1
+  belowFloor.ai.failedRequests = belowFloor.ai.requests
+  assert.equal(providerHealthFromUsage(belowFloor.ai), 'ok')
+  assert.equal(providerHealthFromUsage(metricsSnapshot(now).ai), 'unknown')
+
+  const first = takeNewlyTriggeredAlerts(evaluateAlerts(input), now)
+  assert.equal(first.some((alert) => alert.id === 'ai_provider_outage'), true)
+  const cleared = evaluateAlerts({ ...input, snapshot: metricsSnapshot(now) })
+  assert.equal(takeNewlyTriggeredAlerts(cleared, now + 1).length, 0)
+  assert.equal(takeNewlyTriggeredAlerts(evaluateAlerts(input), now + 2).length, 0)
+  assert.equal(takeNewlyTriggeredAlerts(cleared, now + 3).length, 0)
+  const afterCooldown = takeNewlyTriggeredAlerts(
+    evaluateAlerts(input),
+    now + alertCooldownMs + 1
+  )
+  assert.equal(afterCooldown.some((alert) => alert.id === 'ai_provider_outage'), true)
+
+  const dashboard = buildMonitoringDashboard({ live: 'ok', ready: 'ok', snapshot })
+  assert.deepEqual(
+    dashboard.panels.openIncidents.map((incident) => incident.id),
+    ['ai_provider_outage']
+  )
+  assert.equal(dashboard.panels.providerHealth, 'unavailable')
 })
 
 test('metrics endpoint authorization fails closed', () => {

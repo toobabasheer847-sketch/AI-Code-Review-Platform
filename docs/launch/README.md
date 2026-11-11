@@ -15,6 +15,8 @@ The same material is shown in the application at `/docs`, `/privacy`, `/terms`, 
 
 The 2026-11-11 execution record, checklist, monitoring plan, and incident process are in [PUBLIC-LAUNCH-EXECUTION.md](./PUBLIC-LAUNCH-EXECUTION.md). Production launch was not approved.
 
+Alert thresholds, incident severity, and dependency runbooks are in [../ops/ALERTS.md](../ops/ALERTS.md), [../ops/INCIDENTS.md](../ops/INCIDENTS.md), and [../ops/RUNBOOKS.md](../ops/RUNBOOKS.md). Those documents do not record a delivered alert or a production incident.
+
 ## Launch blockers that remain operational
 
 Domain and SSL, production environment review, a current backup restore, on-call alert delivery, and GitHub environment reviewers are still manual launch tasks. Do not treat this directory as approval to deploy.

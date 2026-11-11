@@ -104,7 +104,10 @@ export const createApp = (): Express => {
       })
     );
     for (const alert of opened) {
-      logger.warn({ alert: alert.id }, 'Monitoring alert threshold crossed');
+      logger.warn(
+        { alert: alert.id, severity: alert.severity },
+        'Monitoring alert threshold crossed'
+      );
     }
     if (dependencies.database !== 'ok' || dependencies.redis !== 'ok') {
       logger.error(

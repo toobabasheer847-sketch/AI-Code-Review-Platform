@@ -19,6 +19,7 @@ import { GitHubService } from '@/modules/github/github.service'
 import { publishCompletedPullRequestReview } from '@/modules/github/pull-request-review-publisher'
 import type { ReviewJobData } from './review.queue'
 import logger from '@/utils/logger'
+import { isTerminalQueueFailure } from './job-retry'
 import { recordJobOutcome } from '@/observability/metrics'
 import { reportBackendError } from '@/utils/error-monitoring'
 import { findReviewForProcessing } from './review.worker-store'
@@ -194,7 +195,9 @@ worker.on('completed', () => {
   recordJobOutcome({ at: Date.now(), queue: 'reviews', outcome: 'succeeded' })
 })
 worker.on('failed', (job, error) => {
-  const isTerminalFailure = Boolean(job && job.attemptsMade >= (job.opts.attempts ?? 1))
+  const isTerminalFailure = Boolean(
+    job && isTerminalQueueFailure(job.attemptsMade, job.opts.attempts)
+  )
   if (isTerminalFailure) {
     reportBackendError(error, 'review-worker')
     recordJobOutcome({ at: Date.now(), queue: 'reviews', outcome: 'failed' })

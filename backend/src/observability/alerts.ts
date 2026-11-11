@@ -9,6 +9,8 @@ export interface AlertThresholds {
   jobFailureCount: number
   aiCostUsd: number
   aiMinRequests: number
+  aiFailureMinRequests: number
+  aiFailureRatio: number
 }
 
 export const recommendedAlertThresholds: AlertThresholds = {
@@ -19,7 +21,13 @@ export const recommendedAlertThresholds: AlertThresholds = {
   jobFailureCount: 3,
   aiCostUsd: 5,
   aiMinRequests: 5,
+  aiFailureMinRequests: 5,
+  aiFailureRatio: 0.5,
 }
+
+export const alertCooldownMs = 15 * 60 * 1000
+
+export type AlertSeverity = 'critical' | 'high' | 'warning'
 
 export interface AlertEvaluationInput {
   live: 'ok' | 'unavailable'
@@ -37,11 +45,27 @@ export interface AlertResult {
     | 'redis_unavailable'
     | 'background_job_failures'
     | 'ai_cost_spike'
+    | 'ai_provider_outage'
+  severity: AlertSeverity
   triggered: boolean
   summary: string
 }
 
-const activeAlerts = new Set<AlertResult['id']>()
+interface AlertNoticeState {
+  open: boolean
+  lastNotifiedAt: number
+}
+
+const noticeState = new Map<AlertResult['id'], AlertNoticeState>()
+
+function alert(
+  id: AlertResult['id'],
+  severity: AlertSeverity,
+  triggered: boolean,
+  summary: string
+): AlertResult {
+  return { id, severity, triggered, summary }
+}
 
 export function evaluateAlerts(
   input: AlertEvaluationInput,
@@ -53,66 +77,94 @@ export function evaluateAlerts(
   )
   const latency = input.snapshot.http.latencyMs.p95
   const errorRate = input.snapshot.http.errorRate
+  const aiRequests = input.snapshot.ai.requests
+  const aiFailureRatio = aiRequests === 0 ? null : input.snapshot.ai.failedRequests / aiRequests
 
   return [
-    {
-      id: 'backend_unavailable',
-      triggered: input.live === 'unavailable',
-      summary: 'Process liveness check failed',
-    },
-    {
-      id: 'high_http_5xx_rate',
-      triggered:
-        input.snapshot.http.requests >= thresholds.serverErrorMinRequests &&
+    alert(
+      'backend_unavailable',
+      'critical',
+      input.live === 'unavailable',
+      'Process liveness check failed'
+    ),
+    alert(
+      'high_http_5xx_rate',
+      'high',
+      input.snapshot.http.requests >= thresholds.serverErrorMinRequests &&
         errorRate !== null &&
         errorRate >= thresholds.serverErrorRatio,
-      summary: `HTTP 5xx rate is at least ${thresholds.serverErrorRatio} across ${thresholds.serverErrorMinRequests} requests`,
-    },
-    {
-      id: 'high_api_latency',
-      triggered:
-        input.snapshot.http.requests >= thresholds.latencyMinRequests &&
+      `HTTP 5xx rate is at least ${thresholds.serverErrorRatio} across ${thresholds.serverErrorMinRequests} requests`
+    ),
+    alert(
+      'high_api_latency',
+      'warning',
+      input.snapshot.http.requests >= thresholds.latencyMinRequests &&
         latency !== null &&
         latency >= thresholds.latencyP95Ms,
-      summary: `API p95 latency is at least ${thresholds.latencyP95Ms}ms`,
-    },
-    {
-      id: 'postgresql_unavailable',
-      triggered: input.database === 'unavailable',
-      summary: 'PostgreSQL readiness check failed',
-    },
-    {
-      id: 'redis_unavailable',
-      triggered: input.redis === 'unavailable',
-      summary: 'Redis readiness check failed',
-    },
-    {
-      id: 'background_job_failures',
-      triggered: failedJobs >= thresholds.jobFailureCount,
-      summary: `At least ${thresholds.jobFailureCount} background jobs failed in the current window`,
-    },
-    {
-      id: 'ai_cost_spike',
-      triggered:
-        input.snapshot.ai.requests >= thresholds.aiMinRequests &&
+      `API p95 latency is at least ${thresholds.latencyP95Ms}ms`
+    ),
+    alert(
+      'postgresql_unavailable',
+      'critical',
+      input.database === 'unavailable',
+      'PostgreSQL readiness check failed'
+    ),
+    alert(
+      'redis_unavailable',
+      'high',
+      input.redis === 'unavailable',
+      'Redis readiness check failed'
+    ),
+    alert(
+      'background_job_failures',
+      'warning',
+      failedJobs >= thresholds.jobFailureCount,
+      `At least ${thresholds.jobFailureCount} background jobs failed in the current window`
+    ),
+    alert(
+      'ai_cost_spike',
+      'warning',
+      input.snapshot.ai.requests >= thresholds.aiMinRequests &&
         input.snapshot.ai.estimatedCostUsd >= thresholds.aiCostUsd,
-      summary: `Estimated AI cost reached $${thresholds.aiCostUsd} in the current window`,
-    },
+      `Estimated AI cost reached $${thresholds.aiCostUsd} in the current window`
+    ),
+    alert(
+      'ai_provider_outage',
+      'high',
+      aiRequests >= thresholds.aiFailureMinRequests &&
+        aiFailureRatio !== null &&
+        aiFailureRatio >= thresholds.aiFailureRatio,
+      `At least ${thresholds.aiFailureRatio} of ${thresholds.aiFailureMinRequests} AI requests failed in the current window`
+    ),
   ]
 }
 
-export function takeNewlyTriggeredAlerts(results: AlertResult[]): AlertResult[] {
+export function takeNewlyTriggeredAlerts(
+  results: AlertResult[],
+  now = Date.now(),
+  cooldownMs = alertCooldownMs
+): AlertResult[] {
   const opened: AlertResult[] = []
   for (const result of results) {
-    if (result.triggered && !activeAlerts.has(result.id)) {
-      activeAlerts.add(result.id)
-      opened.push(result)
+    const previous = noticeState.get(result.id) ?? {
+      open: false,
+      lastNotifiedAt: Number.NEGATIVE_INFINITY,
     }
-    if (!result.triggered) activeAlerts.delete(result.id)
+    if (!result.triggered) {
+      noticeState.set(result.id, { open: false, lastNotifiedAt: previous.lastNotifiedAt })
+      continue
+    }
+    if (previous.open) continue
+    if (now - previous.lastNotifiedAt < cooldownMs) {
+      noticeState.set(result.id, { open: true, lastNotifiedAt: previous.lastNotifiedAt })
+      continue
+    }
+    noticeState.set(result.id, { open: true, lastNotifiedAt: now })
+    opened.push(result)
   }
   return opened
 }
 
 export function resetAlertState(): void {
-  activeAlerts.clear()
+  noticeState.clear()
 }

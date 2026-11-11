@@ -305,6 +305,9 @@ export function validateAnalysis(
   }
 }
 
+export const openAiRequestTimeoutMs = 60_000
+export const openAiMaxRetries = 2
+
 export async function completeWithOpenAI(
   messages: ReviewChatMessage[],
   signal?: AbortSignal,
@@ -320,8 +323,8 @@ export async function completeWithOpenAI(
   }
   const client = new OpenAI({
     apiKey: env.OPENAI_API_KEY,
-    timeout: 60_000,
-    maxRetries: 2,
+    timeout: openAiRequestTimeoutMs,
+    maxRetries: openAiMaxRetries,
   })
   const request = {
     model: getConfiguredAIModel(),

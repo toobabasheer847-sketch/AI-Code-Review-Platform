@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   analyzeCode,
+  openAiMaxRetries,
+  openAiRequestTimeoutMs,
   MAX_ANALYSIS_CONTEXT_CHARS,
   prepareReviewContext,
   retainFindingsDespiteFalsePositiveFeedback,
@@ -9,6 +11,12 @@ import {
   validateAnalysis,
 } from './analyzer'
 import type { ReviewSourceFile } from '@/modules/github/github.service'
+
+test('openai calls use a bounded timeout and retry budget', () => {
+  assert.equal(openAiRequestTimeoutMs, 60_000)
+  assert.equal(openAiMaxRetries, 2)
+  assert.equal(openAiMaxRetries < 5, true)
+})
 
 const files: ReviewSourceFile[] = [
   {

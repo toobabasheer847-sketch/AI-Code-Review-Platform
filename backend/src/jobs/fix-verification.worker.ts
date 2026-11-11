@@ -10,6 +10,7 @@ import {
   RetryableVerificationDispatchError,
 } from '@/modules/code-review/fix-verification.lifecycle'
 import logger from '@/utils/logger'
+import { isTerminalQueueFailure } from './job-retry'
 import { recordJobOutcome } from '@/observability/metrics'
 import { reportBackendError } from '@/utils/error-monitoring'
 import {
@@ -87,7 +88,7 @@ worker.on('completed', () => {
 })
 worker.on('failed', (job, error) => {
   if (error instanceof RetryableVerificationDispatchError || error instanceof DelayedError) return
-  if (job && job.attemptsMade >= (job.opts.attempts ?? 1)) {
+  if (job && isTerminalQueueFailure(job.attemptsMade, job.opts.attempts)) {
     reportBackendError(error, 'verification-worker')
     recordJobOutcome({ at: Date.now(), queue: 'fix-verification', outcome: 'failed' })
   }

@@ -7,6 +7,7 @@ import type { AccountEmailJob } from '@/modules/email/account-email.types'
 import { decryptVerificationOtp } from '@/modules/email/verification-otp.crypto'
 import type { AutomationNotificationPayload, ReviewCompletePayload } from '@/modules/email/email.types'
 import { prisma } from '@/config/database'
+import { isTerminalQueueFailure } from '@/jobs/job-retry'
 import { recordJobOutcome } from '@/observability/metrics'
 import { reportBackendError } from '@/utils/error-monitoring'
 
@@ -94,7 +95,7 @@ export async function startEmailWorker(): Promise<void> {
   })
 
   emailWorker.on('failed', (job, error) => {
-    if (job && job.attemptsMade >= (job.opts.attempts ?? 1)) {
+    if (job && isTerminalQueueFailure(job.attemptsMade, job.opts.attempts)) {
       reportBackendError(error, 'email-worker')
       recordJobOutcome({ at: Date.now(), queue: 'email', outcome: 'failed' })
     }
@@ -108,7 +109,7 @@ export async function startEmailWorker(): Promise<void> {
     )
     if (
       job?.data.type === 'automation:notification' &&
-      job.attemptsMade >= (job.opts.attempts ?? 1)
+      isTerminalQueueFailure(job.attemptsMade, job.opts.attempts)
     ) {
       void prisma.automationNotification.updateMany({
         where: {

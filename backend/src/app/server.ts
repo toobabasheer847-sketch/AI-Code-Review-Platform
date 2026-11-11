@@ -25,6 +25,7 @@ import {
   stopFixVerificationWorker,
 } from '@/jobs/fix-verification.worker'
 import type { Server } from 'node:http'
+import { runShutdownStep } from './shutdown'
 import {
   flushErrorMonitoring,
   initializeErrorMonitoring,
@@ -38,7 +39,7 @@ initializeErrorMonitoring()
 
 async function closeResource(resource: string, cleanup: () => Promise<unknown>): Promise<boolean> {
   try {
-    await cleanup()
+    await runShutdownStep(cleanup)
     return true
   } catch (error) {
     logger.error(

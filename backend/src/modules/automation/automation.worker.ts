@@ -8,6 +8,7 @@ import { Worker, type Job } from 'bullmq';
 import { createBullMqRedisConnection } from '@/config/redis-connection';
 import { prisma } from '@/config/database';
 import logger from '@/utils/logger';
+import { isTerminalQueueFailure } from '@/jobs/job-retry';
 import { recordJobOutcome } from '@/observability/metrics';
 import { reportBackendError } from '@/utils/error-monitoring';
 import { automationJobId, automationQueue } from './automation.queue';
@@ -600,7 +601,8 @@ export async function startAutomationWorker(): Promise<void> {
     recordJobOutcome({ at: Date.now(), queue: 'automations', outcome: 'succeeded' });
   });
   worker.on('failed', (job, error) => {
-    if (job && job.attemptsMade >= (job.opts.attempts ?? 1)) {
+    const terminal = Boolean(job && isTerminalQueueFailure(job.attemptsMade, job.opts.attempts));
+    if (terminal) {
       reportBackendError(error, 'automation-worker');
       recordJobOutcome({ at: Date.now(), queue: 'automations', outcome: 'failed' });
     }
@@ -608,7 +610,7 @@ export async function startAutomationWorker(): Promise<void> {
       { automationId: job?.data.automationId, errorType: error.name },
       'Automation job attempt failed'
     );
-    if (job && job.attemptsMade >= (job.opts.attempts ?? 1)) {
+    if (terminal && job) {
       void prisma
         .$transaction(async (transaction) => {
           const result = await transaction.automation.updateMany({

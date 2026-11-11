@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { getRedisConnectionTarget } from './redis-connection'
+import { getRedisConnectionTarget, redisReconnectDelayMs } from './redis-connection'
 
 test('resolves the Windows-host Docker Redis endpoint without credentials', () => {
   assert.deepEqual(getRedisConnectionTarget('redis://127.0.0.1:6380'), {
@@ -22,6 +22,14 @@ test('does not include credentials in the resolved target', () => {
     host: '127.0.0.1',
     port: 6380,
   })
+})
+
+test('caps Redis reconnect delay without stopping recovery', () => {
+  assert.equal(redisReconnectDelayMs(0), 100)
+  assert.equal(redisReconnectDelayMs(1), 200)
+  assert.equal(redisReconnectDelayMs(4), 1_600)
+  assert.equal(redisReconnectDelayMs(5), 3_000)
+  assert.equal(redisReconnectDelayMs(20), 3_000)
 })
 
 test('rejects malformed Redis URLs without exposing their contents', () => {

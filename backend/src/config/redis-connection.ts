@@ -19,6 +19,14 @@ export function getRedisConnectionTarget(redisUrl = env.REDIS_URL): RedisConnect
   }
 }
 
+export function redisReconnectDelayMs(attempt: number): number {
+  const step = Math.max(0, Math.min(Math.floor(attempt), 5))
+  return Math.min(100 * 2 ** step, 3_000)
+}
+
 export function createBullMqRedisConnection(): IORedis {
-  return new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null })
+  return new IORedis(env.REDIS_URL, {
+    maxRetriesPerRequest: null,
+    retryStrategy: (attempt) => redisReconnectDelayMs(attempt),
+  })
 }
