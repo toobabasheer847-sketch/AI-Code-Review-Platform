@@ -366,9 +366,14 @@ production host or restore over a database containing the only current copy.
 
 ## Known limitations and evidence
 
-- There is no organization, workspace, membership, or role schema. Records
-  generally belong to a `User`; no cross-user tenant administration is
-  implemented.
+The 2026-11-11 execution record is
+[docs/launch/PUBLIC-LAUNCH-EXECUTION.md](docs/launch/PUBLIC-LAUNCH-EXECUTION.md).
+That record does not approve a production deploy.
+
+- Organizations, workspaces, memberships, roles, and hashed invitation tokens
+  are in the schema and the `/api/workspaces` routes. Membership is checked
+  before workspace data is returned. Review chat still resolves the caller's
+  personal workspace. Billing checkout remains per user, not per workspace.
 - The HttpOnly session-cookie and CSRF implementation has source-level tests;
   deployed cookie, proxy, OAuth, and browser behavior still needs staging
   verification.

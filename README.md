@@ -215,8 +215,10 @@ is currently served.
 ### Implemented, conditional, and planned scope
 
 - **Implemented in this checkout:** authenticated review, analytics,
-  repository-rule, chat, automation, memory, integration-catalog, and usage
-  APIs described above. Owner checks are enforced by the relevant services.
+  repository-rule, chat, automation, memory, integration-catalog, usage, and
+  workspace APIs. Workspace routes are mounted at `/api/workspaces`. Active
+  membership is resolved before role checks. Owner checks are enforced by the
+  relevant services.
 - **Partially/configuration-dependent:** OpenAI analysis and drafting require a
   valid provider key; GitHub repository access requires a connected account and
   its permissions; LinkedIn publishing requires app/account access and explicit
@@ -227,9 +229,8 @@ is currently served.
   needs the separate runner described in
   [docs/verification-runner.md](docs/verification-runner.md); without it,
   attempts remain unverified/`NEEDS_REVIEW`.
-- **Planned, not present as APIs:** team/workspace collaboration, IDE plugins,
-  mobile and CLI clients, and additional AI providers. The aspirational items
-  below are not API contracts.
+- **Planned, not present as APIs:** IDE plugins, mobile and CLI clients, and
+  additional AI providers. The aspirational items below are not API contracts.
 
 ### Automation and integrations
 

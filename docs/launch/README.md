@@ -13,6 +13,8 @@ The same material is shown in the application at `/docs`, `/privacy`, `/terms`, 
 - Workspaces: membership is checked before workspace data is returned. Invitation tokens are stored as hashes.
 - Billing: Stripe checkout, cancellation at period end, and failed-invoice handling exist. A Stripe Customer Portal screen is not implemented. Workspace checkout is not available. Use Stripe test mode until live payments are explicitly approved.
 
+The 2026-11-11 execution record, checklist, monitoring plan, and incident process are in [PUBLIC-LAUNCH-EXECUTION.md](./PUBLIC-LAUNCH-EXECUTION.md). Production launch was not approved.
+
 ## Launch blockers that remain operational
 
 Domain and SSL, production environment review, a current backup restore, on-call alert delivery, and GitHub environment reviewers are still manual launch tasks. Do not treat this directory as approval to deploy.
