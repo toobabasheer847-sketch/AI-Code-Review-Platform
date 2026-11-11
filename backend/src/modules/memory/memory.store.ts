@@ -2,6 +2,8 @@ import { AutomationStatus, type Prisma } from '@prisma/client';
 import { prisma } from '@/config/database';
 import { ownedMemoryWhere, type WorkMemoryInput } from './memory.domain';
 
+export const defaultMemoryListLimit = 100
+
 const memoryInclude = {
   repository: { select: { id: true, name: true } },
 } satisfies Prisma.WorkMemoryInclude;
@@ -26,6 +28,7 @@ export class PrismaWorkMemoryStore implements WorkMemoryStore {
       where: { userId },
       select: { id: true, name: true },
       orderBy: { name: 'asc' },
+      take: 200,
     });
   }
 
@@ -34,7 +37,7 @@ export class PrismaWorkMemoryStore implements WorkMemoryStore {
       where: ownedMemoryWhere(userId),
       include: memoryInclude,
       orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
-      ...(limit ? { take: limit } : {}),
+      take: limit ?? defaultMemoryListLimit,
     });
   }
 

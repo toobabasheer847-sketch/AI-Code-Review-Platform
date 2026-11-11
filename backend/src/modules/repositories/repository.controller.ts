@@ -35,6 +35,7 @@ export class RepositoryController {
         where: { userId: req.user.userId, workspaceId },
         select: { id: true, name: true, url: true, language: true, createdAt: true },
         orderBy: { name: 'asc' },
+        take: 200,
       });
       res.json({ repositories });
     } catch (error) {

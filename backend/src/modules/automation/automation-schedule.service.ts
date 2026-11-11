@@ -63,6 +63,7 @@ export class AutomationScheduleService {
         where: ownedScheduleWhere(userId, workspaceId),
         include: scheduleInclude,
         orderBy: { createdAt: 'desc' },
+        take: 100,
       }),
       this.getNotificationPreferences(userId),
     ]);

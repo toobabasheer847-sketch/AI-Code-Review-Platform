@@ -19,7 +19,7 @@ import { GitHubService } from '@/modules/github/github.service'
 import { publishCompletedPullRequestReview } from '@/modules/github/pull-request-review-publisher'
 import type { ReviewJobData } from './review.queue'
 import logger from '@/utils/logger'
-import { isTerminalQueueFailure } from './job-retry'
+import { isTerminalQueueFailure, reviewWorkerConcurrency } from './job-retry'
 import { recordJobOutcome } from '@/observability/metrics'
 import { reportBackendError } from '@/utils/error-monitoring'
 import { findReviewForProcessing } from './review.worker-store'
@@ -188,7 +188,7 @@ const worker = new Worker<ReviewJobData>(
       },
     }, job.data.workspaceId)
   },
-  { connection, autorun: false }
+  { connection, concurrency: reviewWorkerConcurrency, autorun: false }
 )
 
 worker.on('completed', () => {

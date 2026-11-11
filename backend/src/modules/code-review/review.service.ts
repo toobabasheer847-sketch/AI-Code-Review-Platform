@@ -4,6 +4,7 @@ import { reviewQueue } from '@/jobs/review.queue'
 import { GitHubService } from '@/modules/github/github.service'
 import { releaseReviewQuota, reserveReviewQuota } from '@/modules/billing/review-quota'
 import { summarizeFindingLifecycle } from './finding-lifecycle.domain'
+import { reviewListLimit, toReviewListItem } from './review-list'
 import { getPersonalWorkspaceId } from '@/modules/workspaces/workspace.service'
 
 export class ReviewNotFoundError extends Error {
@@ -93,29 +94,21 @@ export class ReviewService {
 		const workspaceId = await getPersonalWorkspaceId(userId)
 		const reviews = await prisma.codeReview.findMany({
 			where: { userId, workspaceId },
-			include: {
-				repository: true,
-				findings: true,
-				analytics: true,
-				webhookDeliveries: {
-					select: { status: true },
-					orderBy: { createdAt: 'desc' },
-					take: 1,
-				},
+			select: {
+				id: true,
+				status: true,
+				source: true,
+				pullRequestNumber: true,
+				createdAt: true,
+				repository: { select: { name: true } },
+				analytics: { select: { qualityScore: true } },
+				_count: { select: { findings: true } },
 			},
-			orderBy: { createdAt: 'desc' },
+			orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+			take: reviewListLimit,
 		})
 
-		return reviews.map((r) => ({
-			id: r.id,
-			repository: r.repository.name,
-			score: r.analytics?.qualityScore ?? null,
-			issues: r.findings.length,
-			status: r.status,
-			source: r.source,
-			pullRequestNumber: r.pullRequestNumber,
-			createdAt: r.createdAt,
-		}))
+		return reviews.map(toReviewListItem)
 	}
 
 	public async startReview(userId: string, repositoryName: string, branch = 'main') {

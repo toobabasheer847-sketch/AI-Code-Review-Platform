@@ -7,6 +7,7 @@ import {
 import {
   DuplicateCandidateReviewNotFoundError,
   DuplicateCandidateService,
+  duplicateCandidateScanLimit,
   type DuplicateCandidateStore,
 } from './duplicate-candidates.service';
 
@@ -94,4 +95,8 @@ test('duplicate candidate lookup is owner-scoped and does not delete findings', 
   );
   assert.equal(otherReads, 1);
   assert.equal(current.length, 1);
+});
+
+test('duplicate scans stay bounded to the newest findings in the repository', () => {
+  assert.equal(duplicateCandidateScanLimit, 200);
 });

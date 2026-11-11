@@ -7,6 +7,8 @@ import {
   type DuplicateUserAssessment,
 } from './duplicate-candidates';
 
+export const duplicateCandidateScanLimit = 200
+
 const assessmentCategories = new Set<DuplicateUserAssessment>([
   'TRUE_POSITIVE',
   'FALSE_POSITIVE',
@@ -114,6 +116,8 @@ const prismaDuplicateCandidateStore: DuplicateCandidateStore = {
         review: { is: { userId, workspaceId, repositoryId } },
       },
       select: findingSelect,
+      orderBy: { createdAt: 'desc' },
+      take: duplicateCandidateScanLimit,
     });
     return findings.map(toSubject);
   },

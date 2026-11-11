@@ -8,6 +8,7 @@ import {
 } from '@/modules/billing/workspace-review-quota'
 import { WorkspaceServiceError } from './workspace.service'
 import { workspaceReviewWhere } from './workspace.domain'
+import { reviewListLimit, toReviewListItem } from '@/modules/code-review/review-list'
 import type { FindingStatus } from '@prisma/client'
 import { FindingLifecycleService } from '@/modules/code-review/finding-lifecycle.service'
 
@@ -30,6 +31,7 @@ export class WorkspaceResourceService {
         createdAt: true,
       },
       orderBy: { name: 'asc' },
+      take: 200,
     })
   }
 
@@ -73,23 +75,20 @@ export class WorkspaceResourceService {
   async listReviews(workspaceId: string) {
     const reviews = await prisma.codeReview.findMany({
       where: workspaceReviewWhere(workspaceId),
-      include: {
-        repository: { select: { id: true, name: true } },
-        findings: { select: { id: true, severity: true, status: true } },
-        analytics: true,
+      select: {
+        id: true,
+        status: true,
+        source: true,
+        pullRequestNumber: true,
+        createdAt: true,
+        repository: { select: { name: true } },
+        analytics: { select: { qualityScore: true } },
+        _count: { select: { findings: true } },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: reviewListLimit,
     })
-    return reviews.map((review) => ({
-      id: review.id,
-      repository: review.repository.name,
-      score: review.analytics?.qualityScore ?? null,
-      issues: review.findings.length,
-      status: review.status,
-      source: review.source,
-      pullRequestNumber: review.pullRequestNumber,
-      createdAt: review.createdAt,
-    }))
+    return reviews.map(toReviewListItem)
   }
 
   async getReview(workspaceId: string, reviewId: string) {
