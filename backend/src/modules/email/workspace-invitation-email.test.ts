@@ -44,7 +44,10 @@ test('invitation expiry and accept links stay stable', () => {
     'https://app.example.test/accept-invitation?token=invite-token-value'
   )
   assert.equal(workspaceInvitationRoleLabel('ADMIN'), 'Admin')
+  assert.equal(workspaceInvitationRoleLabel('SECURITY_ADMIN'), 'Security Admin')
   assert.equal(workspaceInvitationRoleLabel('DEVELOPER'), 'Developer')
+  assert.equal(workspaceInvitationRoleLabel('REVIEWER'), 'Reviewer')
+  assert.equal(workspaceInvitationRoleLabel('BILLING_ADMIN'), 'Billing Admin')
   assert.equal(workspaceInvitationRoleLabel('VIEWER'), 'Viewer')
 })
 

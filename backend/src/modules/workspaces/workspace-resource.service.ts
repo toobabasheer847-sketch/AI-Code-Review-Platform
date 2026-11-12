@@ -7,6 +7,7 @@ import {
   reserveWorkspaceReviewQuota,
 } from '@/modules/billing/workspace-review-quota'
 import { WorkspaceServiceError } from './workspace.service'
+import { auditActions, recordAuditEvent } from '@/modules/audit/audit.service'
 import { workspaceReviewWhere } from './workspace.domain'
 import { reviewListLimit, toReviewListItem } from '@/modules/code-review/review-list'
 import type { FindingStatus } from '@prisma/client'
@@ -154,6 +155,19 @@ export class WorkspaceResourceService {
         },
       })
     })
+
+    await recordAuditEvent(
+      prisma,
+      {
+        actorId: userId,
+        organizationId: workspace.organizationId,
+        workspaceId,
+        action: auditActions.reviewStarted,
+        resourceType: 'code_review',
+        resourceId: review.id,
+      },
+      { required: false }
+    )
 
     try {
       await reviewQueue.add(

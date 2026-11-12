@@ -10,6 +10,7 @@ import { encryptVerificationOtp } from '@/modules/email/verification-otp.crypto'
 import { getSafeMailErrorDetails } from '@/modules/email/mail.service'
 import { betaAdminEmails, betaAllowlist, isBetaAdmin, resolveBetaStatus } from '@/modules/beta/beta.domain'
 import { recordProductEvent } from '@/modules/beta/product-events'
+import { auditActions, type AuditEventInput } from '@/modules/audit/audit.service'
 import { GitHubService } from '@/modules/github/github.service'
 import type { LoginInput, RegisterInput } from './auth.validation'
 import type { LoginResult, UserResponse } from './auth.types'
@@ -44,6 +45,7 @@ interface AuthServiceDependencies {
   emailQueue?: AuthEmailQueue
   github?: GitHubAccountLifecycle
   now?: () => Date
+  audit?: (event: AuditEventInput) => Promise<void>
 }
 
 function hashToken(token: string): string {
@@ -119,12 +121,14 @@ export class AuthService {
   private readonly mailQueue: AuthEmailQueue
   private readonly github: GitHubAccountLifecycle
   private readonly now: () => Date
+  private readonly audit: (event: AuditEventInput) => Promise<void>
 
   constructor(dependencies: AuthServiceDependencies = {}) {
     this.store = dependencies.store ?? authStore
     this.mailQueue = dependencies.emailQueue ?? emailQueue
     this.github = dependencies.github ?? new GitHubService()
     this.now = dependencies.now ?? (() => new Date())
+    this.audit = dependencies.audit ?? (async () => undefined)
   }
 
   private toUserResponse(user: {
@@ -243,10 +247,22 @@ export class AuthService {
   async login(input: LoginInput): Promise<LoginResult> {
     const user = await this.store.findUserByEmail(input.email)
     if (!user || !(await comparePassword(input.password, user.passwordHash))) {
+      await this.audit({
+        actorId: user?.id ?? null,
+        action: auditActions.loginFailed,
+        resourceType: 'session',
+        resourceId: user?.id ?? null,
+      })
       throw new InvalidCredentialsError()
     }
     if (!user.isVerified) throw new EmailVerificationRequiredError()
 
+    await this.audit({
+      actorId: user.id,
+      action: auditActions.login,
+      resourceType: 'session',
+      resourceId: user.id,
+    })
     return {
       token: generateJWT({
         userId: user.id,
@@ -362,6 +378,12 @@ export class AuthService {
 
   async logout(userId: string): Promise<void> {
     await this.store.invalidateSessions(userId)
+    await this.audit({
+      actorId: userId,
+      action: auditActions.logout,
+      resourceType: 'session',
+      resourceId: userId,
+    })
   }
 
   async deleteAccount(

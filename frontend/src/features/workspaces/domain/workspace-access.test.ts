@@ -31,6 +31,12 @@ describe('workspace administration access', () => {
     expect(hasWorkspacePermission('VIEWER', 'read')).toBe(true)
     expect(hasWorkspacePermission('VIEWER', 'manage_members')).toBe(false)
     expect(hasWorkspacePermission('VIEWER', 'update_findings')).toBe(false)
+    expect(hasWorkspacePermission('SECURITY_ADMIN', 'view_audit')).toBe(true)
+    expect(hasWorkspacePermission('SECURITY_ADMIN', 'manage_members')).toBe(false)
+    expect(hasWorkspacePermission('REVIEWER', 'update_findings')).toBe(true)
+    expect(hasWorkspacePermission('REVIEWER', 'start_review')).toBe(false)
+    expect(hasWorkspacePermission('BILLING_ADMIN', 'manage_billing')).toBe(true)
+    expect(hasWorkspacePermission('BILLING_ADMIN', 'view_audit')).toBe(false)
   })
 
   it('keeps rename, invite, and transfer aligned with backend service rules', () => {
@@ -44,9 +50,16 @@ describe('workspace administration access', () => {
     expect(canTransferWorkspaceOwnership('OWNER', false)).toBe(true)
     expect(canTransferWorkspaceOwnership('ADMIN', false)).toBe(false)
     expect(canTransferWorkspaceOwnership('OWNER', true)).toBe(false)
-    expect(invitableRoles('OWNER')).toEqual(['ADMIN', 'DEVELOPER', 'VIEWER'])
-    expect(invitableRoles('ADMIN')).toEqual(['ADMIN', 'DEVELOPER', 'VIEWER'])
-    expect(assignableMemberRoles('ADMIN')).toEqual(['DEVELOPER', 'VIEWER'])
+    expect(invitableRoles('OWNER')).toEqual([
+      'ADMIN',
+      'SECURITY_ADMIN',
+      'DEVELOPER',
+      'REVIEWER',
+      'BILLING_ADMIN',
+      'VIEWER',
+    ])
+    expect(invitableRoles('ADMIN')).toEqual(['ADMIN', 'DEVELOPER', 'REVIEWER', 'VIEWER'])
+    expect(assignableMemberRoles('ADMIN')).toEqual(['DEVELOPER', 'REVIEWER', 'VIEWER'])
     expect(invitableRoles('DEVELOPER')).toEqual([])
   })
 
@@ -88,6 +101,9 @@ describe('workspace administration access', () => {
       })
     ).toBe(true)
     expect(canSuspendMember({ ...developer, actorRole: 'VIEWER' })).toBe(false)
+    expect(canUpdateMember({ ...developer, actorRole: 'ADMIN', memberRole: 'SECURITY_ADMIN' })).toBe(false)
+    expect(canUpdateMember({ ...developer, actorRole: 'ADMIN', memberRole: 'BILLING_ADMIN' })).toBe(false)
+    expect(canUpdateMember({ ...developer, actorRole: 'OWNER', memberRole: 'REVIEWER' })).toBe(true)
   })
 
   it('prefers the stored workspace, then the personal workspace', () => {

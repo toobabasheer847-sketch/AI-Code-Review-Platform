@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { Prisma, type WorkspaceMemberStatus, type WorkspaceRole } from '@prisma/client'
 import { prisma } from '@/config/database'
 import { env } from '@/config/env'
+import { auditActions, recordAuditEvent, recordWorkspaceAudit } from '@/modules/audit/audit.service'
 import { recordProductEvent } from '@/modules/beta/product-events'
 import { getSafeMailErrorDetails, MailService } from '@/modules/email/mail.service'
 import {
@@ -12,6 +13,9 @@ import {
 } from '@/modules/email/workspace-invitation-email'
 import logger from '@/utils/logger'
 import {
+  canAssignWorkspaceRole,
+  canInviteWorkspaceRole,
+  canManageExistingMember,
   canTransferOrganizationOwnership,
   invitationAcceptanceFailure,
   invitationDeclineFailure,
@@ -118,6 +122,22 @@ export class WorkspaceService {
         },
         include: { organization: { select: { id: true, name: true, slug: true } } },
       })
+      await recordAuditEvent(transaction, {
+        actorId: userId,
+        organizationId: organization.id,
+        workspaceId: workspace.id,
+        action: auditActions.organizationCreated,
+        resourceType: 'organization',
+        resourceId: organization.id,
+      })
+      await recordAuditEvent(transaction, {
+        actorId: userId,
+        organizationId: organization.id,
+        workspaceId: workspace.id,
+        action: auditActions.workspaceCreated,
+        resourceType: 'workspace',
+        resourceId: workspace.id,
+      })
       return { ...workspace, role: 'OWNER' as const }
     })
     await recordProductEvent(userId, 'WORKSPACE_CREATED')
@@ -147,7 +167,7 @@ export class WorkspaceService {
       })
       if (!organization) throw new WorkspaceServiceError(404, 'Organization not found')
       try {
-        return await transaction.workspace.create({
+        const created = await transaction.workspace.create({
           data: {
             organizationId,
             name,
@@ -158,6 +178,15 @@ export class WorkspaceService {
           },
           include: { organization: { select: { id: true, name: true, slug: true } } },
         })
+        await recordAuditEvent(transaction, {
+          actorId: userId,
+          organizationId,
+          workspaceId: created.id,
+          action: auditActions.workspaceCreated,
+          resourceType: 'workspace',
+          resourceId: created.id,
+        })
+        return created
       } catch (error) {
         if (isUniqueConstraintError(error)) {
           throw new WorkspaceServiceError(409, 'A workspace with this name already exists')
@@ -210,11 +239,18 @@ export class WorkspaceService {
     const normalizedEmail = normalizeInvitationEmail(email)
     const workspace = await prisma.workspace.findUnique({
       where: { id: workspaceId },
-      select: { isPersonal: true },
+      select: { isPersonal: true, organizationId: true },
     })
     if (!workspace) throw new WorkspaceServiceError(404, 'Workspace not found')
     if (workspace.isPersonal) {
       throw new WorkspaceServiceError(409, 'Personal workspaces cannot invite other members')
+    }
+    const actor = await prisma.workspaceMembership.findFirst({
+      where: { workspaceId, userId: invitedById, status: 'ACTIVE' },
+      select: { role: true },
+    })
+    if (!actor || !canInviteWorkspaceRole(actor.role, role)) {
+      throw new WorkspaceServiceError(403, 'You cannot invite this role')
     }
     const existingMember = await prisma.workspaceMembership.findFirst({
       where: {
@@ -229,16 +265,27 @@ export class WorkspaceService {
     const token = createInvitationToken()
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
     try {
-      const invitation = await prisma.workspaceInvitation.create({
-        data: {
+      const invitation = await prisma.$transaction(async (transaction) => {
+        const created = await transaction.workspaceInvitation.create({
+          data: {
+            workspaceId,
+            email: normalizedEmail,
+            role,
+            tokenHash: hashInvitationToken(token),
+            invitedById,
+            expiresAt,
+          },
+          select: { id: true, workspaceId: true, email: true, role: true, expiresAt: true },
+        })
+        await recordAuditEvent(transaction, {
+          actorId: invitedById,
+          organizationId: workspace.organizationId,
           workspaceId,
-          email: normalizedEmail,
-          role,
-          tokenHash: hashInvitationToken(token),
-          invitedById,
-          expiresAt,
-        },
-        select: { id: true, workspaceId: true, email: true, role: true, expiresAt: true },
+          action: auditActions.invitationCreated,
+          resourceType: 'invitation',
+          resourceId: created.id,
+        })
+        return created
       })
       return { ...invitation, token }
     } catch (error) {
@@ -312,6 +359,13 @@ export class WorkspaceService {
       if (existingMember) {
         throw new WorkspaceServiceError(409, 'This user is already a workspace member')
       }
+      const actor = await transaction.workspaceMembership.findFirst({
+        where: { workspaceId, userId: invitedById, status: 'ACTIVE' },
+        select: { role: true },
+      })
+      if (!actor || !canInviteWorkspaceRole(actor.role, current.role)) {
+        throw new WorkspaceServiceError(403, 'You cannot invite this role')
+      }
       await transaction.workspaceInvitation.update({
         where: { id: current.id },
         data: { status: 'REVOKED', revokedAt: new Date() },
@@ -327,6 +381,20 @@ export class WorkspaceService {
           expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         },
         select: { id: true, workspaceId: true, email: true, role: true, expiresAt: true },
+      })
+      await recordWorkspaceAudit(transaction, {
+        actorId: invitedById,
+        workspaceId,
+        action: auditActions.invitationRevoked,
+        resourceType: 'invitation',
+        resourceId: current.id,
+      })
+      await recordWorkspaceAudit(transaction, {
+        actorId: invitedById,
+        workspaceId,
+        action: auditActions.invitationCreated,
+        resourceType: 'invitation',
+        resourceId: created.id,
       })
       return { expired: false as const, invitation: { ...created, token } }
     })
@@ -485,6 +553,13 @@ export class WorkspaceService {
           acceptedAt: new Date(),
         },
       })
+      await recordWorkspaceAudit(transaction, {
+        actorId: userId,
+        workspaceId: invitation.workspaceId,
+        action: auditActions.invitationAccepted,
+        resourceType: 'invitation',
+        resourceId: invitation.id,
+      })
       return {
         expired: false as const,
         membership: { workspaceId: invitation.workspaceId, role: invitation.role },
@@ -560,6 +635,13 @@ export class WorkspaceService {
         where: { id: invitation.id },
         data: { status: 'DECLINED' },
       })
+      await recordWorkspaceAudit(transaction, {
+        actorId: userId,
+        workspaceId: invitation.workspaceId,
+        action: auditActions.invitationDeclined,
+        resourceType: 'invitation',
+        resourceId: invitation.id,
+      })
       return {
         expired: false as const,
         invitation: { id: invitation.id, status: 'DECLINED' as const },
@@ -569,12 +651,25 @@ export class WorkspaceService {
     return result.invitation
   }
 
-  async revokeInvitation(workspaceId: string, invitationId: string): Promise<void> {
-    const result = await prisma.workspaceInvitation.updateMany({
-      where: { id: invitationId, workspaceId, status: 'PENDING' },
-      data: { status: 'REVOKED', revokedAt: new Date() },
+  async revokeInvitation(
+    workspaceId: string,
+    invitationId: string,
+    actorId?: string | null
+  ): Promise<void> {
+    await prisma.$transaction(async (transaction) => {
+      const result = await transaction.workspaceInvitation.updateMany({
+        where: { id: invitationId, workspaceId, status: 'PENDING' },
+        data: { status: 'REVOKED', revokedAt: new Date() },
+      })
+      if (result.count !== 1) throw new WorkspaceServiceError(404, 'Invitation not found')
+      await recordWorkspaceAudit(transaction, {
+        actorId: actorId ?? null,
+        workspaceId,
+        action: auditActions.invitationRevoked,
+        resourceType: 'invitation',
+        resourceId: invitationId,
+      })
     })
-    if (result.count !== 1) throw new WorkspaceServiceError(404, 'Invitation not found')
   }
 
   async updateMember(
@@ -594,14 +689,21 @@ export class WorkspaceService {
     if (membership.role === 'OWNER') {
       throw new WorkspaceServiceError(409, 'Workspace ownership can only be changed by transfer')
     }
-    if (
-      actingRole === 'ADMIN' &&
-      (membership.role === 'ADMIN' || input.role === 'ADMIN')
-    ) {
-      throw new WorkspaceServiceError(403, 'Admins cannot manage other admins')
+    if (!canManageExistingMember(actingRole, membership.role)) {
+      throw new WorkspaceServiceError(
+        403,
+        membership.role === 'ADMIN'
+          ? 'Admins cannot manage other admins'
+          : 'Admins cannot manage this role'
+      )
     }
-    if (input.role === 'OWNER') {
-      throw new WorkspaceServiceError(400, 'Ownership can only be granted by transfer')
+    if (input.role && !canAssignWorkspaceRole(actingRole, input.role)) {
+      throw new WorkspaceServiceError(
+        input.role === 'OWNER' ? 400 : 403,
+        input.role === 'OWNER'
+          ? 'Ownership can only be granted by transfer'
+          : 'You cannot assign this role'
+      )
     }
     if (input.status === 'REMOVED') {
       throw new WorkspaceServiceError(400, 'Use the member removal endpoint')
@@ -609,13 +711,34 @@ export class WorkspaceService {
     if (membership.userId === actingUserId && input.status === 'SUSPENDED') {
       throw new WorkspaceServiceError(400, 'You cannot suspend your own membership')
     }
-    return prisma.workspaceMembership.update({
-      where: { id: membership.id },
-      data: {
-        ...(input.role ? { role: input.role } : {}),
-        ...(input.status ? { status: input.status } : {}),
-      },
-      select: { id: true, userId: true, role: true, status: true, joinedAt: true },
+    return prisma.$transaction(async (transaction) => {
+      const updated = await transaction.workspaceMembership.update({
+        where: { id: membership.id },
+        data: {
+          ...(input.role ? { role: input.role } : {}),
+          ...(input.status ? { status: input.status } : {}),
+        },
+        select: { id: true, userId: true, role: true, status: true, joinedAt: true },
+      })
+      if (input.role && input.role !== membership.role) {
+        await recordWorkspaceAudit(transaction, {
+          actorId: actingUserId,
+          workspaceId,
+          action: auditActions.membershipRoleChanged,
+          resourceType: 'membership',
+          resourceId: membership.id,
+        })
+      }
+      if (input.status && input.status !== membership.status) {
+        await recordWorkspaceAudit(transaction, {
+          actorId: actingUserId,
+          workspaceId,
+          action: auditActions.membershipStatusChanged,
+          resourceType: 'membership',
+          resourceId: membership.id,
+        })
+      }
+      return updated
     })
   }
 
@@ -633,12 +756,30 @@ export class WorkspaceService {
     if (member.role === 'OWNER') {
       throw new WorkspaceServiceError(409, 'Transfer ownership before removing an owner')
     }
-    if (actingRole === 'ADMIN' && member.role === 'ADMIN' && member.userId !== actingUserId) {
-      throw new WorkspaceServiceError(403, 'Admins cannot remove other admins')
+    if (
+      actingRole === 'ADMIN' &&
+      member.userId !== actingUserId &&
+      !canManageExistingMember(actingRole, member.role)
+    ) {
+      throw new WorkspaceServiceError(
+        403,
+        member.role === 'ADMIN'
+          ? 'Admins cannot remove other admins'
+          : 'Admins cannot remove this member'
+      )
     }
-    await prisma.workspaceMembership.update({
-      where: { id: member.id },
-      data: { status: 'REMOVED' },
+    await prisma.$transaction(async (transaction) => {
+      await transaction.workspaceMembership.update({
+        where: { id: member.id },
+        data: { status: 'REMOVED' },
+      })
+      await recordWorkspaceAudit(transaction, {
+        actorId: actingUserId,
+        workspaceId,
+        action: auditActions.membershipRemoved,
+        resourceType: 'membership',
+        resourceId: member.id,
+      })
     })
   }
 
@@ -709,10 +850,18 @@ export class WorkspaceService {
         where: { workspaceId: { in: workspaceIds }, userId: newOwnerId, status: 'ACTIVE' },
         data: { role: 'OWNER' },
       })
+      await recordAuditEvent(transaction, {
+        actorId: currentOwnerId,
+        organizationId: workspace.organizationId,
+        workspaceId,
+        action: auditActions.ownershipTransferred,
+        resourceType: 'organization',
+        resourceId: workspace.organizationId,
+      })
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable })
   }
 
-  async update(workspaceId: string, input: { name: string }) {
+  async update(workspaceId: string, input: { name: string }, actorId?: string | null) {
     const name = input.name.trim()
     if (name.length < 2 || name.length > 80) {
       throw new WorkspaceServiceError(400, 'Workspace name must be between 2 and 80 characters')
@@ -732,10 +881,21 @@ export class WorkspaceService {
       throw new WorkspaceServiceError(409, 'Personal workspaces cannot be renamed')
     }
     try {
-      return await prisma.workspace.update({
-        where: { id: workspaceId },
-        data: { name, slug },
-        include: { organization: { select: { id: true, name: true, slug: true } } },
+      return await prisma.$transaction(async (transaction) => {
+        const updated = await transaction.workspace.update({
+          where: { id: workspaceId },
+          data: { name, slug },
+          include: { organization: { select: { id: true, name: true, slug: true } } },
+        })
+        await recordAuditEvent(transaction, {
+          actorId: actorId ?? null,
+          organizationId: updated.organization.id,
+          workspaceId,
+          action: auditActions.workspaceUpdated,
+          resourceType: 'workspace',
+          resourceId: workspaceId,
+        })
+        return updated
       })
     } catch (error) {
       if (isUniqueConstraintError(error)) {
@@ -743,5 +903,28 @@ export class WorkspaceService {
       }
       throw error
     }
+  }
+
+  async listActivity(workspaceId: string) {
+    const workspace = await prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { organizationId: true },
+    })
+    if (!workspace) throw new WorkspaceServiceError(404, 'Workspace not found')
+    return prisma.auditEvent.findMany({
+      where: { organizationId: workspace.organizationId },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: 50,
+      select: {
+        id: true,
+        actorId: true,
+        organizationId: true,
+        workspaceId: true,
+        action: true,
+        resourceType: true,
+        resourceId: true,
+        createdAt: true,
+      },
+    })
   }
 }

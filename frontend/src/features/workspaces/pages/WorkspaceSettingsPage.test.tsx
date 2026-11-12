@@ -42,6 +42,7 @@ vi.mock('../api/workspaceApi', async () => {
       removeMember: vi.fn(),
       transferOwnership: vi.fn(),
       acceptInvitation: vi.fn(),
+      listActivity: vi.fn(async () => []),
     },
   }
 })
@@ -184,6 +185,7 @@ beforeEach(() => {
   vi.mocked(workspaceApi.invite).mockClear()
   vi.mocked(workspaceApi.resendInvitation).mockClear()
   vi.mocked(workspaceApi.revokeInvitation).mockClear()
+  vi.mocked(workspaceApi.listActivity).mockClear()
   vi.mocked(workspaceApi.list).mockResolvedValue([workspace()])
   vi.mocked(workspaceApi.listMembers).mockResolvedValue(members)
   vi.mocked(workspaceApi.listInvitations).mockResolvedValue(invitations)
@@ -222,6 +224,9 @@ describe('workspace administration page', () => {
     expect(document.body.textContent).toContain('Removed')
     expect(document.body.textContent).toContain('Pending')
     expect(document.body.textContent).toContain('Expired')
+    expect(document.body.textContent).toContain('Organization activity')
+    expect(document.body.textContent).toContain('No organization activity is recorded yet.')
+    expect(workspaceApi.listActivity).toHaveBeenCalledWith('ws-team')
     expect(document.body.textContent).not.toContain('Save role for Ada Lovelace')
     expect(document.body.textContent).not.toContain('Remove Removed Person')
 
@@ -340,7 +345,9 @@ describe('workspace administration page', () => {
     expect(document.body.textContent).not.toContain('Suspend Grace Hopper')
     expect(document.body.textContent).not.toContain('Save workspace')
     expect(document.body.textContent).not.toContain('Transfer ownership')
+    expect(document.body.textContent).not.toContain('Organization activity')
     expect(workspaceApi.listInvitations).not.toHaveBeenCalled()
+    expect(workspaceApi.listActivity).not.toHaveBeenCalled()
   })
 
   it('lets an admin manage developers without managing other admins or ownership', async () => {
@@ -369,7 +376,11 @@ describe('workspace administration page', () => {
     expect(document.body.textContent).toContain('Save role for Grace Hopper')
     const select = document.querySelector('select[aria-label="Role for Grace Hopper"]')
     if (!(select instanceof HTMLSelectElement)) throw new Error('Missing role select')
-    expect(Array.from(select.options).map((option) => option.value)).toEqual(['DEVELOPER', 'VIEWER'])
+    expect(Array.from(select.options).map((option) => option.value)).toEqual([
+      'DEVELOPER',
+      'REVIEWER',
+      'VIEWER',
+    ])
   })
 
   it('keeps personal workspaces from being renamed or inviting members', async () => {

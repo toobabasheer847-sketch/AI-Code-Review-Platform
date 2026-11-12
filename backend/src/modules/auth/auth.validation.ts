@@ -5,6 +5,11 @@ const passwordSchema = z.string().min(8).max(72).refine(
   'Password must be at most 72 UTF-8 bytes'
 )
 
+const passwordPolicySchema = passwordSchema.refine(
+  (password) => /[A-Za-z]/.test(password) && /\d/.test(password),
+  'Password must include a letter and a number'
+)
+
 export const loginSchema = z.object({
   email: z.string().trim().toLowerCase().email(),
   password: passwordSchema,
@@ -12,14 +17,14 @@ export const loginSchema = z.object({
 
 export const registerSchema = z.object({
   email: z.string().trim().toLowerCase().email(),
-  password: passwordSchema,
+  password: passwordPolicySchema,
   fullName: z.string().trim().min(2).max(200),
 })
 
 export const emailSchema = z.object({ email: z.string().trim().toLowerCase().email() })
 export const resetPasswordSchema = z.object({
   token: z.string().min(32).max(200),
-  password: passwordSchema,
+  password: passwordPolicySchema,
 })
 export const verifyEmailSchema = z.object({
   email: z.string().trim().toLowerCase().email(),

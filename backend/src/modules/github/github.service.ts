@@ -2,6 +2,7 @@ import axios, { type AxiosInstance } from 'axios'
 import { prisma } from '@/config/database'
 import { env } from '@/config/env'
 import { recordProductEvent } from '@/modules/beta/product-events'
+import { auditActions, recordAuditEvent } from '@/modules/audit/audit.service'
 import { decryptWithRotation, encrypt } from '@/utils/crypto'
 import {
   getAccessTokenExchangeBody,
@@ -864,7 +865,7 @@ export class GitHubService {
 
     const encryptedToken = encrypt(accessToken)
 
-    await prisma.$transaction([
+    const [account] = await prisma.$transaction([
       prisma.gitHubAccount.upsert({
         where: { userId },
         create: {
@@ -890,6 +891,16 @@ export class GitHubService {
         },
       }),
     ])
+    await recordAuditEvent(
+      prisma,
+      {
+        actorId: userId,
+        action: auditActions.repositoryConnected,
+        resourceType: 'github_account',
+        resourceId: account.id,
+      },
+      { required: false }
+    )
     if (!existingAccount) {
       await recordProductEvent(userId, 'REPOSITORY_CONNECTED')
     }

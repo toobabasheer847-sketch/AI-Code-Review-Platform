@@ -3,6 +3,9 @@ import test from 'node:test'
 import { readFile } from 'node:fs/promises'
 import {
   canTransferOrganizationOwnership,
+  canAssignWorkspaceRole,
+  canInviteWorkspaceRole,
+  canManageExistingMember,
   hasWorkspacePermission,
   invitationAcceptanceFailure,
   invitationDeclineFailure,
@@ -28,6 +31,21 @@ test('workspace roles enforce read, mutation, administration, billing, and trans
   assert.equal(hasWorkspacePermission('DEVELOPER', 'manage_members'), false)
   assert.equal(hasWorkspacePermission('VIEWER', 'manage_members'), false)
   assert.equal(hasWorkspacePermission('VIEWER', 'transfer_ownership'), false)
+  assert.equal(hasWorkspacePermission('SECURITY_ADMIN', 'view_audit'), true)
+  assert.equal(hasWorkspacePermission('SECURITY_ADMIN', 'manage_members'), false)
+  assert.equal(hasWorkspacePermission('SECURITY_ADMIN', 'manage_billing'), false)
+  assert.equal(hasWorkspacePermission('REVIEWER', 'update_findings'), true)
+  assert.equal(hasWorkspacePermission('REVIEWER', 'start_review'), false)
+  assert.equal(hasWorkspacePermission('BILLING_ADMIN', 'manage_billing'), true)
+  assert.equal(hasWorkspacePermission('BILLING_ADMIN', 'view_audit'), false)
+  assert.equal(canInviteWorkspaceRole('ADMIN', 'SECURITY_ADMIN'), false)
+  assert.equal(canInviteWorkspaceRole('ADMIN', 'ADMIN'), true)
+  assert.equal(canInviteWorkspaceRole('OWNER', 'BILLING_ADMIN'), true)
+  assert.equal(canAssignWorkspaceRole('ADMIN', 'REVIEWER'), true)
+  assert.equal(canAssignWorkspaceRole('ADMIN', 'ADMIN'), false)
+  assert.equal(canAssignWorkspaceRole('OWNER', 'SECURITY_ADMIN'), true)
+  assert.equal(canManageExistingMember('ADMIN', 'SECURITY_ADMIN'), false)
+  assert.equal(canManageExistingMember('ADMIN', 'DEVELOPER'), true)
 })
 
 test('workspace invitation acceptance checks single-use state, expiry, verification, and email', () => {

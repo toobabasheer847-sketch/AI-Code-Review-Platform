@@ -562,3 +562,27 @@ test('account deletion rejects another user identity from the request', async ()
     /Account could not be deleted/
   )
 })
+
+test('login and logout record the actor without the submitted password', async () => {
+  const store = createStore()
+  store.user.isVerified = true
+  store.user.passwordHash = await hashPassword('secure-pass-123')
+  const events: Array<{ action: string; actorId?: string | null; resourceType: string }> = []
+  const service = new AuthService({
+    store,
+    async audit(event) {
+      events.push(event)
+      assert.equal(JSON.stringify(event).includes('secure-pass-123'), false)
+    },
+  })
+
+  await assert.rejects(service.login({ email: store.user.email, password: 'wrong-password-1' }))
+  await service.login({ email: store.user.email, password: 'secure-pass-123' })
+  await service.logout(store.user.id)
+  assert.deepEqual(
+    events.map((event) => event.action),
+    ['auth.login_failed', 'auth.login', 'auth.logout']
+  )
+  assert.equal(events[0]?.actorId, store.user.id)
+  assert.equal(events.every((event) => event.resourceType === 'session'), true)
+})

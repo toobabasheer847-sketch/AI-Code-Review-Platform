@@ -8,6 +8,7 @@ import {
 } from './stripe-mapping'
 import { hasProReviewAccess } from './review-quota'
 import { claimStripeEvent } from './stripe-event-claim'
+import { auditActions, recordAuditEvent } from '@/modules/audit/audit.service'
 
 type BillingState = {
   customerId: string
@@ -130,6 +131,12 @@ export class BillingService {
                 cancelledAt: state.status === 'CANCELED' ? state.currentPeriodEnd : null,
                 lastStripeEventCreatedAt: new Date(event.created * 1000),
               },
+            })
+            await recordAuditEvent(transaction, {
+              actorId: state.userId,
+              action: auditActions.billingUpdated,
+              resourceType: 'subscription',
+              resourceId: state.userId,
             })
           }
         }

@@ -1,4 +1,11 @@
-export type WorkspaceRole = 'OWNER' | 'ADMIN' | 'DEVELOPER' | 'VIEWER'
+export type WorkspaceRole =
+  | 'OWNER'
+  | 'ADMIN'
+  | 'SECURITY_ADMIN'
+  | 'DEVELOPER'
+  | 'REVIEWER'
+  | 'BILLING_ADMIN'
+  | 'VIEWER'
 
 export type WorkspaceMemberStatus = 'ACTIVE' | 'SUSPENDED' | 'REMOVED'
 
@@ -21,6 +28,7 @@ export type WorkspacePermission =
   | 'view_billing'
   | 'manage_billing'
   | 'transfer_ownership'
+  | 'view_audit'
 
 export interface WorkspaceOrganization {
   id: string

@@ -27,6 +27,7 @@ const rolePermissions: Record<WorkspaceRole, ReadonlySet<WorkspacePermission>> =
     'view_billing',
     'manage_billing',
     'transfer_ownership',
+    'view_audit',
   ]),
   ADMIN: new Set([
     'read',
@@ -43,7 +44,21 @@ const rolePermissions: Record<WorkspaceRole, ReadonlySet<WorkspacePermission>> =
     'manage_integrations',
     'manage_members',
     'view_billing',
+    'view_audit',
   ]),
+  SECURITY_ADMIN: new Set([
+    'read',
+    'start_review',
+    'update_findings',
+    'verify_fix',
+    'manage_reviews',
+    'manage_repository',
+    'manage_integrations',
+    'view_billing',
+    'view_audit',
+  ]),
+  REVIEWER: new Set(['read', 'update_findings', 'verify_fix']),
+  BILLING_ADMIN: new Set(['read', 'view_billing', 'manage_billing']),
   DEVELOPER: new Set([
     'read',
     'start_review',
@@ -59,7 +74,10 @@ const rolePermissions: Record<WorkspaceRole, ReadonlySet<WorkspacePermission>> =
 export const workspaceRoleLabels: Record<WorkspaceRole, string> = {
   OWNER: 'Owner',
   ADMIN: 'Admin',
+  SECURITY_ADMIN: 'Security Admin',
   DEVELOPER: 'Developer',
+  REVIEWER: 'Reviewer',
+  BILLING_ADMIN: 'Billing Admin',
   VIEWER: 'Viewer',
 }
 
@@ -118,14 +136,28 @@ export function canTransferWorkspaceOwnership(role: WorkspaceRole, isPersonal: b
   return !isPersonal && hasWorkspacePermission(role, 'transfer_ownership')
 }
 
+const ownerAssignedRoles = new Set<WorkspaceRole>(['SECURITY_ADMIN', 'BILLING_ADMIN'])
+
+export function canManageExistingMember(actorRole: WorkspaceRole, memberRole: WorkspaceRole): boolean {
+  if (memberRole === 'OWNER') return false
+  if (actorRole === 'OWNER') return true
+  if (actorRole !== 'ADMIN') return false
+  return memberRole !== 'ADMIN' && !ownerAssignedRoles.has(memberRole)
+}
+
 export function invitableRoles(role: WorkspaceRole): InvitableWorkspaceRole[] {
-  if (role === 'OWNER' || role === 'ADMIN') return ['ADMIN', 'DEVELOPER', 'VIEWER']
+  if (role === 'OWNER') {
+    return ['ADMIN', 'SECURITY_ADMIN', 'DEVELOPER', 'REVIEWER', 'BILLING_ADMIN', 'VIEWER']
+  }
+  if (role === 'ADMIN') return ['ADMIN', 'DEVELOPER', 'REVIEWER', 'VIEWER']
   return []
 }
 
 export function assignableMemberRoles(role: WorkspaceRole): InvitableWorkspaceRole[] {
-  if (role === 'OWNER') return ['ADMIN', 'DEVELOPER', 'VIEWER']
-  if (role === 'ADMIN') return ['DEVELOPER', 'VIEWER']
+  if (role === 'OWNER') {
+    return ['ADMIN', 'SECURITY_ADMIN', 'DEVELOPER', 'REVIEWER', 'BILLING_ADMIN', 'VIEWER']
+  }
+  if (role === 'ADMIN') return ['DEVELOPER', 'REVIEWER', 'VIEWER']
   return []
 }
 
@@ -135,8 +167,8 @@ export function canUpdateMember(input: {
   memberStatus: WorkspaceMemberStatus
 }): boolean {
   if (!hasWorkspacePermission(input.actorRole, 'manage_members')) return false
-  if (input.memberRole === 'OWNER' || input.memberStatus === 'REMOVED') return false
-  if (input.actorRole === 'ADMIN' && input.memberRole === 'ADMIN') return false
+  if (input.memberStatus === 'REMOVED') return false
+  if (!canManageExistingMember(input.actorRole, input.memberRole)) return false
   return true
 }
 
@@ -173,8 +205,8 @@ export function canRemoveMember(input: {
   if (input.memberRole === 'OWNER' || input.memberStatus === 'REMOVED') return false
   if (
     input.actorRole === 'ADMIN' &&
-    input.memberRole === 'ADMIN' &&
-    input.memberUserId !== input.actorUserId
+    input.memberUserId !== input.actorUserId &&
+    !canManageExistingMember(input.actorRole, input.memberRole)
   ) {
     return false
   }

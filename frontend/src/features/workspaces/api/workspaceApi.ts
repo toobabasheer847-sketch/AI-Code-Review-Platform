@@ -27,6 +27,17 @@ interface InvitationsResponse {
   invitations: WorkspaceInvitation[]
 }
 
+export interface OrganizationActivityEvent {
+  id: string
+  actorId: string | null
+  organizationId: string | null
+  workspaceId: string | null
+  action: string
+  resourceType: string
+  resourceId: string | null
+  createdAt: string
+}
+
 interface InvitationResponse {
   invitation: {
     id: string
@@ -138,6 +149,12 @@ export const workspaceApi = {
       id: response.data.invitation?.id ?? '',
       status: 'DECLINED',
     }
+  },
+  async listActivity(workspaceId: string): Promise<OrganizationActivityEvent[]> {
+    const response = await axiosInstance.get<{ events?: OrganizationActivityEvent[] }>(
+      `/workspaces/${workspaceId}/activity`
+    )
+    return response.data.events ?? []
   },
   async acceptInvitation(token: string): Promise<{ workspaceId: string; role: WorkspaceRole }> {
     const response = await axiosInstance.post<{ membership: { workspaceId: string; role: WorkspaceRole } }>(

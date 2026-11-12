@@ -38,6 +38,12 @@ router.get(
   (req, res) => controller.repositories(req, res)
 )
 router.get(
+  '/:workspaceId/activity',
+  workspaceAccessMiddleware,
+  requireWorkspacePermission('view_audit'),
+  (req, res) => controller.activity(req, res)
+)
+router.get(
   '/:workspaceId/billing',
   workspaceAccessMiddleware,
   requireWorkspacePermission('view_billing'),

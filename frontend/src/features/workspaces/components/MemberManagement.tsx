@@ -73,7 +73,7 @@ export function MemberManagement({ workspace, actorUserId }: MemberManagementPro
     <section className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-4 sm:p-6">
       <h2 className="text-base font-semibold text-white">Members</h2>
       <p className="mt-1 text-sm text-slate-400">
-        Roles are Owner, Admin, Developer, and Viewer. Removed members can return only by accepting a new invitation.
+        Owners assign every role except a second owner. Admins can invite another Admin and assign Developer, Reviewer, and Viewer. Security Admin and Billing Admin can only be assigned by the owner.
       </p>
       {members.isPending ? (
         <div className="mt-4 space-y-3" role="status" aria-label="Loading members">

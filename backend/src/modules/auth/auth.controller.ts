@@ -1,5 +1,6 @@
 import { Request, Response } from 'express'
 import { ZodError } from 'zod'
+import { recordAuthenticationAudit } from '@/modules/audit/audit.service'
 import logger from '@/utils/logger'
 import {
   AccountDeletionError,
@@ -60,7 +61,11 @@ function statusFor(error: unknown): number {
 }
 
 export class AuthController {
-  constructor(private readonly authService: AuthControllerService = new AuthService()) {}
+  constructor(
+    private readonly authService: AuthControllerService = new AuthService({
+      audit: recordAuthenticationAudit,
+    })
+  ) {}
 
   getCsrfToken(_req: Request, res: Response): void {
     const csrfToken = createCsrfToken()

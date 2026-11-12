@@ -42,7 +42,10 @@ export function buildInvitationAcceptUrl(frontendUrl: string, token: string): st
 
 export function workspaceInvitationRoleLabel(role: string): string {
   if (role === 'ADMIN') return 'Admin'
+  if (role === 'SECURITY_ADMIN') return 'Security Admin'
   if (role === 'DEVELOPER') return 'Developer'
+  if (role === 'REVIEWER') return 'Reviewer'
+  if (role === 'BILLING_ADMIN') return 'Billing Admin'
   if (role === 'VIEWER') return 'Viewer'
   return 'Member'
 }

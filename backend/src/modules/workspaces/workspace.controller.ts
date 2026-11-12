@@ -16,7 +16,14 @@ const createWorkspaceSchema = z
 const inviteSchema = z
   .object({
     email: z.string().trim().email().max(254),
-    role: z.enum(['ADMIN', 'DEVELOPER', 'VIEWER']),
+    role: z.enum([
+      'ADMIN',
+      'SECURITY_ADMIN',
+      'DEVELOPER',
+      'REVIEWER',
+      'BILLING_ADMIN',
+      'VIEWER',
+    ]),
   })
   .strict()
 const acceptInvitationSchema = z
@@ -24,7 +31,9 @@ const acceptInvitationSchema = z
   .strict()
 const updateMemberSchema = z
   .object({
-    role: z.enum(['ADMIN', 'DEVELOPER', 'VIEWER']).optional(),
+    role: z
+      .enum(['ADMIN', 'SECURITY_ADMIN', 'DEVELOPER', 'REVIEWER', 'BILLING_ADMIN', 'VIEWER'])
+      .optional(),
     status: z.enum(['ACTIVE', 'SUSPENDED']).optional(),
   })
   .strict()
@@ -100,13 +109,15 @@ export class WorkspaceController {
   }
 
   async update(req: Request, res: Response): Promise<void> {
+    const id = userId(req, res)
+    if (!id) return
     const parsed = updateWorkspaceSchema.safeParse(req.body)
     if (!parsed.success) {
       res.status(400).json({ error: 'Invalid workspace details' })
       return
     }
     try {
-      const workspace = await service.update(req.workspace!.id, parsed.data)
+      const workspace = await service.update(req.workspace!.id, parsed.data, id)
       res.json({ workspace: { ...workspace, role: req.workspace!.role } })
     } catch (error) {
       respondError(res, error, 'Unable to update workspace')
@@ -279,8 +290,10 @@ export class WorkspaceController {
   }
 
   async revokeInvitation(req: Request, res: Response): Promise<void> {
+    const id = userId(req, res)
+    if (!id) return
     try {
-      await service.revokeInvitation(req.workspace!.id, req.params.invitationId ?? '')
+      await service.revokeInvitation(req.workspace!.id, req.params.invitationId ?? '', id)
       res.status(204).end()
     } catch (error) {
       respondError(res, error, 'Unable to revoke invitation')
@@ -322,6 +335,14 @@ export class WorkspaceController {
       res.status(204).end()
     } catch (error) {
       respondError(res, error, 'Unable to remove workspace member')
+    }
+  }
+
+  async activity(req: Request, res: Response): Promise<void> {
+    try {
+      res.json({ events: await service.listActivity(req.workspace!.id) })
+    } catch (error) {
+      respondError(res, error, 'Unable to load organization activity')
     }
   }
 

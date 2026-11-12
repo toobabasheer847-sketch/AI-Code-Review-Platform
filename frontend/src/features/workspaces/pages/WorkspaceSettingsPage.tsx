@@ -6,8 +6,9 @@ import { AutomationShell } from '@/features/automation/components/AutomationShel
 
 import { getWorkspaceErrorMessage, workspaceApi } from '../api/workspaceApi'
 import { InvitationManagement, MemberManagement } from '../components/MemberManagement'
+import { OrganizationActivity } from '../components/OrganizationActivity'
 import { WorkspaceDetails } from '../components/WorkspaceDetails'
-import { resolveActiveWorkspaceId } from '../domain/workspace-access'
+import { hasWorkspacePermission, resolveActiveWorkspaceId } from '../domain/workspace-access'
 import { useWorkspaces } from '../hooks/useWorkspaces'
 import { getActiveWorkspaceId, subscribeActiveWorkspace } from '../store/workspace-selection'
 
@@ -63,6 +64,10 @@ export function WorkspaceSettingsPage(): JSX.Element {
           />
           <MemberManagement workspace={workspace} actorUserId={me.data?.id ?? ''} />
           <InvitationManagement workspace={workspace} />
+          <OrganizationActivity
+            workspaceId={workspace.id}
+            enabled={hasWorkspacePermission(workspace.role, 'view_audit')}
+          />
         </div>
       )}
     </AutomationShell>
