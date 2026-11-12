@@ -5,6 +5,7 @@ import {
   openAiMaxRetries,
   openAiRequestTimeoutMs,
   MAX_ANALYSIS_CONTEXT_CHARS,
+  parseReviewModelOutput,
   prepareReviewContext,
   retainFindingsDespiteFalsePositiveFeedback,
   ReviewProviderError,
@@ -64,11 +65,36 @@ test('rejects incomplete and unsupported structured findings', () => {
       validateAnalysis(
         {
           summary: 'Review',
-          findings: [{ ...finding, severity: 'critical' }],
+          findings: [{ ...finding, severity: 'urgent' }],
         },
         files
       )
   )
+})
+
+test('normalizes an explicit critical finding and withholds scores below 0.60', () => {
+  const critical = validateAnalysis(
+    {
+      summary: 'Review',
+      findings: [{ ...finding, severity: 'critical', riskLevel: 'critical', confidence: 0.91 }],
+    },
+    files
+  )
+  assert.equal(critical.findings[0]?.severity, 'error')
+  assert.equal(critical.findings[0]?.riskLevel, 'critical')
+  assert.equal(critical.findings[0]?.disposition, 'confirmed')
+  assert.equal(critical.findings[0]?.confidence, 0.91)
+
+  const withheld = validateAnalysis(
+    {
+      summary: 'Review',
+      findings: [{ ...finding, category: 'security', confidence: 0.59 }],
+    },
+    files
+  )
+  assert.equal(withheld.findings.length, 0)
+  assert.match(withheld.limitations.join(' '), /withheld/)
+  assert.match(withheld.limitations.join(' '), /security/)
 })
 
 test('requires exact cited evidence and valid line ranges', () => {
@@ -399,4 +425,59 @@ test('false-positive feedback does not remove security findings from the retaine
     retained.findings.map((finding) => finding.category),
     ['security', 'bug']
   )
+})
+
+test('accepts a JSON object wrapped in prose or a fence', () => {
+  const payload = { summary: 'Review complete.', findings: [] }
+  assert.deepEqual(parseReviewModelOutput(`Note:\n${JSON.stringify(payload)}\nDone.`), payload)
+  assert.deepEqual(parseReviewModelOutput(`\`\`\`json\n${JSON.stringify(payload)}\n\`\`\``), payload)
+  assert.throws(() => parseReviewModelOutput('{invalid'), ReviewProviderError)
+})
+
+test('keeps one finding when the model and deterministic scanner cite the same SQL call', async () => {
+  const content = [
+    'export function findUser(db: { query: (sql: string) => unknown }, name: string) {',
+    '  return db.query("SELECT * FROM users WHERE name = \'" + name + "\'")',
+    '}',
+  ].join('\n')
+  const result = await analyzeCode(
+    [{ path: 'src/users.ts', content }],
+    async () =>
+      JSON.stringify({
+        summary: 'The query concatenates input.',
+        findings: [
+          {
+            file: 'src/users.ts',
+            line: 2,
+            severity: 'error',
+            category: 'security',
+            title: 'SQL injection risk',
+            message: 'The query concatenates a name into SQL.',
+            impact: 'The name can change the executed query.',
+            evidence: 'db.query("SELECT * FROM users WHERE name = \'" + name + "\'")',
+            suggestions: ['Use a bound parameter.'],
+            confidence: 0.9,
+          },
+        ],
+      })
+  )
+
+  assert.equal(result.findings.length, 1)
+  assert.equal(result.findings[0]?.source, 'STATIC_ANALYSIS')
+  assert.equal(result.findings[0]?.issueClass, 'data_access')
+})
+
+test('includes changed line numbers for the supplied pull-request file', async () => {
+  let prompt = ''
+  const result = await analyzeCode(
+    [{ path: 'src/ready.ts', content: 'export const ready = true\n', changedLines: [1] }],
+    async (messages) => {
+      prompt = messages.at(-1)?.content ?? ''
+      return JSON.stringify({ summary: 'No supported issue.', findings: [] })
+    }
+  )
+
+  assert.match(prompt, /"changedLines":\[1\]/)
+  assert.match(prompt, /Impact scope is the changed files/)
+  assert.equal(result.findings.length, 0)
 })

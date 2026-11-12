@@ -62,35 +62,46 @@ export async function persistReviewAnalysis(
   if (analysis.findings.length > 0) {
     const timestamp = new Date()
     await operations.createFindings(
-      analysis.findings.map((finding) => {
-        const { source, ...persistedFinding } = finding
+      analysis.findings.map((finding): FindingPersistenceInput => {
+        const verification = finding.source === 'STATIC_ANALYSIS'
+          ? {
+              requestKey: `static-analysis:${review.id}:${finding.file}:${finding.line}`,
+              status: 'INCONCLUSIVE' as const,
+              method: 'STATIC_ANALYSIS' as const,
+              resultSummary:
+                'A deterministic static-analysis rule matched. The reported condition has not been independently confirmed.',
+              sourceRevision,
+              startedAt: timestamp,
+              completedAt: timestamp,
+            }
+          : {
+              requestKey: `ai-review:${review.id}`,
+              status: 'AI_REPORTED' as const,
+              method: 'AI_REVIEW' as const,
+              resultSummary:
+                'AI-reported finding. Its cited evidence matched the retrieved source; the issue itself was not independently verified.',
+              sourceRevision,
+              startedAt: timestamp,
+              completedAt: timestamp,
+            }
         return {
-          ...persistedFinding,
+          file: finding.file,
+          line: finding.line,
+          endLine: finding.endLine,
+          title: finding.title,
+          message: finding.message,
+          impact: finding.impact,
+          evidence: finding.evidence,
+          severity: finding.severity,
+          category: finding.category,
+          suggestions: finding.suggestions,
+          confidence: finding.confidence,
+          riskLevel: finding.riskLevel,
+          disposition: finding.disposition,
+          issueClass: finding.issueClass,
+          ...(finding.remediationExample ? { remediationExample: finding.remediationExample } : {}),
           reviewId: review.id,
-          verificationRecords: {
-            create:
-              source === 'STATIC_ANALYSIS'
-                ? {
-                    requestKey: `static-analysis:${review.id}:${finding.file}:${finding.line}`,
-                    status: 'INCONCLUSIVE',
-                    method: 'STATIC_ANALYSIS',
-                    resultSummary:
-                      'A deterministic static-analysis rule matched. The reported condition has not been independently confirmed.',
-                    sourceRevision,
-                    startedAt: timestamp,
-                    completedAt: timestamp,
-                  }
-                : {
-                    requestKey: `ai-review:${review.id}`,
-                    status: 'AI_REPORTED',
-                    method: 'AI_REVIEW',
-                    resultSummary:
-                      'AI-reported finding. Its cited evidence matched the retrieved source; the issue itself was not independently verified.',
-                    sourceRevision,
-                    startedAt: timestamp,
-                    completedAt: timestamp,
-                  },
-          },
+          verificationRecords: { create: verification },
         }
       }),
       sourceRevision

@@ -1,6 +1,7 @@
 import ts from 'typescript'
 import { performance } from 'node:perf_hooks'
 import type { ReviewFinding } from './analyzer'
+import { stampMeasuredFinding } from './review-intelligence'
 import {
   MAX_SECURITY_SCAN_FILE_BYTES,
   MAX_SECURITY_SCAN_FILES,
@@ -106,22 +107,25 @@ function buildFinding(
     .join('\n')
     .slice(0, 500)
 
-  return {
-    file,
-    line,
-    endLine,
-    severity: 'warning',
-    category: 'quality',
-    title: 'High cyclomatic complexity',
-    message: `${functionName(node)} has a measured cyclomatic complexity of ${complexity}, above the threshold of ${MAX_FUNCTION_CYCLOMATIC_COMPLEXITY}.`,
-    impact:
-      'Complex branching increases maintenance effort and the number of independent paths that may need testing.',
-    evidence,
-    suggestions: [
-      'Consider extracting cohesive branches into named helper functions and add focused tests; review the refactor for behavior changes.',
-    ],
-    source: 'STATIC_ANALYSIS',
-  }
+  return stampMeasuredFinding(
+    {
+      file,
+      line,
+      endLine,
+      severity: 'warning' as const,
+      category: 'quality' as const,
+      title: 'High cyclomatic complexity',
+      message: `${functionName(node)} has a measured cyclomatic complexity of ${complexity}, above the threshold of ${MAX_FUNCTION_CYCLOMATIC_COMPLEXITY}.`,
+      impact:
+        'Complex branching increases maintenance effort and the number of independent paths that may need testing.',
+      evidence,
+      suggestions: [
+        'Consider extracting cohesive branches into named helper functions and add focused tests; review the refactor for behavior changes.',
+      ],
+      source: 'STATIC_ANALYSIS' as const,
+    },
+    { confidence: 0.95, riskLevel: 'medium', issueClass: 'maintainability' }
+  )
 }
 
 export function analyzeCodeQuality(

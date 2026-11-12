@@ -10,36 +10,81 @@ test('measures true positives, misses, false positives, and provider duplicates'
     now: () => new Date('2026-10-24T00:00:00.000Z'),
   })
 
-  assert.equal(report.metadata.datasetVersion, '1.0.0')
+  assert.equal(report.metadata.datasetVersion, '1.1.0')
   assert.equal(report.metadata.model, 'fixture-responses')
-  assert.equal(report.summary.datasetSize, 7)
-  assert.equal(report.summary.expectedFindings, 5)
-  assert.equal(report.summary.detectedFindings, 5)
-  assert.equal(report.summary.truePositives, 4)
+  assert.equal(report.summary.datasetSize, 19)
+  assert.equal(report.summary.expectedFindings, 11)
+  assert.equal(report.summary.detectedFindings, 12)
+  assert.equal(report.summary.truePositives, 11)
   assert.equal(report.summary.falsePositives, 1)
-  assert.equal(report.summary.falseNegatives, 1)
-  assert.equal(report.summary.precision, 0.8)
-  assert.equal(report.summary.recall, 0.8)
+  assert.equal(report.summary.falseNegatives, 0)
+  assert.equal(report.summary.precision, 11 / 12)
+  assert.equal(report.summary.recall, 1)
+  assert.equal(report.summary.falsePositiveRate, 1 / 12)
   assert.equal(report.summary.duplicateFindingCount, 1)
-  assert.equal(report.summary.duplicateFindingRate, 1 / 6)
+  assert.equal(report.summary.duplicateFindingRate, 1 / 13)
   assert.equal(
     report.results.find((result) => result.fixtureId === 'duplicate-provider-findings')
       ?.duplicateFindings,
     1
   )
+  assert.equal(
+    report.results.find((result) => result.fixtureId === 'static-and-provider-duplicate')
+      ?.detectedFindings,
+    1
+  )
+  assert.equal(
+    report.results.find((result) => result.fixtureId === 'low-confidence-withheld')?.detectedFindings,
+    0
+  )
   assert.deepEqual(report.summary.byCategory.bug, {
-    truePositives: 3,
+    truePositives: 6,
     falsePositives: 0,
-    falseNegatives: 1,
+    falseNegatives: 0,
     precision: 1,
-    recall: 0.75,
+    recall: 1,
+  })
+  assert.deepEqual(report.summary.byCategory.security, {
+    truePositives: 4,
+    falsePositives: 0,
+    falseNegatives: 0,
+    precision: 1,
+    recall: 1,
+  })
+  assert.deepEqual(report.summary.byCategory.performance, {
+    truePositives: 1,
+    falsePositives: 0,
+    falseNegatives: 0,
+    precision: 1,
+    recall: 1,
+  })
+  assert.deepEqual(report.summary.byCategory.quality, {
+    truePositives: 0,
+    falsePositives: 1,
+    falseNegatives: 0,
+    precision: 0,
+    recall: null,
   })
   assert.deepEqual(report.summary.bySeverity.error, {
+    truePositives: 8,
+    falsePositives: 0,
+    falseNegatives: 0,
+    precision: 1,
+    recall: 1,
+  })
+  assert.deepEqual(report.summary.bySeverity.warning, {
     truePositives: 3,
     falsePositives: 0,
     falseNegatives: 0,
     precision: 1,
     recall: 1,
+  })
+  assert.deepEqual(report.summary.bySeverity.info, {
+    truePositives: 0,
+    falsePositives: 1,
+    falseNegatives: 0,
+    precision: 0,
+    recall: null,
   })
 })
 
@@ -61,6 +106,7 @@ test('returns null for undefined zero-denominator metrics', async () => {
   assert.equal(report.summary.truePositives, 0)
   assert.equal(report.summary.precision, null)
   assert.equal(report.summary.recall, null)
+  assert.equal(report.summary.falsePositiveRate, null)
   assert.equal(report.summary.duplicateFindingRate, null)
   assert.equal(report.summary.byCategory.bug.precision, null)
   assert.equal(report.summary.byCategory.bug.recall, null)
@@ -77,6 +123,7 @@ test('reports an empty dataset without presenting undefined metrics as measured'
   assert.equal(report.summary.detectedFindings, 0)
   assert.equal(report.summary.precision, null)
   assert.equal(report.summary.recall, null)
+  assert.equal(report.summary.falsePositiveRate, null)
   assert.equal(report.summary.duplicateFindingRate, null)
 })
 
@@ -199,5 +246,5 @@ test('keeps reports free of source and provider response text and is repeatable'
   assert.equal(JSON.stringify(first).includes(marker), false)
   assert.equal(JSON.stringify(first.results), JSON.stringify(second.results))
   assert.equal(first.metadata.timestamp, second.metadata.timestamp)
-  assert.match(formatBenchmarkSummary(first), /Precision: n\/a; recall: n\/a/)
+  assert.match(formatBenchmarkSummary(first), /Precision: n\/a; recall: n\/a; false-positive rate: n\/a/)
 })

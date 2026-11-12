@@ -49,7 +49,7 @@ function createReview(
 const baseFinding: ReviewDetail['findings'][number] = {
   id: 'finding-1',
   file: 'src/index.ts',
-  line: 10,
+      line: 1,
   title: 'Example finding',
   message: 'A potential issue.',
   impact: 'The behavior can affect callers.',
@@ -613,5 +613,43 @@ describe('finding lifecycle UI', () => {
     expect(container.textContent).toContain('Needs review')
     expect(container.textContent).toContain('Tests not run')
     expect(container.textContent).toContain('Repository tests were not executed.')
+  })
+
+  it('shows risk, confidence, remediation, and filters findings', async () => {
+    persistedReview = createReview({
+      ...baseFinding,
+      severity: 'error',
+      riskLevel: 'high',
+      confidence: 0.91,
+      disposition: 'confirmed',
+      issueClass: 'security',
+      category: 'security',
+      remediationExample: 'element.textContent = value',
+    })
+    persistedReview.description = 'One dynamic HTML assignment was validated.'
+    persistedReview.fileContent = '--- src/index.ts ---\nthrow error\n'
+    const container = await mountReview()
+
+    expect(container.textContent).toContain('Review summary')
+    expect(container.textContent).toContain('One dynamic HTML assignment was validated.')
+    expect(container.textContent).toContain('High')
+    expect(container.textContent).toContain('Model assessment: confirmed')
+    expect(container.textContent).toContain('Confidence 91%')
+    expect(container.textContent).toContain('This example is not applied or executed.')
+    expect(container.textContent).toContain('element.textContent = value')
+
+    const showLines = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Show cited lines')
+    )
+    await act(async () => showLines?.click())
+    expect(container.textContent).toContain('1: throw error')
+
+    const riskFilter = container.querySelector<HTMLSelectElement>('select[aria-label="Filter by risk"]')
+    expect(riskFilter).not.toBeNull()
+    await act(async () => {
+      riskFilter!.value = 'low'
+      riskFilter!.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(container.textContent).toContain('No findings match these filters.')
   })
 })

@@ -67,7 +67,7 @@ export function validateBenchmarkDataset(value: unknown): BenchmarkDataset {
 }
 
 export const benchmarkDataset: BenchmarkDataset = validateBenchmarkDataset({
-  version: '1.0.0',
+  version: '1.1.0',
   fixtures: [
     {
       id: 'null-property-access',
@@ -303,6 +303,290 @@ export const benchmarkDataset: BenchmarkDataset = validateBenchmarkDataset({
             impact: 'No concrete user or runtime impact is supported by the supplied code.',
             evidence: 'export const enabled = true',
             suggestions: ['Remove the constant.'],
+          },
+        ],
+      }),
+    },
+    {
+      id: 'dynamic-code-execution',
+      description: 'eval is called with a function argument. The deterministic scanner should report it without a model finding.',
+      files: [
+        {
+          path: 'src/run.ts',
+          content: ['export function run(code: string) {', '  return eval(code)', '}'].join('\n'),
+        },
+      ],
+      expectedFindings: [
+        {
+          file: 'src/run.ts',
+          line: 2,
+          severity: 'error',
+          category: 'security',
+          evidence: 'eval(code)',
+        },
+      ],
+      mockResponse: JSON.stringify({ summary: 'No model finding.', findings: [] }),
+    },
+    {
+      id: 'dynamic-html-assignment',
+      description: 'innerHTML is assigned from a parameter.',
+      files: [
+        {
+          path: 'src/fill.ts',
+          content: [
+            'export function fill(element: { innerHTML: string }, markup: string) {',
+            '  element.innerHTML = markup',
+            '}',
+          ].join('\n'),
+        },
+      ],
+      expectedFindings: [
+        {
+          file: 'src/fill.ts',
+          line: 2,
+          severity: 'error',
+          category: 'security',
+          evidence: 'element.innerHTML = markup',
+        },
+      ],
+      mockResponse: JSON.stringify({ summary: 'No model finding.', findings: [] }),
+    },
+    {
+      id: 'query-inside-loop',
+      description: 'A parameterized query is awaited once per loop item.',
+      files: [
+        {
+          path: 'src/items-query.ts',
+          content: [
+            'export async function loadAll(ids: string[], db: { query: (sql: string, params: string[]) => Promise<unknown> }) {',
+            '  const rows = []',
+            '  for (const id of ids) {',
+            "    rows.push(await db.query('SELECT * FROM items WHERE id = $1', [id]))",
+            '  }',
+            '  return rows',
+            '}',
+          ].join('\n'),
+        },
+      ],
+      expectedFindings: [
+        {
+          file: 'src/items-query.ts',
+          line: 4,
+          severity: 'warning',
+          category: 'performance',
+          evidence: 'db.query',
+        },
+      ],
+      mockResponse: JSON.stringify({ summary: 'No model finding.', findings: [] }),
+    },
+    {
+      id: 'assignment-in-condition',
+      description: 'A condition assigns null instead of comparing it.',
+      files: [
+        {
+          path: 'src/save.ts',
+          content: [
+            'export function save(user: { id: string } | null) {',
+            '  if (user = null) return false',
+            '  return Boolean(user)',
+            '}',
+          ].join('\n'),
+        },
+      ],
+      expectedFindings: [
+        {
+          file: 'src/save.ts',
+          line: 2,
+          severity: 'error',
+          category: 'bug',
+          evidence: 'user = null',
+        },
+      ],
+      mockResponse: JSON.stringify({ summary: 'No model finding.', findings: [] }),
+    },
+    {
+      id: 'confirmed-critical-normalization',
+      description: 'A high-confidence critical model finding is kept and normalized to the legacy error severity.',
+      files: [
+        {
+          path: 'src/ratio.ts',
+          content: ['export function ratio(value: number) {', '  return value / 0', '}'].join('\n'),
+        },
+      ],
+      expectedFindings: [
+        {
+          file: 'src/ratio.ts',
+          line: 2,
+          severity: 'error',
+          category: 'bug',
+          evidence: 'value / 0',
+        },
+      ],
+      mockResponse: JSON.stringify({
+        summary: 'Division by zero is demonstrated.',
+        findings: [
+          {
+            file: 'src/ratio.ts',
+            line: 2,
+            severity: 'critical',
+            riskLevel: 'critical',
+            category: 'bug',
+            issueClass: 'logic',
+            title: 'Division by zero',
+            message: 'The divisor is the constant zero.',
+            impact: 'The function returns a non-finite numeric result.',
+            evidence: 'value / 0',
+            confidence: 0.95,
+            suggestions: ['Reject a zero divisor before dividing.'],
+          },
+        ],
+      }),
+    },
+    {
+      id: 'static-and-provider-duplicate',
+      description: 'The model and the deterministic scanner report the same eval call.',
+      files: [
+        {
+          path: 'src/repeat-eval.ts',
+          content: ['export function repeat(code: string) {', '  return eval(code)', '}'].join('\n'),
+        },
+      ],
+      expectedFindings: [
+        {
+          file: 'src/repeat-eval.ts',
+          line: 2,
+          severity: 'error',
+          category: 'security',
+          evidence: 'eval(code)',
+        },
+      ],
+      mockResponse: JSON.stringify({
+        summary: 'Dynamic execution is present.',
+        findings: [
+          {
+            file: 'src/repeat-eval.ts',
+            line: 2,
+            severity: 'error',
+            category: 'security',
+            title: 'Dynamic code execution',
+            message: 'eval is called with the supplied code.',
+            impact: 'The argument runs with the privileges of this process.',
+            evidence: 'return eval(code)',
+            suggestions: ['Call a specific function instead.'],
+            confidence: 0.93,
+          },
+        ],
+      }),
+    },
+    {
+      id: 'parameterized-query-clean',
+      description: 'A bound SQL parameter is not a dynamic SQL finding.',
+      files: [
+        {
+          path: 'src/lookup.ts',
+          content: [
+            'export function findUser(db: { query: (sql: string, params: string[]) => unknown }, name: string) {',
+            "  return db.query('SELECT * FROM users WHERE name = $1', [name])",
+            '}',
+          ].join('\n'),
+        },
+      ],
+      expectedFindings: [],
+      mockResponse: JSON.stringify({ summary: 'No issue was found.', findings: [] }),
+    },
+    {
+      id: 'tagged-sql-clean',
+      description: 'A tagged SQL template is not reported as concatenated SQL.',
+      files: [
+        {
+          path: 'src/tagged-sql.ts',
+          content: [
+            'export function findUser(sql: (parts: TemplateStringsArray, ...values: unknown[]) => unknown, id: string) {',
+            '  return sql`SELECT * FROM users WHERE id = ${id}`',
+            '}',
+          ].join('\n'),
+        },
+      ],
+      expectedFindings: [],
+      mockResponse: JSON.stringify({ summary: 'No issue was found.', findings: [] }),
+    },
+    {
+      id: 'regexp-exec-clean',
+      description: 'RegExp.exec is not a shell command.',
+      files: [
+        {
+          path: 'src/match.ts',
+          content: [
+            'export function match(pattern: RegExp, value: string) {',
+            '  return pattern.exec(value)',
+            '}',
+          ].join('\n'),
+        },
+      ],
+      expectedFindings: [],
+      mockResponse: JSON.stringify({ summary: 'No issue was found.', findings: [] }),
+    },
+    {
+      id: 'literal-html-clean',
+      description: 'A fixed innerHTML string is not reported.',
+      files: [
+        {
+          path: 'src/label.ts',
+          content: [
+            'export function label(element: { innerHTML: string }) {',
+            "  element.innerHTML = 'ready'",
+            '}',
+          ].join('\n'),
+        },
+      ],
+      expectedFindings: [],
+      mockResponse: JSON.stringify({ summary: 'No issue was found.', findings: [] }),
+    },
+    {
+      id: 'logged-catch-clean',
+      description: 'A catch that logs and rethrows is not a swallowed error.',
+      files: [
+        {
+          path: 'src/logged.ts',
+          content: [
+            'export function load(read: () => string) {',
+            '  try {',
+            '    return read()',
+            '  } catch (error) {',
+            '    console.error(error)',
+            '    throw error',
+            '  }',
+            '}',
+          ].join('\n'),
+        },
+      ],
+      expectedFindings: [],
+      mockResponse: JSON.stringify({ summary: 'No issue was found.', findings: [] }),
+    },
+    {
+      id: 'low-confidence-withheld',
+      description: 'A model finding below 0.60 is withheld even though its excerpt matches the source.',
+      files: [
+        {
+          path: 'src/ready.ts',
+          content: 'export const ready = true',
+        },
+      ],
+      expectedFindings: [],
+      mockResponse: JSON.stringify({
+        summary: 'A speculative note was withheld.',
+        findings: [
+          {
+            file: 'src/ready.ts',
+            line: 1,
+            severity: 'info',
+            category: 'quality',
+            title: 'Boolean constant',
+            message: 'The constant is reported without a demonstrated defect.',
+            impact: 'No runtime impact is shown by the supplied line.',
+            evidence: 'export const ready = true',
+            confidence: 0.4,
+            suggestions: ['Leave the constant in place.'],
           },
         ],
       }),

@@ -1,5 +1,6 @@
 import { performance } from 'node:perf_hooks'
 import type { ReviewFinding } from './analyzer'
+import { stampMeasuredFinding } from './review-intelligence'
 import type { ReviewSourceFile } from '@/modules/github/github.service'
 
 export const MAX_SECURITY_SCAN_FILES = 20
@@ -37,23 +38,26 @@ function redactCredentials(line: string, credentials: string[]): string {
 }
 
 function createFinding(file: string, line: number, evidence: string): ReviewFinding {
-  return {
-    file,
-    line,
-    endLine: line,
-    severity: 'error',
-    category: 'security',
-    title: 'Credential-like value embedded in source',
-    message:
-      'A high-confidence credential pattern or credential assignment with a literal value was found in source code.',
-    impact:
-      'If this value is active, it may grant access to an external service or account.',
-    evidence,
-    suggestions: [
-      'Revoke or rotate the exposed credential, remove it from source history, and load the replacement from a managed secret store.',
-    ],
-    source: 'STATIC_ANALYSIS',
-  }
+  return stampMeasuredFinding(
+    {
+      file,
+      line,
+      endLine: line,
+      severity: 'error',
+      category: 'security',
+      title: 'Credential-like value embedded in source',
+      message:
+        'A high-confidence credential pattern or credential assignment with a literal value was found in source code.',
+      impact:
+        'If this value is active, it may grant access to an external service or account.',
+      evidence,
+      suggestions: [
+        'Revoke or rotate the exposed credential, remove it from source history, and load the replacement from a managed secret store.',
+      ],
+      source: 'STATIC_ANALYSIS' as const,
+    },
+    { confidence: 0.92, riskLevel: 'high', issueClass: 'security' }
+  )
 }
 
 function shouldIgnoreCredential(credential: string, line: string): boolean {
@@ -75,19 +79,23 @@ function findCredentials(sourceLine: string): string[] {
   return credentials
 }
 
+export function redactUntrustedText(value: string): string {
+  return value
+    .split(/(\r?\n)/)
+    .map((part, index) => {
+      if (index % 2 !== 0) return part
+      return redactCredentials(
+        part,
+        findCredentials(part).filter((credential) => !shouldIgnoreCredential(credential, part))
+      )
+    })
+    .join('')
+}
+
 export function redactCredentialSource(files: ReviewSourceFile[]): ReviewSourceFile[] {
   return files.map((file) => ({
     ...file,
-    content: file.content
-      .split(/(\r?\n)/)
-      .map((part, index) => {
-        if (index % 2 !== 0) return part
-        return redactCredentials(
-          part,
-          findCredentials(part).filter((credential) => !shouldIgnoreCredential(credential, part))
-        )
-      })
-      .join(''),
+    content: redactUntrustedText(file.content),
   }))
 }
 

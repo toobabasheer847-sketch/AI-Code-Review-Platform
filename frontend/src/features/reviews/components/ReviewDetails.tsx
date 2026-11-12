@@ -51,6 +51,162 @@ const findingFeedbackCategoryLabels: Record<FindingFeedbackCategory, string> = {
   NEEDS_REVIEW: 'Needs review',
 }
 
+const riskLabels = {
+  critical: 'Critical',
+  high: 'High',
+  medium: 'Medium',
+  low: 'Low',
+  informational: 'Informational',
+} as const
+
+const issueClassLabels: Record<string, string> = {
+  logic: 'Logic',
+  security: 'Security',
+  performance: 'Performance',
+  quality: 'Quality',
+  maintainability: 'Maintainability',
+  concurrency: 'Concurrency',
+  error_handling: 'Error handling',
+  data_access: 'Data access',
+  api_contract: 'API contract',
+  resource_management: 'Resource management',
+  authorization: 'Authorization',
+}
+
+type DisplayRisk = keyof typeof riskLabels
+type FindingSort = 'severity' | 'file' | 'confidence'
+
+function displayRisk(finding: ReviewDetail['findings'][number]): DisplayRisk {
+  if (finding.riskLevel && finding.riskLevel in riskLabels) return finding.riskLevel as DisplayRisk
+  if (finding.severity === 'error') return 'high'
+  if (finding.severity === 'warning') return 'medium'
+  return 'informational'
+}
+
+function confidenceText(confidence: number | null | undefined): string {
+  if (confidence === null || confidence === undefined) {
+    return 'Confidence was not stored. The finding stays visible as a potential risk when its evidence was saved.'
+  }
+  const percent = Math.round(confidence * 100)
+  if (confidence >= 0.85) return `Confidence ${percent}%. The cited excerpt directly supports this finding.`
+  if (confidence >= 0.6) {
+    return `Confidence ${percent}%. The excerpt matches the source, and the impact is uncertain enough to treat as a potential risk.`
+  }
+  return `Confidence ${percent}%. Scores below 60% are withheld from saved reviews.`
+}
+
+function citedSource(fileContent: string | undefined, file: string, line: number, endLine: number): string | null {
+  if (!fileContent) return null
+  const marker = `--- ${file} ---`
+  const start = fileContent.indexOf(marker)
+  if (start < 0) return null
+  const after = fileContent.slice(start + marker.length).replace(/^\r?\n/, '')
+  const nextMarker = after.search(/\n--- .+ ---/)
+  const body = nextMarker === -1 ? after : after.slice(0, nextMarker)
+  const lines = body.split(/\r?\n/)
+  const from = Math.max(1, line)
+  const to = Math.max(from, endLine)
+  if (from > lines.length) return null
+  return lines
+    .slice(from - 1, Math.min(lines.length, to))
+    .map((text, index) => `${from + index}: ${text}`)
+    .join('\n')
+}
+
+function FindingCard({
+  reviewId,
+  sourceRevision,
+  fileContent,
+  finding,
+}: {
+  reviewId: string
+  sourceRevision?: string | null
+  fileContent?: string
+  finding: ReviewDetail['findings'][number]
+}): JSX.Element {
+  const [showLocation, setShowLocation] = useState(false)
+  const risk = displayRisk(finding)
+  const location = citedSource(fileContent, finding.file, finding.line, finding.endLine ?? finding.line)
+  const disposition =
+    finding.disposition === 'confirmed' ? 'Model assessment: confirmed' : 'Model assessment: potential'
+
+  return (
+    <li className="pt-4 first:pt-0">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1">
+          <div className="text-sm font-semibold text-indigo-300">
+            {finding.file}:{finding.line}
+            {finding.endLine && finding.endLine > finding.line ? `-${finding.endLine}` : ''}
+          </div>
+          {finding.title && <h4 className="mt-1 font-semibold text-white">{finding.title}</h4>}
+          <div className="mt-1 text-xs uppercase tracking-wide text-slate-400">
+            {[finding.category, finding.issueClass ? issueClassLabels[finding.issueClass] ?? finding.issueClass : null]
+              .filter(Boolean)
+              .join(' · ')}
+          </div>
+          <p className="mt-1 text-xs text-slate-400">{disposition}</p>
+          <p className="mt-1 text-xs text-slate-500">{confidenceText(finding.confidence)}</p>
+          <div className="mt-2 text-sm text-slate-300">{finding.message}</div>
+          {finding.impact && (
+            <div className="mt-2 text-sm text-slate-400">
+              <span className="font-medium text-slate-300">Impact: </span>
+              {finding.impact}
+            </div>
+          )}
+          {finding.evidence && (
+            <pre className="mt-3 overflow-x-auto rounded bg-slate-950/60 p-3 text-xs text-slate-300">
+              <code>{finding.evidence}</code>
+            </pre>
+          )}
+          <button
+            type="button"
+            className="mt-3 text-xs font-medium text-indigo-300 hover:text-indigo-200 disabled:text-slate-500"
+            disabled={!location}
+            onClick={() => setShowLocation((open) => !open)}
+          >
+            {location ? (showLocation ? 'Hide cited lines' : 'Show cited lines') : 'Cited lines are not in the stored snapshot'}
+          </button>
+          {showLocation && location && (
+            <pre className="mt-2 overflow-x-auto rounded bg-slate-950/60 p-3 text-xs text-slate-300">
+              <code>{location}</code>
+            </pre>
+          )}
+        </div>
+        <div className="flex flex-col items-end gap-2">
+          <span
+            className={`rounded-full px-3 py-1 text-xs font-medium ${
+              risk === 'critical' || risk === 'high'
+                ? 'bg-red-500/10 text-red-300'
+                : risk === 'medium'
+                  ? 'bg-amber-500/10 text-amber-300'
+                  : 'bg-blue-500/10 text-blue-300'
+            }`}
+          >
+            {riskLabels[risk]}
+          </span>
+          <span className="text-[11px] uppercase tracking-wide text-slate-500">{finding.severity}</span>
+        </div>
+      </div>
+      {finding.suggestions && finding.suggestions.length > 0 && (
+        <div className="mt-3 border-l border-indigo-500/30 pl-3 text-sm text-slate-400">
+          <span className="font-medium text-indigo-300">Suggestion: </span>
+          {finding.suggestions.join('; ')}
+        </div>
+      )}
+      {finding.remediationExample && (
+        <div className="mt-3 text-sm text-slate-400">
+          <p className="font-medium text-indigo-300">Remediation example</p>
+          <p className="mt-1 text-xs text-slate-500">This example is not applied or executed.</p>
+          <pre className="mt-2 overflow-x-auto rounded bg-slate-950/60 p-3 text-xs text-slate-300">
+            <code>{finding.remediationExample}</code>
+          </pre>
+        </div>
+      )}
+      <FindingLifecyclePanel reviewId={reviewId} sourceRevision={sourceRevision} finding={finding} />
+    </li>
+  )
+}
+
 function FindingLifecyclePanel({
   reviewId,
   sourceRevision,
@@ -766,6 +922,35 @@ export const ReviewDetails = ({ review }: { review: ReviewDetail }): JSX.Element
   const scoreStyles = qualityScore === undefined ? null : getScoreStyles(qualityScore)
   const repoName = review.title ?? review.repository.name
   const isProcessing = review.status === 'pending' || review.status === 'running'
+  const [riskFilter, setRiskFilter] = useState<'all' | DisplayRisk>('all')
+  const [categoryFilter, setCategoryFilter] = useState('all')
+  const [dispositionFilter, setDispositionFilter] = useState('all')
+  const [sortMode, setSortMode] = useState<FindingSort>('severity')
+  const filteredFindings = review.findings
+    .filter((finding) => riskFilter === 'all' || displayRisk(finding) === riskFilter)
+    .filter((finding) => categoryFilter === 'all' || finding.category === categoryFilter)
+    .filter((finding) => {
+      if (dispositionFilter === 'all') return true
+      if (dispositionFilter === 'confirmed') return finding.disposition === 'confirmed'
+      return finding.disposition !== 'confirmed'
+    })
+    .sort((left, right) => {
+      if (sortMode === 'file') return left.file.localeCompare(right.file) || left.line - right.line
+      if (sortMode === 'confidence') return (right.confidence ?? -1) - (left.confidence ?? -1)
+      return (
+        ['critical', 'high', 'medium', 'low', 'informational'].indexOf(displayRisk(left)) -
+        ['critical', 'high', 'medium', 'low', 'informational'].indexOf(displayRisk(right))
+      )
+    })
+  const groupedFindings =
+    sortMode === 'severity'
+      ? (['critical', 'high', 'medium', 'low', 'informational'] as DisplayRisk[])
+          .map((risk) => ({
+            risk,
+            findings: filteredFindings.filter((finding) => displayRisk(finding) === risk),
+          }))
+          .filter((group) => group.findings.length > 0)
+      : [{ risk: null as DisplayRisk | null, findings: filteredFindings }]
 
   return (
     <div className="space-y-6">
@@ -866,66 +1051,105 @@ export const ReviewDetails = ({ review }: { review: ReviewDetail }): JSX.Element
           <h3 className="mb-6 text-xl font-semibold text-white">
             Issues ({review.findings.length})
           </h3>
+          {review.description && (
+            <div className="mb-6 rounded-lg border border-slate-700/70 bg-slate-950/30 p-4">
+              <h4 className="font-semibold text-white">Review summary</h4>
+              <p className="mt-2 text-sm text-slate-300">{review.description}</p>
+            </div>
+          )}
           {review.findings.length === 0 ? (
             <p className="text-sm text-slate-400">
               No findings were validated for the supplied source. This does not guarantee the code
               is free of issues.
             </p>
           ) : (
-            <ul className="space-y-4 divide-y divide-slate-800/80">
-              {review.findings.map((f) => (
-                <li key={f.id} className="pt-4 first:pt-0">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                      <div className="text-sm font-semibold text-indigo-300">
-                        {f.file}:{f.line}
-                        {f.endLine && f.endLine > f.line ? `-${f.endLine}` : ''}
-                      </div>
-                      {f.title && <h4 className="mt-1 font-semibold text-white">{f.title}</h4>}
-                      {f.category && (
-                        <div className="mt-1 text-xs uppercase tracking-wide text-slate-400">
-                          {f.category}
-                        </div>
+            <>
+              <div className="mb-6 flex flex-wrap gap-3">
+                <label className="text-xs text-slate-400">
+                  Risk
+                  <select
+                    aria-label="Filter by risk"
+                    className="ml-2 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-200"
+                    value={riskFilter}
+                    onChange={(event) => setRiskFilter(event.target.value as 'all' | DisplayRisk)}
+                  >
+                    <option value="all">All</option>
+                    {Object.entries(riskLabels).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-xs text-slate-400">
+                  Category
+                  <select
+                    aria-label="Filter by category"
+                    className="ml-2 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-200"
+                    value={categoryFilter}
+                    onChange={(event) => setCategoryFilter(event.target.value)}
+                  >
+                    <option value="all">All</option>
+                    <option value="bug">Bug</option>
+                    <option value="security">Security</option>
+                    <option value="performance">Performance</option>
+                    <option value="quality">Quality</option>
+                  </select>
+                </label>
+                <label className="text-xs text-slate-400">
+                  Assessment
+                  <select
+                    aria-label="Filter by assessment"
+                    className="ml-2 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-200"
+                    value={dispositionFilter}
+                    onChange={(event) => setDispositionFilter(event.target.value)}
+                  >
+                    <option value="all">All</option>
+                    <option value="confirmed">Confirmed</option>
+                    <option value="potential">Potential</option>
+                  </select>
+                </label>
+                <label className="text-xs text-slate-400">
+                  Sort
+                  <select
+                    aria-label="Sort findings"
+                    className="ml-2 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-200"
+                    value={sortMode}
+                    onChange={(event) => setSortMode(event.target.value as FindingSort)}
+                  >
+                    <option value="severity">Severity</option>
+                    <option value="file">File</option>
+                    <option value="confidence">Confidence</option>
+                  </select>
+                </label>
+              </div>
+              {filteredFindings.length === 0 ? (
+                <p className="text-sm text-slate-400">No findings match these filters.</p>
+              ) : (
+                <div className="space-y-8">
+                  {groupedFindings.map((group) => (
+                    <section key={group.risk ?? 'sorted'}>
+                      {group.risk && (
+                        <h4 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-300">
+                          {riskLabels[group.risk]} ({group.findings.length})
+                        </h4>
                       )}
-                      <div className="mt-2 text-sm text-slate-300">{f.message}</div>
-                      {f.impact && (
-                        <div className="mt-2 text-sm text-slate-400">
-                          <span className="font-medium text-slate-300">Impact: </span>
-                          {f.impact}
-                        </div>
-                      )}
-                      {f.evidence && (
-                        <pre className="mt-3 overflow-x-auto rounded bg-slate-950/60 p-3 text-xs text-slate-300">
-                          <code>{f.evidence}</code>
-                        </pre>
-                      )}
-                    </div>
-                    <div
-                      className={`rounded-full px-3 py-1 text-xs font-medium ${
-                        f.severity === 'error'
-                          ? 'bg-red-500/10 text-red-300'
-                          : f.severity === 'warning'
-                            ? 'bg-amber-500/10 text-amber-300'
-                            : 'bg-blue-500/10 text-blue-300'
-                      }`}
-                    >
-                      {f.severity}
-                    </div>
-                  </div>
-                  {f.suggestions && f.suggestions.length > 0 && (
-                    <div className="mt-3 border-l border-indigo-500/30 pl-3 text-sm text-slate-400">
-                      <span className="font-medium text-indigo-300">Suggestion: </span>
-                      {f.suggestions.join('; ')}
-                    </div>
-                  )}
-                  <FindingLifecyclePanel
-                    reviewId={review.id}
-                    sourceRevision={review.sourceRevision}
-                    finding={f}
-                  />
-                </li>
-              ))}
-            </ul>
+                      <ul className="space-y-4 divide-y divide-slate-800/80">
+                        {group.findings.map((finding) => (
+                          <FindingCard
+                            key={finding.id}
+                            reviewId={review.id}
+                            sourceRevision={review.sourceRevision}
+                            fileContent={review.fileContent}
+                            finding={finding}
+                          />
+                        ))}
+                      </ul>
+                    </section>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </section>
       )}

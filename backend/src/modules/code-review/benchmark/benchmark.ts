@@ -90,6 +90,7 @@ export interface BenchmarkReport {
     recall: number | null
     duplicateFindingCount: number
     duplicateFindingRate: number | null
+    falsePositiveRate: number | null
     runtimeMs: number
     failures: number
     byCategory: Record<Category, MetricCounts>
@@ -137,7 +138,15 @@ function matches(
   )
 }
 
-function duplicateCount(findings: ReviewFinding[]): number {
+interface RawModelFinding {
+  file: string
+  line: number
+  endLine?: number
+  category: Category
+  evidence: string
+}
+
+function duplicateCount(findings: RawModelFinding[]): number {
   const seen = new Set<string>()
   let duplicates = 0
   for (const finding of findings) {
@@ -154,7 +163,7 @@ function duplicateCount(findings: ReviewFinding[]): number {
   return duplicates
 }
 
-function parseRawFindings(content: string | null): ReviewFinding[] {
+function parseRawFindings(content: string | null): RawModelFinding[] {
   if (!content) return []
   try {
     const parsed: unknown = JSON.parse(content)
@@ -180,7 +189,13 @@ function parseRawFindings(content: string | null): ReviewFinding[] {
       )
       const findings = rawFindingSchema.safeParse(parsed.findings)
       return findings.success
-        ? findings.data.map((finding) => ({ ...finding, source: 'AI_REVIEW' as const }))
+        ? findings.data.map((finding) => ({
+            file: finding.file,
+            line: finding.line,
+            ...(finding.endLine !== undefined ? { endLine: finding.endLine } : {}),
+            category: finding.category,
+            evidence: finding.evidence,
+          }))
         : []
     }
   } catch {
@@ -390,6 +405,7 @@ export async function runBenchmark(options: BenchmarkOptions): Promise<Benchmark
         detectedFindings + duplicateFindingCount === 0
           ? null
           : duplicateFindingCount / (detectedFindings + duplicateFindingCount),
+      falsePositiveRate: detectedFindings === 0 ? null : falsePositives / detectedFindings,
       runtimeMs: durationMs,
       failures: errors.length,
       byCategory: Object.fromEntries(
@@ -410,7 +426,7 @@ export function formatBenchmarkSummary(report: BenchmarkReport): string {
     `AI-CodeGuard benchmark ${report.metadata.datasetVersion} (${report.metadata.configuration.mode})`,
     `Fixtures: ${report.summary.datasetSize}; expected: ${report.summary.expectedFindings}; detected: ${report.summary.detectedFindings}`,
     `TP: ${report.summary.truePositives}; FP: ${report.summary.falsePositives}; FN: ${report.summary.falseNegatives}`,
-    `Precision: ${metric(report.summary.precision)}; recall: ${metric(report.summary.recall)}`,
+    `Precision: ${metric(report.summary.precision)}; recall: ${metric(report.summary.recall)}; false-positive rate: ${metric(report.summary.falsePositiveRate)}`,
     `Duplicate findings: ${report.summary.duplicateFindingCount}; duplicate rate: ${metric(report.summary.duplicateFindingRate)}`,
     `Runtime: ${report.summary.runtimeMs} ms; failures: ${report.summary.failures}`,
   ]

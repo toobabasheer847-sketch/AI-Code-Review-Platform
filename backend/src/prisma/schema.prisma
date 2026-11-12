@@ -888,6 +888,11 @@ model Finding {
   severity                 String
   category                 String             @default("quality")
   suggestions              String[]
+  confidence               Float?
+  riskLevel                String?
+  disposition              String?
+  issueClass               String?
+  remediationExample       String?            @db.VarChar(2000)
   status                   FindingStatus      @default(UNREVIEWED)
   independentlyVerifiedAt  DateTime?
   feedback                 FindingFeedback[]

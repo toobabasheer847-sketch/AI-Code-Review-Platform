@@ -193,6 +193,11 @@ export interface ReviewDetail {
     severity: string
     category?: string
     suggestions: string[]
+    confidence?: number | null
+    riskLevel?: string | null
+    disposition?: string | null
+    issueClass?: string | null
+    remediationExample?: string | null
     status: FindingStatus
     independentlyVerifiedAt: string | null
     verificationRecords: FindingVerificationRecord[]

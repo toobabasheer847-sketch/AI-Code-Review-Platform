@@ -156,6 +156,11 @@ export interface PullRequestFinding {
   impact?: string | null
   evidence?: string | null
   suggestions: string[]
+  confidence?: number | null
+  riskLevel?: string | null
+  disposition?: string | null
+  issueClass?: string | null
+  remediationExample?: string | null
 }
 
 export interface PullRequestReviewTarget {
@@ -1274,10 +1279,21 @@ export class GitHubService {
           '',
           finding.message,
           ...(finding.impact ? ['', `Impact: ${finding.impact}`] : []),
+          ...(finding.riskLevel ? ['', `Risk level: ${finding.riskLevel}`] : []),
+          ...(typeof finding.confidence === 'number'
+            ? [
+                '',
+                `Confidence: ${Math.round(finding.confidence * 100)}%${finding.disposition ? ` (${finding.disposition})` : ''}`,
+              ]
+            : []),
+          ...(finding.issueClass ? ['', `Issue class: ${finding.issueClass}`] : []),
           '',
           `Evidence: \`${finding.evidence ?? ''}\``,
           ...(finding.suggestions.length
             ? ['', `Suggestion: ${finding.suggestions.join(' ')}`]
+            : []),
+          ...(finding.remediationExample
+            ? ['', 'Suggested example (not applied):', finding.remediationExample]
             : []),
         ].join('\n'),
       }))
